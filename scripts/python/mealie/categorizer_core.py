@@ -26,6 +26,9 @@ def load_env_file(path):
 
 def parse_json_response(result_text):
     cleaned = result_text.strip()
+    # Strip common markdown fences returned by some models.
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("'", '"')
     cleaned = re.sub(r",(\s*[\]}])", r"\1", cleaned)
     cleaned = re.sub(r"(\w+):", r'"\1":', cleaned)
@@ -66,6 +69,8 @@ class MealieCategorizer:
         self.target_mode = target_mode
         self.tag_max_name_length = tag_max_name_length
         self.tag_min_usage = tag_min_usage
+        self.query_retries = max(1, int(os.environ.get("QUERY_RETRIES", "3")))
+        self.query_retry_base_seconds = float(os.environ.get("QUERY_RETRY_BASE_SECONDS", "1.25"))
         self.headers = {
             "Authorization": f"Bearer {mealie_api_key}",
             "Content-Type": "application/json",
@@ -195,16 +200,17 @@ Recipes:
             )
         return prompt.strip()
 
-    def safe_query_with_retry(self, prompt_text, retries=2):
-        for attempt in range(retries):
+    def safe_query_with_retry(self, prompt_text, retries=None):
+        attempts = retries if retries is not None else self.query_retries
+        for attempt in range(attempts):
             result = self.query_text(prompt_text)
             if result:
                 parsed = parse_json_response(result)
                 if parsed:
                     return parsed
-            print(f"[warn] Retry {attempt + 1}/{retries} failed.")
-            if attempt < retries - 1:
-                sleep_for = (2**attempt) + random.uniform(0, 0.5)
+            print(f"[warn] Retry {attempt + 1}/{attempts} failed.")
+            if attempt < attempts - 1:
+                sleep_for = (self.query_retry_base_seconds * (2**attempt)) + random.uniform(0, 0.75)
                 time.sleep(sleep_for)
         return None
 

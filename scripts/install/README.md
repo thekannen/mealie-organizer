@@ -23,6 +23,7 @@ Optional flags:
 - `--repo-url <url>`: override repository URL.
 - `--repo-branch <branch>`: override repository branch.
 - `--use-current-repo`: skip clone/update and use local repo path.
+- `--update`: only update the repo and exit (no package/venv/cron setup).
 - `--provider <ollama|chatgpt>`: choose one provider (default: `ollama`).
 - `--install-ollama`: install Ollama if missing.
 - `--skip-apt-update`: skip `apt-get update`.
@@ -37,6 +38,12 @@ What it does:
 - Creates `.env` from `.env.example` if missing
 - Optionally configures one cron job for the selected provider
 - If a cron job exists for the other provider, it is removed
+
+Update-only example:
+
+```bash
+./scripts/install/ubuntu_setup_mealie.sh --update --target-dir "$HOME/mealie-scripts"
+```
 
 Cron example:
 

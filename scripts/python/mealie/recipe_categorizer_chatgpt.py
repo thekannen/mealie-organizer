@@ -1,5 +1,7 @@
 import argparse
 import os
+import random
+import time
 
 import requests
 
@@ -17,6 +19,8 @@ MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "3"))
 CACHE_FILE = os.environ.get("CACHE_FILE", str(REPO_ROOT / "cache" / "results_chatgpt.json"))
 TAG_MAX_NAME_LENGTH = int(os.environ.get("TAG_MAX_NAME_LENGTH", "24"))
 TAG_MIN_USAGE = int(os.environ.get("TAG_MIN_USAGE", "0"))
+OPENAI_REQUEST_TIMEOUT = int(os.environ.get("OPENAI_REQUEST_TIMEOUT", "120"))
+OPENAI_HTTP_RETRIES = max(1, int(os.environ.get("OPENAI_HTTP_RETRIES", "3")))
 
 
 def parse_args():
@@ -54,22 +58,53 @@ def query_chatgpt(prompt_text):
             {"role": "user", "content": prompt_text + "\n\nRespond only with valid JSON."},
         ],
     }
-    try:
-        response = requests.post(
-            f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=120,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        print(f"ChatGPT request error: {exc}")
-        return None
+    url = f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    last_error = None
+
+    for attempt in range(OPENAI_HTTP_RETRIES):
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=OPENAI_REQUEST_TIMEOUT,
+            )
+            if response.status_code == 429 or 500 <= response.status_code < 600:
+                retry_after = response.headers.get("Retry-After")
+                wait_for = float(retry_after) if retry_after and retry_after.isdigit() else (1.5 * (2**attempt))
+                wait_for += random.uniform(0, 0.5)
+                print(
+                    f"[warn] ChatGPT transient HTTP {response.status_code} "
+                    f"(attempt {attempt + 1}/{OPENAI_HTTP_RETRIES}), sleeping {wait_for:.1f}s"
+                )
+                time.sleep(wait_for)
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < OPENAI_HTTP_RETRIES - 1:
+                wait_for = (1.5 * (2**attempt)) + random.uniform(0, 0.5)
+                print(
+                    f"[warn] ChatGPT request exception (attempt {attempt + 1}/{OPENAI_HTTP_RETRIES}): {exc}. "
+                    f"Sleeping {wait_for:.1f}s"
+                )
+                time.sleep(wait_for)
+            else:
+                break
+        except (ValueError, KeyError, TypeError) as exc:
+            # Malformed response is usually non-transient for this request payload.
+            print(f"[error] ChatGPT response parse error: {exc}")
+            return None
+
+    print(f"ChatGPT request error: {last_error or 'exhausted retries'}")
+    return None
 
 
 def main():

@@ -8,6 +8,7 @@ REPO_URL="https://github.com/thekannen/mealie-scripts.git"
 REPO_BRANCH="main"
 TARGET_DIR="$HOME/mealie-scripts"
 USE_CURRENT_REPO=false
+UPDATE_ONLY=false
 PROVIDER="ollama"
 INSTALL_OLLAMA=false
 SKIP_APT_UPDATE=false
@@ -23,6 +24,7 @@ Options:
   --repo-branch <branch>       Repository branch to use (default: main).
   --target-dir <dir>           Target directory for cloned repo.
   --use-current-repo           Skip clone/update and use script's current repo.
+  --update                     Only update the repo from GitHub, then exit.
   --provider <ollama|chatgpt>  Provider preference for categorizer runs.
   --install-ollama             Install Ollama if missing.
   --skip-apt-update            Skip apt-get update.
@@ -49,6 +51,10 @@ while [ $# -gt 0 ]; do
       ;;
     --use-current-repo)
       USE_CURRENT_REPO=true
+      shift
+      ;;
+    --update)
+      UPDATE_ONLY=true
       shift
       ;;
     --provider)
@@ -122,6 +128,16 @@ sync_repo() {
     echo "[start] Cloning repo to $REPO_ROOT"
     git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$REPO_ROOT"
   fi
+}
+
+update_only_repo() {
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[error] git is required for --update mode."
+    exit 1
+  fi
+  sync_repo
+  echo "[done] Repo update complete"
+  echo "Repo path: $REPO_ROOT"
 }
 
 setup_python() {
@@ -216,6 +232,11 @@ setup_cron_jobs() {
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[error] python3 is required. Install Python 3.10+ and rerun."
   exit 1
+fi
+
+if [ "$UPDATE_ONLY" = true ]; then
+  update_only_repo
+  exit 0
 fi
 
 install_packages
