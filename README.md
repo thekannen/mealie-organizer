@@ -7,7 +7,7 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 - Taxonomy reset/import/cleanup lifecycle manager
 - Recipe categorization via Ollama or ChatGPT/OpenAI-compatible APIs
 - Taxonomy auditing and cleanup tooling
-- Ubuntu and Windows setup scripts
+- Ubuntu setup script
 
 ## Structure
 
@@ -25,15 +25,16 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │       ├── taxonomy_manager.py
 │       ├── audit_taxonomy.py
 │       ├── categorizer_core.py
+│       ├── recipe_categorizer.py
 │       ├── recipe_categorizer_ollama.py
 │       └── recipe_categorizer_chatgpt.py
 ├── scripts/
 │   └── install/
-│       ├── ubuntu_setup_mealie.sh
-│       └── windows_setup_mealie.ps1
+│       └── ubuntu_setup_mealie.sh
 ├── tests/
 │   ├── test_categorizer_core.py
-│   └── test_taxonomy_manager.py
+│   ├── test_taxonomy_manager.py
+│   └── test_recipe_categorizer.py
 ├── .env.example
 ├── pyproject.toml
 └── README.md
@@ -41,11 +42,11 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 
 ## Configuration Model
 
-- `configs/config.json`: central non-secret defaults (paths, models, batch sizes, retries).
-- `.env`: secrets and environment-specific overrides.
+- `configs/config.json`: central non-secret defaults (provider, models, paths, batch sizes, retries).
+- `.env`: secrets only.
 
 Precedence:
-1. Environment / `.env`
+1. CLI flags (where supported)
 2. `configs/config.json`
 3. Hardcoded fallback in code
 
@@ -81,31 +82,18 @@ Common flags:
 - `--repo-branch <branch>` override branch
 - `--use-current-repo` use current path and skip clone/update
 - `--update` update repo only, then exit
-- `--provider <ollama|chatgpt>` cron provider selection
+- `--provider <ollama|chatgpt>` optional cron provider override (otherwise uses `configs/config.json`)
 - `--install-ollama` install Ollama if missing
 - `--skip-apt-update` skip apt update
 - `--setup-cron` configure cron job
-- `--cron-schedule "<expr>"` cron schedule for selected provider
+- `--cron-schedule "<expr>"` cron schedule for the unified categorizer job
 
 Cron examples:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | \
-bash -s -- --provider ollama --install-ollama --setup-cron --cron-schedule "0 */6 * * *"
+bash -s -- --setup-cron --cron-schedule "0 */6 * * *"
 ```
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | \
-bash -s -- --provider chatgpt --setup-cron --cron-schedule "0 */6 * * *"
-```
-
-### Windows
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install\windows_setup_mealie.ps1
-```
-
-Optional flag: `-InstallOllama`
 
 ## Usage
 
@@ -142,16 +130,26 @@ python3 -m mealie_scripts.audit_taxonomy
 Categorize recipes:
 
 ```bash
-python3 -m mealie_scripts.recipe_categorizer_ollama
-python3 -m mealie_scripts.recipe_categorizer_chatgpt
+python3 -m mealie_scripts.recipe_categorizer
 ```
 
-Provider-specific modes:
+Installed command alias (after `pip install -e .`):
 
 ```bash
-python3 -m mealie_scripts.recipe_categorizer_chatgpt --missing-tags
-python3 -m mealie_scripts.recipe_categorizer_ollama --missing-categories
-python3 -m mealie_scripts.recipe_categorizer_chatgpt --recat
+mealie-categorizer
+```
+
+Provider selection:
+
+- Set `categorizer.provider` in `configs/config.json` to `ollama` or `chatgpt` (single source of truth).
+- Or override per command with `--provider`.
+
+Run modes:
+
+```bash
+python3 -m mealie_scripts.recipe_categorizer --missing-tags
+python3 -m mealie_scripts.recipe_categorizer --missing-categories
+python3 -m mealie_scripts.recipe_categorizer --recat
 ```
 
 ## Development
@@ -164,5 +162,5 @@ python3 -m pytest
 
 ## Notes
 
-- Use one provider in cron at a time.
-- Keep secrets only in `.env`; do not store them in `config.json`.
+- Default provider and model are controlled by `configs/config.json`.
+- Keep secrets only in `.env`; keep non-secret runtime settings in `configs/config.json`.

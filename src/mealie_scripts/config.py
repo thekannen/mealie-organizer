@@ -5,6 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 CONFIG_FILE = REPO_ROOT / "configs" / "config.json"
+DOTENV_SECRET_KEYS = {"MEALIE_API_KEY", "OPENAI_API_KEY"}
 
 
 def load_env_file(path):
@@ -15,7 +16,10 @@ def load_env_file(path):
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key = key.strip()
+        if key not in DOTENV_SECRET_KEYS:
+            continue
+        os.environ.setdefault(key, value.strip().strip('"').strip("'"))
 
 
 load_env_file(ENV_FILE)
@@ -39,11 +43,8 @@ def config_value(path, default=None):
     return current
 
 
-def env_or_config(env_key, config_path, default=None, cast=None):
-    raw = os.environ.get(env_key)
-    if raw is None or raw == "":
-        raw = config_value(config_path, default)
-
+def env_or_config(_env_key, config_path, default=None, cast=None):
+    raw = config_value(config_path, default)
     if raw is None:
         return None
 
@@ -53,7 +54,7 @@ def env_or_config(env_key, config_path, default=None, cast=None):
     try:
         return cast(raw)
     except Exception as exc:
-        raise ValueError(f"Invalid value for {env_key}: {raw}") from exc
+        raise ValueError(f"Invalid value for config '{config_path}': {raw}") from exc
 
 
 def secret(env_key, required=False, default=""):
