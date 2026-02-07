@@ -5,8 +5,7 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 ## Included
 
 - Taxonomy reset and import tools
-- Recipe categorization via Ollama
-- Recipe categorization via ChatGPT / OpenAI-compatible APIs
+- Recipe categorization via Ollama or ChatGPT / OpenAI-compatible APIs
 - Ubuntu and Windows setup scripts
 
 ## Structure
@@ -43,6 +42,15 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Then follow:
-- `scripts/install/README.md`
-- `scripts/python/mealie/README.md`
+## Provider Preference
+
+Pick one provider at a time:
+- `ollama` for local inference
+- `chatgpt` for OpenAI-compatible APIs
+
+Do not run both providers on cron simultaneously. The Ubuntu installer enforces a single provider when `--setup-cron` is used.
+
+## Documentation
+
+- Install and cron setup: `scripts/install/README.md`
+- Mealie script usage: `scripts/python/mealie/README.md`

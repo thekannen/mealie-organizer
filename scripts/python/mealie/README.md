@@ -47,6 +47,8 @@ Shared tuning:
 - `MAX_WORKERS`
 - optional `CACHE_FILE`
 
+Choose one provider for regular use (Ollama or ChatGPT), rather than scheduling both at the same time.
+
 ## Usage
 
 Reset taxonomy:
@@ -92,7 +94,7 @@ Categorize uncategorized recipes with ChatGPT:
 python3 scripts/python/mealie/recipe_categorizer_chatgpt.py
 ```
 
-Re-categorize all recipes:
+Re-categorize all recipes (choose one provider):
 
 ```bash
 python3 scripts/python/mealie/recipe_categorizer_ollama.py --recat

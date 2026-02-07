@@ -8,11 +8,11 @@ REPO_URL="https://github.com/thekannen/mealie-scripts.git"
 REPO_BRANCH="main"
 TARGET_DIR="$HOME/mealie-scripts"
 USE_CURRENT_REPO=false
+PROVIDER="ollama"
 INSTALL_OLLAMA=false
 SKIP_APT_UPDATE=false
 SETUP_CRON=false
-CRON_OLLAMA_SCHEDULE="15 2 * * *"
-CRON_CHATGPT_SCHEDULE=""
+CRON_SCHEDULE="15 2 * * *"
 
 usage() {
   cat <<USAGE
@@ -23,13 +23,12 @@ Options:
   --repo-branch <branch>       Repository branch to use (default: main).
   --target-dir <dir>           Target directory for cloned repo.
   --use-current-repo           Skip clone/update and use script's current repo.
+  --provider <ollama|chatgpt>  Provider preference for categorizer runs.
   --install-ollama             Install Ollama if missing.
   --skip-apt-update            Skip apt-get update.
   --setup-cron                 Install/update cron jobs.
-  --cron-ollama <schedule>     Cron schedule for Ollama categorizer.
-                               Default: "15 2 * * *"
-  --cron-chatgpt <schedule>    Cron schedule for ChatGPT categorizer.
-                               Empty means disabled.
+  --cron-schedule <schedule>   Cron schedule for selected provider.
+                               Default: "15 2 * * *" (empty disables cron job)
   -h, --help                   Show this help text.
 USAGE
 }
@@ -52,6 +51,10 @@ while [ $# -gt 0 ]; do
       USE_CURRENT_REPO=true
       shift
       ;;
+    --provider)
+      PROVIDER="$2"
+      shift 2
+      ;;
     --install-ollama)
       INSTALL_OLLAMA=true
       shift
@@ -64,12 +67,8 @@ while [ $# -gt 0 ]; do
       SETUP_CRON=true
       shift
       ;;
-    --cron-ollama)
-      CRON_OLLAMA_SCHEDULE="$2"
-      shift 2
-      ;;
-    --cron-chatgpt)
-      CRON_CHATGPT_SCHEDULE="$2"
+    --cron-schedule)
+      CRON_SCHEDULE="$2"
       shift 2
       ;;
     -h|--help)
@@ -83,6 +82,11 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ "$PROVIDER" != "ollama" ] && [ "$PROVIDER" != "chatgpt" ]; then
+  echo "[error] --provider must be either 'ollama' or 'chatgpt'."
+  exit 1
+fi
 
 if [ "$USE_CURRENT_REPO" = true ]; then
   REPO_ROOT="$DEFAULT_REPO_ROOT"
@@ -165,8 +169,18 @@ add_or_replace_cron_line() {
   local cron_tmp
 
   cron_tmp="$(mktemp)"
-  crontab -l 2>/dev/null | sed "/# ${label}\\$/d" | sed "/${label%% *}/d" > "$cron_tmp" || true
+  crontab -l 2>/dev/null | sed "/# ${label}\\$/d" > "$cron_tmp" || true
   printf '%s\n' "$line" >> "$cron_tmp"
+  crontab "$cron_tmp"
+  rm -f "$cron_tmp"
+}
+
+remove_cron_line() {
+  local label="$1"
+  local cron_tmp
+
+  cron_tmp="$(mktemp)"
+  crontab -l 2>/dev/null | sed "/# ${label}\\$/d" > "$cron_tmp" || true
   crontab "$cron_tmp"
   rm -f "$cron_tmp"
 }
@@ -179,18 +193,20 @@ setup_cron_jobs() {
   echo "[start] Configuring cron jobs"
   mkdir -p "$REPO_ROOT/logs"
 
-  if [ -n "$CRON_OLLAMA_SCHEDULE" ]; then
+  if [ "$PROVIDER" = "ollama" ] && [ -n "$CRON_SCHEDULE" ]; then
     add_or_replace_cron_line \
       "MEALIE_OLLAMA_CATEGORIZER" \
-      "$CRON_OLLAMA_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_ollama.py >> logs/cron_ollama.log 2>&1' # MEALIE_OLLAMA_CATEGORIZER"
-    echo "[ok] Cron job set for Ollama categorizer: $CRON_OLLAMA_SCHEDULE"
-  fi
-
-  if [ -n "$CRON_CHATGPT_SCHEDULE" ]; then
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_ollama.py >> logs/cron_ollama.log 2>&1' # MEALIE_OLLAMA_CATEGORIZER"
+    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
+    echo "[ok] Cron job set for Ollama categorizer: $CRON_SCHEDULE"
+  elif [ "$PROVIDER" = "chatgpt" ] && [ -n "$CRON_SCHEDULE" ]; then
     add_or_replace_cron_line \
       "MEALIE_CHATGPT_CATEGORIZER" \
-      "$CRON_CHATGPT_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_chatgpt.py >> logs/cron_chatgpt.log 2>&1' # MEALIE_CHATGPT_CATEGORIZER"
-    echo "[ok] Cron job set for ChatGPT categorizer: $CRON_CHATGPT_SCHEDULE"
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_chatgpt.py >> logs/cron_chatgpt.log 2>&1' # MEALIE_CHATGPT_CATEGORIZER"
+    remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
+    echo "[ok] Cron job set for ChatGPT categorizer: $CRON_SCHEDULE"
+  else
+    echo "[ok] Cron schedule empty; no categorizer job installed."
   fi
 
   echo "[ok] Current crontab entries:"

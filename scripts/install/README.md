@@ -19,15 +19,15 @@ curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scrip
 ```
 
 Optional flags:
-- `--install-ollama`: install Ollama if missing.
-- `--skip-apt-update`: skip `apt-get update`.
 - `--target-dir <dir>`: where to clone/update the repo (default: `$HOME/mealie-scripts`).
 - `--repo-url <url>`: override repository URL.
 - `--repo-branch <branch>`: override repository branch.
 - `--use-current-repo`: skip clone/update and use local repo path.
+- `--provider <ollama|chatgpt>`: choose one provider (default: `ollama`).
+- `--install-ollama`: install Ollama if missing.
+- `--skip-apt-update`: skip `apt-get update`.
 - `--setup-cron`: install/update cron jobs.
-- `--cron-ollama "<schedule>"`: cron schedule for Ollama categorizer.
-- `--cron-chatgpt "<schedule>"`: cron schedule for ChatGPT categorizer.
+- `--cron-schedule "<schedule>"`: cron schedule for selected provider.
 
 What it does:
 - Clones (or updates) the public repo into a target path
@@ -35,13 +35,21 @@ What it does:
 - Creates `.venv` if missing
 - Installs `requirements.txt`
 - Creates `.env` from `.env.example` if missing
-- Optionally configures cron jobs for recurring categorization runs
+- Optionally configures one cron job for the selected provider
+- If a cron job exists for the other provider, it is removed
 
 Cron example:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | \
-bash -s -- --install-ollama --setup-cron --cron-ollama "0 */6 * * *"
+bash -s -- --provider ollama --install-ollama --setup-cron --cron-schedule "0 */6 * * *"
+```
+
+ChatGPT cron example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | \
+bash -s -- --provider chatgpt --setup-cron --cron-schedule "0 */6 * * *"
 ```
 
 ## Windows
@@ -66,7 +74,7 @@ What it does:
 ## After install
 
 1. Edit `.env` with your Mealie and provider credentials.
-2. Run one of the categorizer scripts from repo root:
+2. Run one categorizer script from repo root (choose one provider):
 
 ```bash
 python3 scripts/python/mealie/recipe_categorizer_ollama.py
