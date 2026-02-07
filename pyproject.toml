@@ -17,6 +17,11 @@ dev = [
   "pytest>=8.0.0",
 ]
 
+[project.scripts]
+mealie-categorizer = "mealie_scripts.recipe_categorizer:main"
+mealie-taxonomy = "mealie_scripts.taxonomy_manager:main"
+mealie-taxonomy-audit = "mealie_scripts.audit_taxonomy:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

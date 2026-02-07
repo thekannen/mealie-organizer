@@ -24,6 +24,7 @@
     }
   },
   "categorizer": {
+    "provider": "ollama",
     "batch_size": 2,
     "max_workers": 3,
     "tag_max_name_length": 24,

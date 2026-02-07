@@ -9,7 +9,7 @@ REPO_BRANCH="main"
 TARGET_DIR="$HOME/mealie-scripts"
 USE_CURRENT_REPO=false
 UPDATE_ONLY=false
-PROVIDER="ollama"
+PROVIDER=""
 INSTALL_OLLAMA=false
 SKIP_APT_UPDATE=false
 SETUP_CRON=false
@@ -25,7 +25,7 @@ Options:
   --target-dir <dir>           Target directory for cloned repo.
   --use-current-repo           Skip clone/update and use script's current repo.
   --update                     Only update the repo from GitHub, then exit.
-  --provider <ollama|chatgpt>  Provider preference for categorizer runs.
+  --provider <ollama|chatgpt>  Override provider for cron run (default: config.json).
   --install-ollama             Install Ollama if missing.
   --skip-apt-update            Skip apt-get update.
   --setup-cron                 Install/update cron jobs.
@@ -89,7 +89,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$PROVIDER" != "ollama" ] && [ "$PROVIDER" != "chatgpt" ]; then
+if [ -n "$PROVIDER" ] && [ "$PROVIDER" != "ollama" ] && [ "$PROVIDER" != "chatgpt" ]; then
   echo "[error] --provider must be either 'ollama' or 'chatgpt'."
   exit 1
 fi
@@ -210,24 +210,29 @@ setup_cron_jobs() {
   echo "[start] Configuring cron jobs"
   mkdir -p "$REPO_ROOT/logs"
 
-  if [ "$PROVIDER" = "ollama" ] && [ -n "$CRON_SCHEDULE" ]; then
+  if [ -n "$CRON_SCHEDULE" ]; then
+    local provider_arg=""
+    local provider_note="config.json"
+    if [ -n "$PROVIDER" ]; then
+      provider_arg=" --provider $PROVIDER"
+      provider_note="$PROVIDER"
+    fi
+
     add_or_replace_cron_line \
-      "MEALIE_OLLAMA_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer_ollama >> logs/cron_ollama.log 2>&1' # MEALIE_OLLAMA_CATEGORIZER"
-    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
-    echo "[ok] Cron job set for Ollama categorizer: $CRON_SCHEDULE"
-  elif [ "$PROVIDER" = "chatgpt" ] && [ -n "$CRON_SCHEDULE" ]; then
-    add_or_replace_cron_line \
-      "MEALIE_CHATGPT_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer_chatgpt >> logs/cron_chatgpt.log 2>&1' # MEALIE_CHATGPT_CATEGORIZER"
+      "MEALIE_CATEGORIZER" \
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer${provider_arg} >> logs/cron_categorizer.log 2>&1' # MEALIE_CATEGORIZER"
     remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
-    echo "[ok] Cron job set for ChatGPT categorizer: $CRON_SCHEDULE"
+    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
+    echo "[ok] Cron job set for categorizer (provider=$provider_note): $CRON_SCHEDULE"
   else
-    echo "[ok] Cron schedule empty; no categorizer job installed."
+    remove_cron_line "MEALIE_CATEGORIZER"
+    remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
+    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
+    echo "[ok] Cron schedule empty; removed categorizer cron jobs."
   fi
 
   echo "[ok] Current crontab entries:"
-  crontab -l | rg 'MEALIE_.*_CATEGORIZER' || true
+  crontab -l | grep -E 'MEALIE(_.*)?_CATEGORIZER' || true
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -248,4 +253,4 @@ setup_cron_jobs
 
 echo "[done] Ubuntu setup complete"
 echo "Repo path: $REPO_ROOT"
-echo "Next: edit $REPO_ROOT/.env and run categorizer scripts."
+echo "Next: edit $REPO_ROOT/.env and run: python -m mealie_scripts.recipe_categorizer"
