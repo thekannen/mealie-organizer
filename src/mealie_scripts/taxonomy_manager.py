@@ -1,42 +1,16 @@
 import argparse
 import json
-import os
 import re
 from pathlib import Path
 
 import requests
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
+from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path
 
-DEFAULT_CATEGORIES = [
-    "Breakfast",
-    "Brunch",
-    "Lunch",
-    "Dinner",
-    "Snack",
-    "Appetizer",
-    "Side Dish",
-    "Soup",
-    "Salad",
-    "Dessert",
-    "Beverage",
-    "Sauce & Condiment",
-    "Comfort Food",
-    "Quick & Easy",
-    "Healthy",
-]
-
-
-def load_env_file(path):
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+DEFAULT_CATEGORIES_FILE = env_or_config(
+    "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
+)
+DEFAULT_TAGS_FILE = env_or_config("TAXONOMY_TAGS_FILE", "taxonomy.tags_file", "configs/taxonomy/tags.json")
 
 
 class MealieTaxonomyManager:
@@ -61,10 +35,7 @@ class MealieTaxonomyManager:
         return data.get("items", data)
 
     def get_recipes(self):
-        response = self.session.get(
-            f"{self.base_url}/recipes?perPage=999",
-            timeout=self.timeout,
-        )
+        response = self.session.get(f"{self.base_url}/recipes?perPage=999", timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
         return data.get("items", data)
@@ -200,9 +171,7 @@ class MealieTaxonomyManager:
 
 
 def resolve_input_path(path_value):
-    file_path = Path(path_value)
-    if not file_path.is_absolute():
-        file_path = REPO_ROOT / file_path
+    file_path = resolve_repo_path(path_value)
     if not file_path.exists():
         raise FileNotFoundError(f"Input JSON file not found: {file_path}")
     return file_path
@@ -251,26 +220,14 @@ def build_parser():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     reset_parser = subparsers.add_parser("reset", help="Reset and seed categories/tags.")
-    reset_parser.add_argument(
-        "--categories-file",
-        default="scripts/python/mealie/categories.json",
-        help="Category JSON input file.",
-    )
-    reset_parser.add_argument(
-        "--tags-file",
-        default="",
-        help="Tag JSON input file (optional).",
-    )
-    reset_parser.add_argument(
-        "--skip-tags",
-        action="store_true",
-        help="Only reset categories, skip tags.",
-    )
+    reset_parser.add_argument("--categories-file", default=DEFAULT_CATEGORIES_FILE, help="Category JSON input file.")
+    reset_parser.add_argument("--tags-file", default="", help="Tag JSON input file (optional).")
+    reset_parser.add_argument("--skip-tags", action="store_true", help="Only reset categories, skip tags.")
 
     import_parser = subparsers.add_parser("import", help="Import categories or tags from JSON.")
     import_parser.add_argument(
         "--file",
-        default="scripts/python/mealie/categories.json",
+        default=DEFAULT_CATEGORIES_FILE,
         help="Path to JSON file containing names or organizer objects.",
     )
     import_parser.add_argument(
@@ -279,16 +236,20 @@ def build_parser():
         default="categories",
         help="Organizer endpoint to import into.",
     )
-    import_parser.add_argument(
-        "--replace",
-        action="store_true",
-        help="Delete all existing items in endpoint before importing.",
-    )
+    import_parser.add_argument("--replace", action="store_true", help="Delete all existing items first.")
 
     cleanup_parser = subparsers.add_parser("cleanup", help="Cleanup low-value tags.")
     cleanup_parser.add_argument("--apply", action="store_true", help="Apply deletions.")
-    cleanup_parser.add_argument("--max-length", type=int, default=24)
-    cleanup_parser.add_argument("--min-usage", type=int, default=1)
+    cleanup_parser.add_argument(
+        "--max-length",
+        type=int,
+        default=env_or_config("CLEANUP_MAX_LENGTH", "taxonomy.cleanup.max_length", 24, int),
+    )
+    cleanup_parser.add_argument(
+        "--min-usage",
+        type=int,
+        default=env_or_config("CLEANUP_MIN_USAGE", "taxonomy.cleanup.min_usage", 1, int),
+    )
     cleanup_parser.add_argument("--delete-noisy", action="store_true")
     cleanup_parser.add_argument("--only-unused", action="store_true")
 
@@ -296,16 +257,8 @@ def build_parser():
         "refresh",
         help="Streamlined taxonomy lifecycle: reset/import + optional cleanup.",
     )
-    refresh_parser.add_argument(
-        "--categories-file",
-        default="scripts/python/mealie/categories.json",
-        help="Category JSON input file.",
-    )
-    refresh_parser.add_argument(
-        "--tags-file",
-        default="",
-        help="Tag JSON input file (optional).",
-    )
+    refresh_parser.add_argument("--categories-file", default=DEFAULT_CATEGORIES_FILE, help="Category JSON input file.")
+    refresh_parser.add_argument("--tags-file", default=DEFAULT_TAGS_FILE, help="Tag JSON input file (optional).")
     refresh_parser.add_argument(
         "--replace-categories",
         action="store_true",
@@ -316,11 +269,7 @@ def build_parser():
         action="store_true",
         help="Delete existing tags before importing tags file.",
     )
-    refresh_parser.add_argument(
-        "--cleanup",
-        action="store_true",
-        help="Run tag cleanup after import.",
-    )
+    refresh_parser.add_argument("--cleanup", action="store_true", help="Run tag cleanup after import.")
     refresh_parser.add_argument("--cleanup-apply", action="store_true", help="Apply cleanup deletes.")
     refresh_parser.add_argument("--cleanup-max-length", type=int, default=24)
     refresh_parser.add_argument("--cleanup-min-usage", type=int, default=1)
@@ -331,13 +280,10 @@ def build_parser():
 
 
 def main():
-    parser = build_parser()
-    args = parser.parse_args()
+    args = build_parser().parse_args()
 
-    load_env_file(ENV_FILE)
-    mealie_url = os.environ.get("MEALIE_URL", "http://your.server.ip.address:9000/api")
-    mealie_api_key = os.environ.get("MEALIE_API_KEY", "")
-
+    mealie_url = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api")
+    mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
 
@@ -345,10 +291,7 @@ def main():
 
     if args.command == "import":
         file_path, items = load_json_items(args.file)
-        print(
-            f"[start] Importing {len(items)} item(s) into {args.endpoint} "
-            f"from {file_path.relative_to(REPO_ROOT)}"
-        )
+        print(f"[start] Importing {len(items)} item(s) into {args.endpoint} from {file_path.relative_to(REPO_ROOT)}")
         manager.import_items(args.endpoint, items, replace=args.replace)
         return
 
@@ -403,7 +346,6 @@ def main():
             )
 
         print("[done] Refresh complete.")
-        return
 
 
 if __name__ == "__main__":

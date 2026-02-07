@@ -1,5 +1,4 @@
 import json
-import os
 import random
 import re
 import threading
@@ -9,24 +8,11 @@ from pathlib import Path
 
 import requests
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
-
-
-def load_env_file(path):
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+from .config import env_or_config
 
 
 def parse_json_response(result_text):
     cleaned = result_text.strip()
-    # Strip common markdown fences returned by some models.
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s*```$", "", cleaned)
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("'", '"')
@@ -69,8 +55,10 @@ class MealieCategorizer:
         self.target_mode = target_mode
         self.tag_max_name_length = tag_max_name_length
         self.tag_min_usage = tag_min_usage
-        self.query_retries = max(1, int(os.environ.get("QUERY_RETRIES", "3")))
-        self.query_retry_base_seconds = float(os.environ.get("QUERY_RETRY_BASE_SECONDS", "1.25"))
+        self.query_retries = max(1, env_or_config("QUERY_RETRIES", "categorizer.query_retries", 3, int))
+        self.query_retry_base_seconds = env_or_config(
+            "QUERY_RETRY_BASE_SECONDS", "categorizer.query_retry_base_seconds", 1.25, float
+        )
         self.headers = {
             "Authorization": f"Bearer {mealie_api_key}",
             "Content-Type": "application/json",
@@ -123,21 +111,18 @@ class MealieCategorizer:
         print()
 
     def get_all_recipes(self):
-        url = f"{self.mealie_url}/recipes?perPage=999"
-        response = requests.get(url, headers=self.headers, timeout=60)
+        response = requests.get(f"{self.mealie_url}/recipes?perPage=999", headers=self.headers, timeout=60)
         response.raise_for_status()
         return response.json().get("items", [])
 
     def get_all_categories(self):
-        url = f"{self.mealie_url}/organizers/categories"
-        response = requests.get(url, headers=self.headers, timeout=60)
+        response = requests.get(f"{self.mealie_url}/organizers/categories", headers=self.headers, timeout=60)
         response.raise_for_status()
         data = response.json()
         return data.get("items", data)
 
     def get_all_tags(self):
-        url = f"{self.mealie_url}/organizers/tags"
-        response = requests.get(url, headers=self.headers, timeout=60)
+        response = requests.get(f"{self.mealie_url}/organizers/tags", headers=self.headers, timeout=60)
         response.raise_for_status()
         data = response.json()
         return data.get("items", data)
@@ -220,9 +205,8 @@ Recipes:
         for recipe in recipes:
             for tag in recipe.get("tags") or []:
                 name = (tag.get("name") or "").strip()
-                if not name:
-                    continue
-                usage[name] = usage.get(name, 0) + 1
+                if name:
+                    usage[name] = usage.get(name, 0) + 1
         return usage
 
     def filter_tag_candidates(self, tags, recipes):
@@ -238,13 +222,7 @@ Recipes:
             too_rare = self.tag_min_usage > 0 and count < self.tag_min_usage
             noisy_name = any(
                 phrase in name.lower()
-                for phrase in (
-                    "how to make",
-                    "recipe",
-                    "without drippings",
-                    "from drippings",
-                    "from scratch",
-                )
+                for phrase in ("how to make", "recipe", "without drippings", "from drippings", "from scratch")
             )
             if too_long or too_rare or noisy_name:
                 excluded.append((name, count))
@@ -253,36 +231,29 @@ Recipes:
 
         if excluded:
             preview = ", ".join(f"{name}({count})" for name, count in sorted(excluded)[:10])
-            print(
-                f"[info] Excluding {len(excluded)} low-quality tag candidates from prompting: {preview}"
-            )
+            print(f"[info] Excluding {len(excluded)} low-quality tag candidates from prompting: {preview}")
 
         return sorted(set(candidate_names))
 
     def select_targets(self, all_recipes):
         if self.replace_existing:
             return all_recipes
-
         if self.target_mode == "missing-categories":
-            return [recipe for recipe in all_recipes if not (recipe.get("recipeCategory") or [])]
+            return [r for r in all_recipes if not (r.get("recipeCategory") or [])]
         if self.target_mode == "missing-tags":
-            return [recipe for recipe in all_recipes if not (recipe.get("tags") or [])]
-
+            return [r for r in all_recipes if not (r.get("tags") or [])]
         return [
-            recipe
-            for recipe in all_recipes
-            if not (recipe.get("recipeCategory") or []) or not (recipe.get("tags") or [])
+            r
+            for r in all_recipes
+            if not (r.get("recipeCategory") or []) or not (r.get("tags") or [])
         ]
 
     def ensure_tags_for_entries(self, entries, recipes_by_slug, tag_names):
         missing_slugs = []
         for entry in entries:
             slug = (entry.get("slug") or "").strip()
-            if not slug or slug not in recipes_by_slug:
-                continue
-            if entry.get("tags"):
-                continue
-            missing_slugs.append(slug)
+            if slug and slug in recipes_by_slug and not entry.get("tags"):
+                missing_slugs.append(slug)
 
         if not missing_slugs:
             return
@@ -294,8 +265,7 @@ Recipes:
                 seen.add(slug)
                 deduped.append(recipes_by_slug[slug])
 
-        prompt = self.make_tag_prompt(deduped, tag_names)
-        tag_results = self.safe_query_with_retry(prompt)
+        tag_results = self.safe_query_with_retry(self.make_tag_prompt(deduped, tag_names))
         if not isinstance(tag_results, list):
             return
 
@@ -318,7 +288,6 @@ Recipes:
 
         cat_slugs = {c.get("slug") for c in existing_categories}
         tag_slugs = {t.get("slug") for t in existing_tags}
-
         updated_categories = list(existing_categories)
         updated_tags = list(existing_tags)
 
@@ -358,8 +327,12 @@ Recipes:
         if tags_changed:
             payload["tags"] = updated_tags
 
-        url = f"{self.mealie_url}/recipes/{recipe_slug}"
-        response = requests.patch(url, headers=self.headers, json=payload, timeout=60)
+        response = requests.patch(
+            f"{self.mealie_url}/recipes/{recipe_slug}",
+            headers=self.headers,
+            json=payload,
+            timeout=60,
+        )
         if response.status_code != 200:
             print(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
             return False
@@ -396,8 +369,7 @@ Recipes:
             if not batch:
                 return
 
-        prompt = self.make_prompt(batch, category_names, tag_names)
-        parsed = self.safe_query_with_retry(prompt)
+        parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names))
         if not parsed:
             print("[warn] Batch failed parsing after retries.")
             self.advance_progress(len(batch))
@@ -410,7 +382,6 @@ Recipes:
 
         recipes_by_slug = {r.get("slug"): r for r in batch if r.get("slug")}
         processed = set()
-
         self.ensure_tags_for_entries(parsed, recipes_by_slug, tag_names)
 
         for entry in parsed:
@@ -421,6 +392,7 @@ Recipes:
             if not recipe:
                 print(f"[warn] Ignoring unknown slug from model: {slug}")
                 continue
+
             categories = entry.get("categories") or []
             tags_field = entry.get("tags")
             if tags_field is None:
@@ -431,6 +403,7 @@ Recipes:
                 tags = tags_field
             else:
                 tags = []
+
             self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
             processed.add(slug)
 

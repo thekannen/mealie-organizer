@@ -1,45 +1,21 @@
 import argparse
 import json
-import os
 import re
-from pathlib import Path
 
 import requests
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
-
-
-def load_env_file(path):
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Audit Mealie category/tag quality and usage.")
     parser.add_argument(
         "--output",
-        default="scripts/python/mealie/taxonomy_audit_report.json",
+        default=env_or_config("TAXONOMY_AUDIT_OUTPUT", "taxonomy.audit_report", "reports/taxonomy_audit_report.json"),
         help="Output file path for audit report JSON.",
     )
-    parser.add_argument(
-        "--long-tag-threshold",
-        type=int,
-        default=24,
-        help="Tag name length considered too long.",
-    )
-    parser.add_argument(
-        "--min-useful-usage",
-        type=int,
-        default=2,
-        help="Minimum usage count to consider a tag well-used.",
-    )
+    parser.add_argument("--long-tag-threshold", type=int, default=24)
+    parser.add_argument("--min-useful-usage", type=int, default=2)
     return parser.parse_args()
 
 
@@ -95,10 +71,9 @@ def find_similar_tags(tags):
 
 def main():
     args = parse_args()
-    load_env_file(ENV_FILE)
 
-    mealie_url = os.environ.get("MEALIE_URL", "").rstrip("/")
-    mealie_api_key = os.environ.get("MEALIE_API_KEY", "")
+    mealie_url = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api").rstrip("/")
+    mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_url or not mealie_api_key:
         raise RuntimeError("MEALIE_URL and MEALIE_API_KEY are required in environment or .env")
 
@@ -136,12 +111,7 @@ def main():
             if name in tag_usage:
                 tag_usage[name] += 1
 
-    problematic_tags = detect_problematic_tags(
-        tag_usage=tag_usage,
-        long_threshold=args.long_tag_threshold,
-        min_useful_usage=args.min_useful_usage,
-    )
-
+    problematic_tags = detect_problematic_tags(tag_usage, args.long_tag_threshold, args.min_useful_usage)
     similar_tag_groups = find_similar_tags(tags)
 
     report = {
@@ -172,9 +142,7 @@ def main():
         ],
     }
 
-    output_path = Path(args.output)
-    if not output_path.is_absolute():
-        output_path = REPO_ROOT / output_path
+    output_path = resolve_repo_path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 

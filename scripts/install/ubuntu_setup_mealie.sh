@@ -213,13 +213,13 @@ setup_cron_jobs() {
   if [ "$PROVIDER" = "ollama" ] && [ -n "$CRON_SCHEDULE" ]; then
     add_or_replace_cron_line \
       "MEALIE_OLLAMA_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_ollama.py >> logs/cron_ollama.log 2>&1' # MEALIE_OLLAMA_CATEGORIZER"
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer_ollama >> logs/cron_ollama.log 2>&1' # MEALIE_OLLAMA_CATEGORIZER"
     remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
     echo "[ok] Cron job set for Ollama categorizer: $CRON_SCHEDULE"
   elif [ "$PROVIDER" = "chatgpt" ] && [ -n "$CRON_SCHEDULE" ]; then
     add_or_replace_cron_line \
       "MEALIE_CHATGPT_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python scripts/python/mealie/recipe_categorizer_chatgpt.py >> logs/cron_chatgpt.log 2>&1' # MEALIE_CHATGPT_CATEGORIZER"
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer_chatgpt >> logs/cron_chatgpt.log 2>&1' # MEALIE_CHATGPT_CATEGORIZER"
     remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
     echo "[ok] Cron job set for ChatGPT categorizer: $CRON_SCHEDULE"
   else

@@ -1,36 +1,30 @@
 import argparse
-import os
 import random
 import time
 
 import requests
 
-from .categorizer_core import REPO_ROOT, load_env_file, MealieCategorizer
+from .categorizer_core import MealieCategorizer
+from .config import env_or_config, secret
 
-load_env_file(REPO_ROOT / ".env")
-
-MEALIE_URL = os.environ.get("MEALIE_URL", "http://your.server.ip.address:9000/api")
-MEALIE_API_KEY = os.environ.get("MEALIE_API_KEY", "")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "2"))
-MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "3"))
-CACHE_FILE = os.environ.get("CACHE_FILE", str(REPO_ROOT / "cache" / "results_chatgpt.json"))
-TAG_MAX_NAME_LENGTH = int(os.environ.get("TAG_MAX_NAME_LENGTH", "24"))
-TAG_MIN_USAGE = int(os.environ.get("TAG_MIN_USAGE", "0"))
-OPENAI_REQUEST_TIMEOUT = int(os.environ.get("OPENAI_REQUEST_TIMEOUT", "120"))
-OPENAI_HTTP_RETRIES = max(1, int(os.environ.get("OPENAI_HTTP_RETRIES", "3")))
+MEALIE_URL = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api")
+MEALIE_API_KEY = secret("MEALIE_API_KEY")
+OPENAI_API_KEY = secret("OPENAI_API_KEY")
+OPENAI_BASE_URL = env_or_config("OPENAI_BASE_URL", "providers.chatgpt.base_url", "https://api.openai.com/v1")
+OPENAI_MODEL = env_or_config("OPENAI_MODEL", "providers.chatgpt.model", "gpt-4o-mini")
+BATCH_SIZE = env_or_config("BATCH_SIZE", "categorizer.batch_size", 2, int)
+MAX_WORKERS = env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int)
+CACHE_FILE = env_or_config("CACHE_FILE", "categorizer.cache_files.chatgpt", "cache/results_chatgpt.json")
+TAG_MAX_NAME_LENGTH = env_or_config("TAG_MAX_NAME_LENGTH", "categorizer.tag_max_name_length", 24, int)
+TAG_MIN_USAGE = env_or_config("TAG_MIN_USAGE", "categorizer.tag_min_usage", 0, int)
+OPENAI_REQUEST_TIMEOUT = env_or_config("OPENAI_REQUEST_TIMEOUT", "providers.chatgpt.request_timeout", 120, int)
+OPENAI_HTTP_RETRIES = max(1, env_or_config("OPENAI_HTTP_RETRIES", "providers.chatgpt.http_retries", 3, int))
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Categorize Mealie recipes using ChatGPT.")
     parser.add_argument("--recat", action="store_true", help="Re-categorize all recipes.")
-    parser.add_argument(
-        "--missing-tags",
-        action="store_true",
-        help="Only process recipes missing tags.",
-    )
+    parser.add_argument("--missing-tags", action="store_true", help="Only process recipes missing tags.")
     parser.add_argument(
         "--missing-categories",
         action="store_true",
@@ -67,12 +61,7 @@ def query_chatgpt(prompt_text):
 
     for attempt in range(OPENAI_HTTP_RETRIES):
         try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=OPENAI_REQUEST_TIMEOUT,
-            )
+            response = requests.post(url, headers=headers, json=payload, timeout=OPENAI_REQUEST_TIMEOUT)
             if response.status_code == 429 or 500 <= response.status_code < 600:
                 retry_after = response.headers.get("Retry-After")
                 wait_for = float(retry_after) if retry_after and retry_after.isdigit() else (1.5 * (2**attempt))
@@ -99,7 +88,6 @@ def query_chatgpt(prompt_text):
             else:
                 break
         except (ValueError, KeyError, TypeError) as exc:
-            # Malformed response is usually non-transient for this request payload.
             print(f"[error] ChatGPT response parse error: {exc}")
             return None
 

@@ -4,3 +4,5 @@ __pycache__/
 *.py[cod]
 cache/
 *.log
+.pytest_cache/
+reports/

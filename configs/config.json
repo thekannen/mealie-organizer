@@ -1,0 +1,47 @@
+{
+  "mealie": {
+    "url": "http://your.server.ip.address:9000/api"
+  },
+  "providers": {
+    "chatgpt": {
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "request_timeout": 120,
+      "http_retries": 3
+    },
+    "ollama": {
+      "url": "http://localhost:11434/api",
+      "model": "mistral:7b",
+      "request_timeout": 180,
+      "http_retries": 3,
+      "options": {
+        "num_ctx": 1024,
+        "temperature": 0.1,
+        "num_predict": 96,
+        "top_p": 0.8,
+        "num_thread": 8
+      }
+    }
+  },
+  "categorizer": {
+    "batch_size": 2,
+    "max_workers": 3,
+    "tag_max_name_length": 24,
+    "tag_min_usage": 0,
+    "query_retries": 3,
+    "query_retry_base_seconds": 1.25,
+    "cache_files": {
+      "chatgpt": "cache/results_chatgpt.json",
+      "ollama": "cache/results_ollama.json"
+    }
+  },
+  "taxonomy": {
+    "categories_file": "configs/taxonomy/categories.json",
+    "tags_file": "configs/taxonomy/tags.json",
+    "audit_report": "reports/taxonomy_audit_report.json",
+    "cleanup": {
+      "max_length": 24,
+      "min_usage": 1
+    }
+  }
+}
