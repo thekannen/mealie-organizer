@@ -39,6 +39,7 @@ if (-not (Test-Path ".venv")) {
 Write-Host "[start] Installing Python dependencies"
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+& .\.venv\Scripts\python.exe -m pip install -e .
 
 if (-not (Test-Path ".env")) {
     Copy-Item .env.example .env

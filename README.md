@@ -12,6 +12,17 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 
 ```text
 .
+├── src/
+│   └── mealie_scripts/
+│       ├── __init__.py
+│       ├── audit_taxonomy.py
+│       ├── categorizer_core.py
+│       ├── recipe_categorizer_chatgpt.py
+│       ├── recipe_categorizer_ollama.py
+│       └── taxonomy_manager.py
+├── tests/
+│   ├── test_categorizer_core.py
+│   └── test_taxonomy_manager.py
 ├── scripts/
 │   ├── install/
 │   │   ├── README.md
@@ -32,6 +43,7 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │           └── taxonomy_manager.py
 ├── .env.example
 ├── .gitignore
+├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```
@@ -42,6 +54,7 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .[dev]
 cp .env.example .env
 ```
 

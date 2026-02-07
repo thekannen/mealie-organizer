@@ -1,6 +1,7 @@
 # Mealie Scripts
 
 Scripts in this folder manage Mealie taxonomy and recipe categorization using either Ollama or ChatGPT.
+Core implementation now lives in `src/mealie_scripts/`; scripts in this folder are CLI entrypoints and compatibility wrappers.
 
 ## Files
 
@@ -23,6 +24,7 @@ Run from repository root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .[dev]
 cp .env.example .env
 ```
 

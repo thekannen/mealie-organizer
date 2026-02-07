@@ -35,6 +35,7 @@ What it does:
 - Installs core packages (`python3`, `python3-venv`, `python3-pip`, `curl`)
 - Creates `.venv` if missing
 - Installs `requirements.txt`
+- Installs package in editable mode (`pip install -e .`)
 - Creates `.env` from `.env.example` if missing
 - Optionally configures one cron job for the selected provider
 - If a cron job exists for the other provider, it is removed
