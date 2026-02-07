@@ -13,6 +13,7 @@ Scripts in this folder manage Mealie taxonomy and recipe categorization using ei
 - `recipe_categorizer_chatgpt.py`: categorizes recipes using ChatGPT/OpenAI-compatible API.
 - `categorizer_core.py`: shared categorization engine used by both provider scripts.
 - `categories.json`: sample category import data.
+- `tags.json`: sample tag import data.
 
 ## Setup
 
@@ -83,7 +84,7 @@ Import tags from JSON:
 
 ```bash
 python3 scripts/python/mealie/taxonomy_manager.py import \
-  --file /path/to/your/tags.json \
+  --file scripts/python/mealie/tags.json \
   --endpoint tags
 ```
 
