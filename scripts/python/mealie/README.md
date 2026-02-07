@@ -28,6 +28,12 @@ Prefer automated install scripts when possible:
 - Windows: `scripts/install/windows_setup_mealie.ps1`
 - Full install docs: `scripts/install/README.md`
 
+Direct Ubuntu bootstrap from server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | bash
+```
+
 Fill required values in `.env`:
 - `MEALIE_URL`
 - `MEALIE_API_KEY`
