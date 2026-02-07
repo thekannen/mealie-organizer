@@ -253,4 +253,10 @@ setup_cron_jobs
 
 echo "[done] Ubuntu setup complete"
 echo "Repo path: $REPO_ROOT"
-echo "Next: edit $REPO_ROOT/.env and run: python -m mealie_scripts.recipe_categorizer"
+echo "Next:"
+echo "  1) Set secrets in $REPO_ROOT/.env"
+echo "  2) Set non-secret config in $REPO_ROOT/configs/config.json (including mealie.url)"
+echo "  3) Run categorizer:"
+echo "     cd \"$REPO_ROOT\" && . .venv/bin/activate && mealie-categorizer"
+echo "     # or without activating venv:"
+echo "     $REPO_ROOT/.venv/bin/mealie-categorizer"
