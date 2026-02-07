@@ -6,11 +6,12 @@ Scripts in this folder manage Mealie taxonomy and recipe categorization using ei
 
 - `reset_mealie_taxonomy.py`: wipes and reseeds categories/tags.
 - `import_categories.py`: imports categories or tags from JSON files.
+- `audit_taxonomy.py`: audits category/tag quality and usage and writes a report.
+- `cleanup_tags.py`: dry-run/apply cleanup for low-value tags.
 - `recipe_categorizer_ollama.py`: categorizes recipes using Ollama.
 - `recipe_categorizer_chatgpt.py`: categorizes recipes using ChatGPT/OpenAI-compatible API.
 - `categorizer_core.py`: shared categorization engine used by both provider scripts.
 - `categories.json`: sample category import data.
-- `tags.json`: sample tag import data.
 
 ## Setup
 
@@ -46,6 +47,8 @@ Shared tuning:
 - `BATCH_SIZE`
 - `MAX_WORKERS`
 - optional `CACHE_FILE`
+- `TAG_MAX_NAME_LENGTH` (default `24`, excludes longer tags from AI assignment prompts)
+- `TAG_MIN_USAGE` (default `0`, can exclude low-usage tags from AI assignment prompts)
 
 Choose one provider for regular use (Ollama or ChatGPT), rather than scheduling both at the same time.
 
@@ -69,8 +72,26 @@ Import tags from JSON:
 
 ```bash
 python3 scripts/python/mealie/import_categories.py \
-  --file scripts/python/mealie/tags.json \
+  --file /path/to/your/tags.json \
   --endpoint tags
+```
+
+Audit taxonomy quality/usage:
+
+```bash
+python3 scripts/python/mealie/audit_taxonomy.py
+```
+
+Preview tag cleanup candidates:
+
+```bash
+python3 scripts/python/mealie/cleanup_tags.py --only-unused --delete-noisy
+```
+
+Apply cleanup (deletes tags in Mealie):
+
+```bash
+python3 scripts/python/mealie/cleanup_tags.py --only-unused --delete-noisy --apply
 ```
 
 Replace existing categories before importing:
@@ -82,16 +103,30 @@ python3 scripts/python/mealie/import_categories.py \
   --replace
 ```
 
-Categorize uncategorized recipes with Ollama:
+Categorize recipes missing categories or tags with Ollama (default mode):
 
 ```bash
 python3 scripts/python/mealie/recipe_categorizer_ollama.py
 ```
 
-Categorize uncategorized recipes with ChatGPT:
+Categorize recipes missing categories or tags with ChatGPT (default mode):
 
 ```bash
 python3 scripts/python/mealie/recipe_categorizer_chatgpt.py
+```
+
+Only fill missing tags:
+
+```bash
+python3 scripts/python/mealie/recipe_categorizer_ollama.py --missing-tags
+python3 scripts/python/mealie/recipe_categorizer_chatgpt.py --missing-tags
+```
+
+Only fill missing categories:
+
+```bash
+python3 scripts/python/mealie/recipe_categorizer_ollama.py --missing-categories
+python3 scripts/python/mealie/recipe_categorizer_chatgpt.py --missing-categories
 ```
 
 Re-categorize all recipes (choose one provider):

@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -51,6 +52,9 @@ class MealieCategorizer:
         cache_file,
         query_text,
         provider_name,
+        target_mode="missing-either",
+        tag_max_name_length=24,
+        tag_min_usage=0,
     ):
         self.mealie_url = mealie_url.rstrip("/")
         self.batch_size = batch_size
@@ -59,6 +63,9 @@ class MealieCategorizer:
         self.cache_file = Path(cache_file)
         self.query_text = query_text
         self.provider_name = provider_name
+        self.target_mode = target_mode
+        self.tag_max_name_length = tag_max_name_length
+        self.tag_min_usage = tag_min_usage
         self.headers = {
             "Authorization": f"Bearer {mealie_api_key}",
             "Content-Type": "application/json",
@@ -196,8 +203,70 @@ Recipes:
                 if parsed:
                     return parsed
             print(f"[warn] Retry {attempt + 1}/{retries} failed.")
-            time.sleep(1)
+            if attempt < retries - 1:
+                sleep_for = (2**attempt) + random.uniform(0, 0.5)
+                time.sleep(sleep_for)
         return None
+
+    @staticmethod
+    def build_tag_usage(recipes):
+        usage = {}
+        for recipe in recipes:
+            for tag in recipe.get("tags") or []:
+                name = (tag.get("name") or "").strip()
+                if not name:
+                    continue
+                usage[name] = usage.get(name, 0) + 1
+        return usage
+
+    def filter_tag_candidates(self, tags, recipes):
+        usage = self.build_tag_usage(recipes)
+        candidate_names = []
+        excluded = []
+        for tag in tags:
+            name = (tag.get("name") or "").strip()
+            if not name:
+                continue
+            count = usage.get(name, 0)
+            too_long = self.tag_max_name_length > 0 and len(name) > self.tag_max_name_length
+            too_rare = self.tag_min_usage > 0 and count < self.tag_min_usage
+            noisy_name = any(
+                phrase in name.lower()
+                for phrase in (
+                    "how to make",
+                    "recipe",
+                    "without drippings",
+                    "from drippings",
+                    "from scratch",
+                )
+            )
+            if too_long or too_rare or noisy_name:
+                excluded.append((name, count))
+                continue
+            candidate_names.append(name)
+
+        if excluded:
+            preview = ", ".join(f"{name}({count})" for name, count in sorted(excluded)[:10])
+            print(
+                f"[info] Excluding {len(excluded)} low-quality tag candidates from prompting: {preview}"
+            )
+
+        return sorted(set(candidate_names))
+
+    def select_targets(self, all_recipes):
+        if self.replace_existing:
+            return all_recipes
+
+        if self.target_mode == "missing-categories":
+            return [recipe for recipe in all_recipes if not (recipe.get("recipeCategory") or [])]
+        if self.target_mode == "missing-tags":
+            return [recipe for recipe in all_recipes if not (recipe.get("tags") or [])]
+
+        return [
+            recipe
+            for recipe in all_recipes
+            if not (recipe.get("recipeCategory") or []) or not (recipe.get("tags") or [])
+        ]
 
     def ensure_tags_for_entries(self, entries, recipes_by_slug, tag_names):
         missing_slugs = []
@@ -366,7 +435,15 @@ Recipes:
         self.advance_progress(len(recipes_by_slug))
 
     def run(self):
-        mode = "RE-CATEGORIZATION (All Recipes)" if self.replace_existing else "Categorize Only Uncategorized"
+        mode = (
+            "RE-CATEGORIZATION (All Recipes)"
+            if self.replace_existing
+            else {
+                "missing-categories": "Categorize Missing Categories",
+                "missing-tags": "Tag Missing Tags",
+                "missing-either": "Categorize/Tag Missing Categories Or Tags",
+            }.get(self.target_mode, "Categorize/Tag Missing Categories Or Tags")
+        )
         print(f"[start] Mode: {mode}")
         print(f"[start] Provider: {self.provider_name}")
 
@@ -377,9 +454,12 @@ Recipes:
         categories_by_name = {c.get("name", "").strip().lower(): c for c in categories if c.get("name")}
         tags_by_name = {t.get("name", "").strip().lower(): t for t in tags if t.get("name")}
         category_names = sorted(name for name in {c.get("name", "").strip() for c in categories} if name)
-        tag_names = sorted(name for name in {t.get("name", "").strip() for t in tags} if name)
+        tag_names = self.filter_tag_candidates(tags, all_recipes)
+        if not tag_names:
+            tag_names = sorted(name for name in {t.get("name", "").strip() for t in tags} if name)
+            print("[warn] Tag candidate filtering removed everything; using full tag list.")
 
-        targets = all_recipes if self.replace_existing else [r for r in all_recipes if not r.get("recipeCategory")]
+        targets = self.select_targets(all_recipes)
         print(f"Found {len(targets)} recipes to process.")
 
         self.set_progress_total(len(targets))

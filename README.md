@@ -20,8 +20,9 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │   └── python/
 │       └── mealie/
 │           ├── README.md
+│           ├── audit_taxonomy.py
 │           ├── categories.json
-│           ├── tags.json
+│           ├── cleanup_tags.py
 │           ├── categorizer_core.py
 │           ├── import_categories.py
 │           ├── recipe_categorizer_chatgpt.py

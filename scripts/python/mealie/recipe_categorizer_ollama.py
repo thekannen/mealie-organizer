@@ -1,6 +1,6 @@
+import argparse
 import json
 import os
-import sys
 
 import requests
 
@@ -14,8 +14,35 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "mistral:7b")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "2"))
 MAX_WORKERS = int(os.environ.get("MAX_WORKERS", "3"))
-REPLACE_EXISTING = "--recat" in sys.argv
 CACHE_FILE = os.environ.get("CACHE_FILE", str(REPO_ROOT / "cache" / "results_ollama.json"))
+TAG_MAX_NAME_LENGTH = int(os.environ.get("TAG_MAX_NAME_LENGTH", "24"))
+TAG_MIN_USAGE = int(os.environ.get("TAG_MIN_USAGE", "0"))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Categorize Mealie recipes using Ollama.")
+    parser.add_argument("--recat", action="store_true", help="Re-categorize all recipes.")
+    parser.add_argument(
+        "--missing-tags",
+        action="store_true",
+        help="Only process recipes missing tags.",
+    )
+    parser.add_argument(
+        "--missing-categories",
+        action="store_true",
+        help="Only process recipes missing categories.",
+    )
+    return parser.parse_args()
+
+
+def derive_target_mode(args):
+    if args.missing_tags and args.missing_categories:
+        return "missing-either"
+    if args.missing_tags:
+        return "missing-tags"
+    if args.missing_categories:
+        return "missing-categories"
+    return "missing-either"
 
 
 def query_ollama(prompt_text):
@@ -56,6 +83,7 @@ def query_ollama(prompt_text):
 
 
 def main():
+    args = parse_args()
     if not MEALIE_API_KEY:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
 
@@ -64,10 +92,13 @@ def main():
         mealie_api_key=MEALIE_API_KEY,
         batch_size=BATCH_SIZE,
         max_workers=MAX_WORKERS,
-        replace_existing=REPLACE_EXISTING,
+        replace_existing=args.recat,
         cache_file=CACHE_FILE,
         query_text=query_ollama,
         provider_name=f"Ollama ({OLLAMA_MODEL})",
+        target_mode=derive_target_mode(args),
+        tag_max_name_length=TAG_MAX_NAME_LENGTH,
+        tag_min_usage=TAG_MIN_USAGE,
     )
     categorizer.run()
 
