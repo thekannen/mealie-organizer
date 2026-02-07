@@ -4,10 +4,11 @@ Scripts in this folder manage Mealie taxonomy and recipe categorization using ei
 
 ## Files
 
-- `reset_mealie_taxonomy.py`: wipes and reseeds categories/tags.
-- `import_categories.py`: imports categories or tags from JSON files.
+- `taxonomy_manager.py`: consolidated taxonomy lifecycle manager (reset/import/cleanup/refresh).
+- `reset_mealie_taxonomy.py`: compatibility wrapper for taxonomy reset.
+- `import_categories.py`: compatibility wrapper for taxonomy import.
 - `audit_taxonomy.py`: audits category/tag quality and usage and writes a report.
-- `cleanup_tags.py`: dry-run/apply cleanup for low-value tags.
+- `cleanup_tags.py`: compatibility wrapper for tag cleanup.
 - `recipe_categorizer_ollama.py`: categorizes recipes using Ollama.
 - `recipe_categorizer_chatgpt.py`: categorizes recipes using ChatGPT/OpenAI-compatible API.
 - `categorizer_core.py`: shared categorization engine used by both provider scripts.
@@ -54,16 +55,26 @@ Choose one provider for regular use (Ollama or ChatGPT), rather than scheduling 
 
 ## Usage
 
+Recommended: streamlined taxonomy refresh (single command):
+
+```bash
+python3 scripts/python/mealie/taxonomy_manager.py refresh \
+  --categories-file scripts/python/mealie/categories.json \
+  --replace-categories \
+  --cleanup --cleanup-only-unused --cleanup-delete-noisy
+```
+
 Reset taxonomy:
 
 ```bash
-python3 scripts/python/mealie/reset_mealie_taxonomy.py
+python3 scripts/python/mealie/taxonomy_manager.py reset \
+  --categories-file scripts/python/mealie/categories.json
 ```
 
 Import categories from JSON:
 
 ```bash
-python3 scripts/python/mealie/import_categories.py \
+python3 scripts/python/mealie/taxonomy_manager.py import \
   --file scripts/python/mealie/categories.json \
   --endpoint categories
 ```
@@ -71,7 +82,7 @@ python3 scripts/python/mealie/import_categories.py \
 Import tags from JSON:
 
 ```bash
-python3 scripts/python/mealie/import_categories.py \
+python3 scripts/python/mealie/taxonomy_manager.py import \
   --file /path/to/your/tags.json \
   --endpoint tags
 ```
@@ -85,19 +96,19 @@ python3 scripts/python/mealie/audit_taxonomy.py
 Preview tag cleanup candidates:
 
 ```bash
-python3 scripts/python/mealie/cleanup_tags.py --only-unused --delete-noisy
+python3 scripts/python/mealie/taxonomy_manager.py cleanup --only-unused --delete-noisy
 ```
 
 Apply cleanup (deletes tags in Mealie):
 
 ```bash
-python3 scripts/python/mealie/cleanup_tags.py --only-unused --delete-noisy --apply
+python3 scripts/python/mealie/taxonomy_manager.py cleanup --only-unused --delete-noisy --apply
 ```
 
 Replace existing categories before importing:
 
 ```bash
-python3 scripts/python/mealie/import_categories.py \
+python3 scripts/python/mealie/taxonomy_manager.py import \
   --file scripts/python/mealie/categories.json \
   --endpoint categories \
   --replace
@@ -141,3 +152,4 @@ python3 scripts/python/mealie/recipe_categorizer_chatgpt.py --recat
 - Run scripts from repo root to keep `.env` and cache paths consistent.
 - Default provider caches are separate (`results_ollama.json`, `results_chatgpt.json`).
 - These scripts call live Mealie APIs; test with caution on production data.
+- Legacy scripts (`reset_mealie_taxonomy.py`, `import_categories.py`, `cleanup_tags.py`) now delegate to `taxonomy_manager.py`.

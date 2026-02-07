@@ -27,7 +27,8 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │           ├── import_categories.py
 │           ├── recipe_categorizer_chatgpt.py
 │           ├── recipe_categorizer_ollama.py
-│           └── reset_mealie_taxonomy.py
+│           ├── reset_mealie_taxonomy.py
+│           └── taxonomy_manager.py
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
