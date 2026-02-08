@@ -1,20 +1,11 @@
 {
-  "runtime": {
-    "dry_run": false
-  },
-  "mealie": {
-    "url": "http://your.server.ip.address:9000/api"
-  },
   "providers": {
     "chatgpt": {
       "base_url": "https://api.openai.com/v1",
-      "model": "gpt-4o-mini",
       "request_timeout": 120,
       "http_retries": 3
     },
     "ollama": {
-      "url": "http://localhost:11434/api",
-      "model": "mistral:7b",
       "request_timeout": 180,
       "http_retries": 3,
       "options": {
@@ -27,7 +18,6 @@
     }
   },
   "categorizer": {
-    "provider": "ollama",
     "batch_size": 2,
     "max_workers": 3,
     "tag_max_name_length": 24,
@@ -42,6 +32,7 @@
   "taxonomy": {
     "categories_file": "configs/taxonomy/categories.json",
     "tags_file": "configs/taxonomy/tags.json",
+    "cookbooks_file": "configs/taxonomy/cookbooks.json",
     "audit_report": "reports/taxonomy_audit_report.json",
     "cleanup": {
       "max_length": 24,

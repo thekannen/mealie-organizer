@@ -25,8 +25,11 @@ run_task() {
     taxonomy-audit)
       python -m mealie_organizer.audit_taxonomy
       ;;
+    cookbook-sync)
+      python -m mealie_organizer.cookbook_manager sync
+      ;;
     *)
-      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, or taxonomy-audit."
+      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, or cookbook-sync."
       exit 1
       ;;
   esac
