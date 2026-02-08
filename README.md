@@ -61,14 +61,52 @@ Precedence:
 3. `configs/config.json`
 4. Hardcoded fallback in code
 
-## Quick Start
+## Quick Start (Docker)
+
+1. Clone the repo and enter it.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .[dev]
+git clone https://github.com/thekannen/mealie-organizer.git
+cd mealie-organizer
+```
+
+2. Copy the environment template.
+
+```bash
 cp .env.example .env
+```
+
+3. Edit `.env` with your Mealie connection values.
+
+Required:
+- `MEALIE_URL`
+- `MEALIE_API_KEY`
+
+Provider-specific:
+- `CATEGORIZER_PROVIDER=ollama` or `chatgpt`
+- `OLLAMA_URL` and `OLLAMA_MODEL` for Ollama
+- `OPENAI_API_KEY` and `OPENAI_MODEL` for ChatGPT
+
+4. (Optional) Review `configs/config.json` and taxonomy templates under `configs/taxonomy/`.
+
+5. Build and start the container.
+
+```bash
+docker compose up -d --build
+```
+
+6. Follow logs to confirm startup.
+
+```bash
+docker compose logs -f mealie-organizer
+```
+
+7. Run one-shot tasks when needed (examples).
+
+```bash
+docker compose run --rm -e RUN_MODE=once mealie-organizer
+docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
+docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 ```
 
 ## Docker Deployment
