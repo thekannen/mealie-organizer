@@ -195,19 +195,40 @@ class MealieCookbookManager:
     def compile_query_filter_for_editor(
         self,
         query_filter: str,
+        category_ids_by_name: dict[str, str],
+        tag_ids_by_name: dict[str, str],
     ) -> str:
-        # Keep filters name-based so Mealie's editor can display selected values.
         compiled = normalize_query_filter_string(query_filter)
-        compiled = re.sub(r"\brecipe_category\.name\b", "recipeCategory.name", compiled, flags=re.IGNORECASE)
-        return compiled
+        compiled = self.replace_name_filter_with_ids(
+            compiled,
+            r"\b(?:recipe_category|recipeCategory)\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            "recipe_category.id",
+            category_ids_by_name,
+            "category",
+        )
+        compiled = self.replace_name_filter_with_ids(
+            compiled,
+            r"\btags\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            "tags.id",
+            tag_ids_by_name,
+            "tag",
+        )
+        compiled = re.sub(r"\brecipeCategory\.id\b", "recipe_category.id", compiled, flags=re.IGNORECASE)
+        return normalize_query_filter_string(compiled)
 
     def prepare_cookbook_payload(
         self,
         item: dict,
+        category_ids_by_name: dict[str, str],
+        tag_ids_by_name: dict[str, str],
     ) -> dict:
         payload = dict(item)
         query_filter = str(payload.get("queryFilterString", ""))
-        payload["queryFilterString"] = self.compile_query_filter_for_editor(query_filter)
+        payload["queryFilterString"] = self.compile_query_filter_for_editor(
+            query_filter,
+            category_ids_by_name,
+            tag_ids_by_name,
+        )
         return payload
 
     @staticmethod
@@ -221,7 +242,17 @@ class MealieCookbookManager:
         )
 
     def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int, int]:
-        prepared_desired = [self.prepare_cookbook_payload(item) for item in desired]
+        category_ids_by_name: dict[str, str] = {}
+        tag_ids_by_name: dict[str, str] = {}
+        try:
+            category_ids_by_name, tag_ids_by_name = self.build_name_id_maps()
+        except Exception as exc:
+            print(f"[warn] Could not build organizer id maps for cookbook filters: {exc}")
+
+        prepared_desired = [
+            self.prepare_cookbook_payload(item, category_ids_by_name, tag_ids_by_name)
+            for item in desired
+        ]
 
         existing = self.get_cookbooks()
         existing_by_name = {
@@ -252,7 +283,14 @@ class MealieCookbookManager:
                     print(f"[warn] Missing id for existing cookbook '{name}', skipping update.")
                     failed += 1
                     continue
-                if self.update_cookbook(str(cookbook_id), item):
+                update_payload = dict(item)
+                update_payload["id"] = str(cookbook_id)
+                if match.get("groupId"):
+                    update_payload["groupId"] = str(match.get("groupId"))
+                if match.get("householdId"):
+                    update_payload["householdId"] = str(match.get("householdId"))
+
+                if self.update_cookbook(str(cookbook_id), update_payload):
                     updated += 1
                 else:
                     failed += 1
