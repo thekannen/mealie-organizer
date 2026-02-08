@@ -1,36 +1,36 @@
 [
   {
-    "name": "Weeknight Fast Dinners",
-    "description": "Dinner recipes for fast weekday cooking and low-mess prep.",
-    "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\", \"One-Pot\"]",
+    "name": "Alcoholic Drinks",
+    "description": "Cocktails and other alcoholic drink recipes.",
+    "queryFilterString": "recipeCategory.name IN [\"Drink\"] AND tags.name IN [\"Cocktail\"]",
     "public": false,
     "position": 1
-  },
-  {
-    "name": "Meal Prep Queue",
-    "description": "Recipes suited for prep, storage, and reheating.",
-    "queryFilterString": "tags.name IN [\"Meal Prep\", \"Make-Ahead\", \"Freezer-Friendly\"]",
-    "public": false,
-    "position": 2
-  },
-  {
-    "name": "High Protein",
-    "description": "Protein-forward meals and snacks.",
-    "queryFilterString": "tags.name IN [\"High-Protein\"]",
-    "public": false,
-    "position": 3
-  },
-  {
-    "name": "Plant-Based",
-    "description": "Vegetarian and vegan-friendly recipes.",
-    "queryFilterString": "tags.name IN [\"Vegetarian\", \"Vegan\"]",
-    "public": false,
-    "position": 4
   },
   {
     "name": "Allergy Friendly",
     "description": "Recipes tagged for common dietary restrictions.",
     "queryFilterString": "tags.name IN [\"Gluten-Free\", \"Dairy-Free\", \"Nut-Free\"]",
+    "public": false,
+    "position": 2
+  },
+  {
+    "name": "Comfort Food Favorites",
+    "description": "Hearty comfort recipes for regular rotation.",
+    "queryFilterString": "tags.name IN [\"Comfort Food\"]",
+    "public": false,
+    "position": 3
+  },
+  {
+    "name": "Crowd and Holiday",
+    "description": "Recipes for gatherings and celebrations.",
+    "queryFilterString": "tags.name IN [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
+    "public": false,
+    "position": 4
+  },
+  {
+    "name": "Desserts",
+    "description": "Dessert recipes, baked treats, and sweet finishes.",
+    "queryFilterString": "recipeCategory.name IN [\"Dessert\"]",
     "public": false,
     "position": 5
   },
@@ -42,24 +42,45 @@
     "position": 6
   },
   {
-    "name": "Comfort Food Favorites",
-    "description": "Hearty comfort recipes for regular rotation.",
-    "queryFilterString": "tags.name IN [\"Comfort Food\"]",
+    "name": "High Protein",
+    "description": "Protein-forward meals and snacks.",
+    "queryFilterString": "tags.name IN [\"High-Protein\"]",
     "public": false,
     "position": 7
   },
   {
-    "name": "Crowd and Holiday",
-    "description": "Recipes for gatherings and celebrations.",
-    "queryFilterString": "tags.name IN [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
+    "name": "Meal Prep Queue",
+    "description": "Recipes suited for prep, storage, and reheating.",
+    "queryFilterString": "tags.name IN [\"Meal Prep\", \"Make-Ahead\", \"Freezer-Friendly\"]",
     "public": false,
     "position": 8
+  },
+  {
+    "name": "Non-Alcohol Drinks",
+    "description": "Non-alcoholic beverages, mocktails, smoothies, and refresher drinks.",
+    "queryFilterString": "recipeCategory.name IN [\"Drink\"] AND tags.name IN [\"Non-Alcoholic\"]",
+    "public": false,
+    "position": 9
   },
   {
     "name": "Originals",
     "description": "Manually created home recipes and non-URL imports.",
     "queryFilterString": "recipeCategory.name IN [\"Originals\"]",
     "public": false,
-    "position": 9
+    "position": 10
+  },
+  {
+    "name": "Plant-Based",
+    "description": "Vegetarian and vegan-friendly recipes.",
+    "queryFilterString": "tags.name IN [\"Vegetarian\", \"Vegan\"]",
+    "public": false,
+    "position": 11
+  },
+  {
+    "name": "Weeknight Fast Dinners",
+    "description": "Dinner recipes for fast weekday cooking and low-mess prep.",
+    "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\", \"One-Pot\"]",
+    "public": false,
+    "position": 12
   }
 ]
