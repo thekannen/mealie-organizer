@@ -1,186 +1,165 @@
 # Mealie Organizer
 
-Standalone organizer utilities for managing Mealie taxonomy and AI-powered categorization.
+Mealie Organizer is a Python automation toolchain for Mealie that keeps recipe metadata clean and useful.
 
-## Included
+It can:
+- Apply and maintain category/tag taxonomy templates
+- Sync cookbook templates
+- Categorize/tag recipes with Ollama or ChatGPT-compatible APIs
+- Audit taxonomy quality and output a report
+- Run once or continuously in Docker
 
-- Taxonomy reset/import/cleanup lifecycle manager
-- Recipe categorization via Ollama or ChatGPT/OpenAI-compatible APIs
-- Taxonomy auditing and cleanup tooling
-- Cookbook sync and organization views
-- Ubuntu setup script
-- Docker deployment path
+## Why this exists
 
-## Structure
+As recipe libraries grow, tags and categories become noisy and inconsistent. This project gives you repeatable workflows to keep taxonomy organized without manual cleanup every week.
+
+## Project layout
 
 ```text
 .
-├── .dockerignore
-├── Dockerfile
-├── docker-compose.yml
 ├── configs/
 │   ├── config.json
 │   └── taxonomy/
 │       ├── categories.json
 │       ├── tags.json
 │       └── cookbooks.json
-├── src/
-│   └── mealie_organizer/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── taxonomy_manager.py
-│       ├── audit_taxonomy.py
-│       ├── cookbook_manager.py
-│       ├── categorizer_core.py
-│       ├── recipe_categorizer.py
-│       ├── recipe_categorizer_ollama.py
-│       └── recipe_categorizer_chatgpt.py
 ├── scripts/
 │   ├── docker/
 │   │   ├── entrypoint.sh
 │   │   └── update.sh
 │   └── install/
 │       └── ubuntu_setup_mealie.sh
+├── src/mealie_organizer/
 ├── tests/
-│   ├── test_categorizer_core.py
-│   ├── test_taxonomy_manager.py
-│   ├── test_recipe_categorizer.py
-│   └── test_cookbook_manager.py
 ├── .env.example
-├── pyproject.toml
+├── docker-compose.yml
 └── README.md
 ```
 
-## Configuration Model
+## Configuration model
 
-- `configs/config.json`: central non-secret defaults (taxonomy file paths, batching/concurrency, retries, provider HTTP tuning).
-- `.env`: environment-specific user settings and secrets (especially useful in Docker/Portainer). Values here override `configs/config.json`.
-- `TAXONOMY_REFRESH_MODE`: controls `TASK=taxonomy-refresh` behavior (`merge` keeps existing organizer values and adds missing template values; `replace` performs full rebuild).
+Use both files, but for different purposes:
+- `.env`: user and environment settings, secrets, deployment-specific values
+- `configs/config.json`: non-secret defaults (timeouts, retries, batching, taxonomy file locations)
 
-Precedence:
-1. CLI flags (where supported)
-2. Environment variables (`.env`, Docker env, Portainer env)
+Priority order:
+1. CLI flags (where available)
+2. Environment variables (`.env`, Docker env vars, Portainer env vars)
 3. `configs/config.json`
-4. Hardcoded fallback in code
+4. Hardcoded fallback defaults
 
-## Quick Start (Docker)
+## Quick start (Docker, recommended)
 
-1. Clone the repo and enter it.
+1. Clone the repo.
 
 ```bash
 git clone https://github.com/thekannen/mealie-organizer.git
 cd mealie-organizer
 ```
 
-2. Copy the environment template.
+2. Create your environment file.
 
 ```bash
 cp .env.example .env
 ```
 
-3. Edit `.env` with your Mealie connection values.
+3. Edit `.env`.
 
-Required:
+Required for all modes:
 - `MEALIE_URL`
 - `MEALIE_API_KEY`
 
-Provider-specific:
+Provider selection:
 - `CATEGORIZER_PROVIDER=ollama` or `chatgpt`
-- `OLLAMA_URL` and `OLLAMA_MODEL` for Ollama
-- `OPENAI_API_KEY` and `OPENAI_MODEL` for ChatGPT
 
-4. (Optional) Review `configs/config.json` and taxonomy templates under `configs/taxonomy/`.
+If using Ollama:
+- `OLLAMA_URL`
+- `OLLAMA_MODEL`
 
-5. Build and start the container.
+If using ChatGPT/OpenAI-compatible:
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- Optional: `OPENAI_BASE_URL` for compatible providers
+
+4. Build and start.
 
 ```bash
 docker compose up -d --build
 ```
 
-6. Follow logs to confirm startup.
+5. Watch logs.
 
 ```bash
 docker compose logs -f mealie-organizer
 ```
 
-7. Run one-shot tasks when needed (examples).
+6. Optional one-shot runs.
 
 ```bash
+# Categorize once
 docker compose run --rm -e RUN_MODE=once mealie-organizer
+
+# Taxonomy refresh once (safe merge mode)
 docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
-# Full rebuild mode (destructive):
-docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once -e TAXONOMY_REFRESH_MODE=replace mealie-organizer
+
+# Cookbook sync once
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 ```
 
-8. Update later with the built-in updater script.
+## Runtime modes
+
+Container behavior is controlled by env vars:
+- `TASK`: `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`
+- `RUN_MODE`: `once` or `loop`
+- `RUN_INTERVAL_SECONDS`: loop interval (default `21600`)
+
+Defaults in `docker-compose.yml` run categorize in loop mode every 6 hours.
+
+## Taxonomy refresh behavior
+
+`TASK=taxonomy-refresh` supports two modes:
+- `merge` (default): keep existing organizer data, add missing template values
+- `replace`: delete existing categories/tags, then recreate from template (destructive)
+
+Set via:
+- `.env`: `TAXONOMY_REFRESH_MODE=merge|replace`
+- or runtime override: `-e TAXONOMY_REFRESH_MODE=replace`
+
+## Dry-run mode
+
+Set `DRY_RUN=true` to preview write operations.
+
+In dry-run mode:
+- Taxonomy imports/deletes are printed as `[plan]`
+- Cookbook create/update/delete is printed as `[plan]`
+- Recipe metadata writes are skipped
+
+## Taxonomy templates
+
+Template files live in `configs/taxonomy/`:
+- `categories.json`
+- `tags.json`
+- `cookbooks.json`
+
+Current templates include an `Originals` category/cookbook for manually created or non-URL-import recipes.
+
+### Cookbook filter note
+
+Cookbook queries can be defined with category/tag names in `cookbooks.json`. During sync, the manager resolves names to IDs so Mealie's cookbook editor displays filters correctly.
+
+## Update and redeploy
+
+Use the helper script:
 
 ```bash
 ./scripts/docker/update.sh
 ```
 
-## Docker Deployment
-
-### Prerequisites
-
-- Docker Engine + Docker Compose plugin
-- `.env` with required user settings and secrets (at minimum `MEALIE_URL` and `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
-- Optional: adjust reusable defaults in `configs/config.json` for your environment
-
-If your Ollama instance is not local to the container, set `OLLAMA_URL` in `.env` (or Portainer env vars) to:
-
-```text
-http://host.docker.internal:11434/api
-```
-
-`OLLAMA_URL` is the recommended way to set the endpoint per deployment (Docker/Portainer/host).
-
-### Start as a long-running service
-
-```bash
-docker compose up -d --build
-```
-
-Defaults in `docker-compose.yml`:
-- `TASK=categorize`
-- `RUN_MODE=loop`
-- `RUN_INTERVAL_SECONDS=21600` (every 6 hours)
-
-### Run one-shot jobs
-
-Categorizer once:
-
-```bash
-docker compose run --rm -e RUN_MODE=once mealie-organizer
-```
-
-Taxonomy refresh once:
-
-```bash
-docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
-# Full rebuild mode (destructive):
-docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once -e TAXONOMY_REFRESH_MODE=replace mealie-organizer
-```
-
-Taxonomy audit once:
-
-```bash
-docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
-```
-
-Cookbook sync once:
-
-```bash
-docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
-```
-
-### Update and redeploy
-
-Recommended (safe one-command updater):
-
-```bash
-./scripts/docker/update.sh
-```
+Useful options:
+- `--skip-git-pull`
+- `--no-build`
+- `--branch <name>`
+- `--prune`
 
 Manual equivalent:
 
@@ -189,149 +168,84 @@ git pull
 docker compose up -d --build --remove-orphans mealie-organizer
 ```
 
-Updater options:
-- `--skip-git-pull` restart using local code only
-- `--no-build` restart without image rebuild
-- `--branch <name>` update from a different branch
-- `--prune` remove dangling images after update
+## Local development (macOS/Linux)
 
-### Logs and stop
+1. Create and activate a virtual environment.
 
 ```bash
-docker compose logs -f mealie-organizer
-docker compose down
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-## Install Scripts
-
-### Ubuntu
-
-Run from cloned repo:
+2. Install dependencies.
 
 ```bash
-./scripts/install/ubuntu_setup_mealie.sh
+pip install -r requirements.txt
+pip install -e .
 ```
 
-Run directly on server:
+3. Create env file.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | bash
+cp .env.example .env
 ```
 
-Common flags:
-- `--target-dir <dir>` clone/update target (default `$HOME/mealie-organizer`)
-- `--repo-url <url>` override repo URL
-- `--repo-branch <branch>` override branch
-- `--use-current-repo` use current path and skip clone/update
-- `--update` update repo only, then exit
-- `--provider <ollama|chatgpt>` optional cron provider override (otherwise uses `CATEGORIZER_PROVIDER` from `.env`/environment)
-- `--install-ollama` install Ollama if missing
-- `--skip-apt-update` skip apt update
-- `--setup-cron` configure cron job
-- `--cron-schedule "<expr>"` cron schedule for the unified categorizer job
-
-Cron examples:
+4. Run tools.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | \
-bash -s -- --setup-cron --cron-schedule "0 */6 * * *"
-```
+# Categorizer
+PYTHONPATH=src python3 -m mealie_organizer.recipe_categorizer
 
-## Usage
-
-Taxonomy refresh:
-
-```bash
-python3 -m mealie_organizer.taxonomy_manager refresh \
+# Taxonomy refresh (merge)
+PYTHONPATH=src python3 -m mealie_organizer.taxonomy_manager refresh \
   --mode merge \
   --categories-file configs/taxonomy/categories.json \
   --tags-file configs/taxonomy/tags.json \
   --cleanup --cleanup-only-unused --cleanup-delete-noisy
 
-# Full rebuild (destructive)
-python3 -m mealie_organizer.taxonomy_manager refresh \
-  --mode replace \
-  --categories-file configs/taxonomy/categories.json \
-  --tags-file configs/taxonomy/tags.json
+# Cookbook sync
+PYTHONPATH=src python3 -m mealie_organizer.cookbook_manager sync
+
+# Taxonomy audit
+PYTHONPATH=src python3 -m mealie_organizer.audit_taxonomy
 ```
 
-Taxonomy import:
+Installed CLI aliases after `pip install -e .`:
+- `mealie-categorizer`
+- `mealie-taxonomy`
+- `mealie-cookbooks`
+- `mealie-taxonomy-audit`
+
+## Ubuntu helper script
+
+You can bootstrap on Ubuntu with:
 
 ```bash
-python3 -m mealie_organizer.taxonomy_manager import \
-  --file configs/taxonomy/categories.json \
-  --endpoint categories --replace
+./scripts/install/ubuntu_setup_mealie.sh
 ```
+
+Or remote-run:
 
 ```bash
-python3 -m mealie_organizer.taxonomy_manager import \
-  --file configs/taxonomy/tags.json \
-  --endpoint tags --replace
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | bash
 ```
 
-Taxonomy audit:
+Notable flags:
+- `--setup-cron`
+- `--cron-schedule "0 */6 * * *"`
+- `--provider <ollama|chatgpt>`
+- `--install-ollama`
+- `--update`
 
-```bash
-python3 -m mealie_organizer.audit_taxonomy
-```
+## Troubleshooting
 
-Cookbook sync:
+- `MEALIE_URL is not configured`: make sure `.env` has a real URL, not placeholder text.
+- `source: no such file or directory: .venv/bin/activate`: create the venv first with `python3 -m venv .venv`.
+- Ollama in Docker cannot connect to host: set `OLLAMA_URL=http://host.docker.internal:11434/api` and keep `extra_hosts` in compose.
+- Frequent provider retry warnings: reduce concurrency (`BATCH_SIZE`, `MAX_WORKERS`), increase request timeout, or use stronger model capacity.
 
-```bash
-python3 -m mealie_organizer.cookbook_manager sync
-```
-
-Cookbook sync with cleanup of unmanaged cookbooks:
-
-```bash
-python3 -m mealie_organizer.cookbook_manager sync --replace
-```
-
-Categorize recipes:
-
-```bash
-python3 -m mealie_organizer.recipe_categorizer
-```
-
-Installed command aliases (after `pip install -e .`):
-
-```bash
-mealie-categorizer
-mealie-taxonomy
-mealie-taxonomy-audit
-mealie-cookbooks
-```
-
-Provider selection:
-
-- Set `CATEGORIZER_PROVIDER` in `.env` (or container env vars) to `ollama` or `chatgpt` for deployment-specific behavior.
-- Or override per command with `--provider`.
-
-Run modes:
-
-```bash
-python3 -m mealie_organizer.recipe_categorizer --missing-tags
-python3 -m mealie_organizer.recipe_categorizer --missing-categories
-python3 -m mealie_organizer.recipe_categorizer --recat
-```
-
-Dry-run mode (env-driven):
-
-```bash
-DRY_RUN=true
-```
-
-With dry-run enabled, taxonomy imports/cleanup, cookbook sync actions, and recipe metadata updates are logged as `[plan]` actions and no write requests are sent to Mealie.
-
-## Development
-
-Run tests:
+## Testing
 
 ```bash
 python3 -m pytest
 ```
-
-## Notes
-
-- Provider and model selection should be set via env vars (`CATEGORIZER_PROVIDER`, `OLLAMA_MODEL`, `OPENAI_MODEL`, `OLLAMA_URL`); `configs/config.json` remains a fallback for non-secret defaults.
-- Keep environment-specific settings and secrets in `.env`; keep reusable defaults in `configs/config.json` and cookbook definitions in `configs/taxonomy/cookbooks.json`.
