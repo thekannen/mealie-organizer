@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-REPO_URL="https://github.com/thekannen/mealie-scripts.git"
+REPO_URL="https://github.com/thekannen/mealie-organizer.git"
 REPO_BRANCH="main"
-TARGET_DIR="$HOME/mealie-scripts"
+TARGET_DIR="$HOME/mealie-organizer"
 USE_CURRENT_REPO=false
 UPDATE_ONLY=false
 PROVIDER=""
