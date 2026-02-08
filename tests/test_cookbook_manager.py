@@ -65,10 +65,10 @@ def test_sync_cookbooks_dry_run_plans_create_update_delete(monkeypatch, capsys):
         },
     ]
 
-    created, updated, skipped, failed = manager.sync_cookbooks(desired, replace=True)
+    created, updated, deleted, skipped, failed = manager.sync_cookbooks(desired, replace=True)
     out = capsys.readouterr().out
 
     assert "[plan] Update cookbook: Weeknight Dinners" in out
     assert "[plan] Create cookbook: Meal Prep" in out
     assert "[plan] Delete cookbook: To Remove" in out
-    assert (created, updated, skipped, failed) == (1, 2, 0, 0)
+    assert (created, updated, deleted, skipped, failed) == (1, 1, 1, 0, 0)

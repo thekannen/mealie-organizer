@@ -9,7 +9,7 @@ from typing import Callable
 import requests
 
 from .categorizer_core import MealieCategorizer
-from .config import env_or_config, secret, to_bool
+from .config import env_or_config, require_mealie_url, secret, to_bool
 
 
 def require_str(value: object, field: str) -> str:
@@ -56,7 +56,7 @@ def parse_args(forced_provider: str | None = None) -> argparse.Namespace:
         parser.add_argument(
             "--provider",
             choices=["ollama", "chatgpt"],
-            help="Override provider from config for this run.",
+            help="Override provider from .env/environment for this run.",
         )
     parser.add_argument("--recat", action="store_true", help="Re-categorize all recipes.")
     parser.add_argument("--missing-tags", action="store_true", help="Only process recipes missing tags.")
@@ -84,7 +84,7 @@ def resolve_provider(cli_provider: str | None = None, forced_provider: str | Non
     if provider not in {"ollama", "chatgpt"}:
         raise ValueError(
             "Invalid provider. Use 'ollama' or 'chatgpt' via --provider "
-            "or categorizer.provider in configs/config.json."
+            "or CATEGORIZER_PROVIDER in .env or the environment."
         )
     return provider
 
@@ -300,12 +300,13 @@ def main(forced_provider: str | None = None) -> None:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
 
     dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
+    mealie_url = require_mealie_url(MEALIE_URL)
 
     provider = resolve_provider(getattr(args, "provider", None), forced_provider=forced_provider)
     query_text, provider_name = build_provider_query(provider)
 
     categorizer = MealieCategorizer(
-        mealie_url=MEALIE_URL,
+        mealie_url=mealie_url,
         mealie_api_key=mealie_api_key,
         batch_size=BATCH_SIZE,
         max_workers=MAX_WORKERS,

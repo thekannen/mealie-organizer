@@ -5,6 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 CONFIG_FILE = REPO_ROOT / "configs" / "config.json"
+MEALIE_URL_PLACEHOLDER = "http://your.server.ip.address:9000/api"
 
 
 def load_env_file(path):
@@ -64,6 +65,19 @@ def to_bool(value):
         if normalized in {"0", "false", "no", "n", "off", ""}:
             return False
     raise ValueError(f"Invalid boolean value: {value}")
+
+
+def require_mealie_url(value):
+    if not isinstance(value, str):
+        raise RuntimeError(f"MEALIE_URL must be a string, got {type(value).__name__}.")
+
+    url = value.strip()
+    if not url or url.lower() == MEALIE_URL_PLACEHOLDER.lower() or "your.server.ip.address" in url.lower():
+        raise RuntimeError(
+            "MEALIE_URL is not configured. Set MEALIE_URL in .env or the environment."
+        )
+
+    return url.rstrip("/")
 
 
 def env_or_config(env_key, config_path, default=None, cast=None):
