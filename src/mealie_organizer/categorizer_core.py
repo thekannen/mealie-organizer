@@ -97,7 +97,28 @@ class MealieCategorizer:
 
         self.progress = {"done": 0, "total": 0, "start": time.time()}
         self.progress_lock = threading.Lock()
+        self.progress_stop_event = threading.Event()
         self.cache_lock = threading.Lock()
+        self.print_lock = threading.Lock()
+        self.stats_lock = threading.Lock()
+        self.stats = {
+            "query_retry_warnings": 0,
+            "query_failures": 0,
+            "excluded_tag_candidates": 0,
+            "cached_skipped": 0,
+            "batch_parse_failures": 0,
+            "fallback_batches": 0,
+            "per_recipe_fallback_attempts": 0,
+            "per_recipe_no_classification": 0,
+            "unknown_slug_count": 0,
+            "model_missing_entry_count": 0,
+            "recipes_updated": 0,
+            "recipes_planned": 0,
+            "recipes_no_change": 0,
+            "update_failures": 0,
+            "categories_added": 0,
+            "tags_added": 0,
+        }
         self.cache = self.load_cache()
 
     def load_cache(self):
@@ -117,6 +138,7 @@ class MealieCategorizer:
     def set_progress_total(self, total):
         with self.progress_lock:
             self.progress.update(total=total, done=0, start=time.time())
+        self.progress_stop_event.clear()
 
     def advance_progress(self, count):
         if not count:
@@ -128,18 +150,73 @@ class MealieCategorizer:
         with self.progress_lock:
             return self.progress["done"], self.progress["total"], self.progress["start"]
 
+    def increment_stat(self, key, amount=1):
+        if amount == 0:
+            return
+        with self.stats_lock:
+            self.stats[key] = self.stats.get(key, 0) + amount
+
+    def stats_snapshot(self):
+        with self.stats_lock:
+            return dict(self.stats)
+
+    def reset_stats(self):
+        with self.stats_lock:
+            for key in self.stats:
+                self.stats[key] = 0
+
+    def log(self, message):
+        with self.print_lock:
+            print(message, flush=True)
+
+    def render_progress_line(self, done, total, start_time):
+        elapsed = max(time.time() - start_time, 1e-9)
+        rate = done / elapsed
+        remaining = (max(total - done, 0) / rate) if rate else float("inf")
+        eta = f"{(remaining / 60):.1f} min" if rate else "inf min"
+        return f"[progress] {done}/{total} ({rate:.2f}/s) ETA: {eta}"
+
     def eta_reporter(self):
+        last_done = -1
         while True:
+            if self.progress_stop_event.is_set():
+                break
             done, total, start_time = self.progress_snapshot()
+            if total == 0:
+                break
+            if done != last_done:
+                self.log(self.render_progress_line(done, total, start_time))
+                last_done = done
             if done >= total:
                 break
-            elapsed = time.time() - start_time
-            rate = done / elapsed if elapsed else 0
-            remaining = (total - done) / rate if rate else 0
-            eta_min = remaining / 60 if rate else float("inf")
-            print(f"\r[progress] {done}/{total} ({rate:.2f}/s) ETA: {eta_min:.1f} min", end="")
-            time.sleep(5)
-        print()
+            self.progress_stop_event.wait(5)
+
+    def print_summary(self):
+        done, total, start_time = self.progress_snapshot()
+        elapsed = max(time.time() - start_time, 1e-9)
+        rate = done / elapsed if elapsed else 0.0
+        stats = self.stats_snapshot()
+        self.log("[summary] Run Metrics")
+        self.log(
+            "[summary] "
+            f"recipes={done}/{total} updated={stats['recipes_updated']} planned={stats['recipes_planned']} "
+            f"unchanged={stats['recipes_no_change']} cached_skipped={stats['cached_skipped']} "
+            f"unclassified={stats['per_recipe_no_classification']}"
+        )
+        self.log(
+            "[summary] "
+            f"retries={stats['query_retry_warnings']} exhausted_queries={stats['query_failures']} "
+            f"batch_parse_failures={stats['batch_parse_failures']} fallback_batches={stats['fallback_batches']} "
+            f"per_recipe_fallbacks={stats['per_recipe_fallback_attempts']}"
+        )
+        self.log(
+            "[summary] "
+            f"categories_added={stats['categories_added']} tags_added={stats['tags_added']} "
+            f"update_failures={stats['update_failures']} "
+            f"unknown_slugs={stats['unknown_slug_count']} model_missing_entries={stats['model_missing_entry_count']} "
+            f"excluded_tag_candidates={stats['excluded_tag_candidates']}"
+        )
+        self.log(f"[summary] duration={(elapsed / 60):.1f} min avg_rate={rate:.2f}/s")
 
     def get_all_recipes(self):
         response = requests.get(f"{self.mealie_url}/recipes?perPage=999", headers=self.headers, timeout=60)
@@ -249,10 +326,12 @@ Recipes:
                 parsed = parse_json_response(result)
                 if parsed:
                     return parsed
-            print(f"[warn] Retry {attempt + 1}/{attempts} failed.")
+            self.log(f"[warn] Retry {attempt + 1}/{attempts} failed.")
+            self.increment_stat("query_retry_warnings")
             if attempt < attempts - 1:
                 sleep_for = (self.query_retry_base_seconds * (2**attempt)) + random.uniform(0, 0.75)
                 time.sleep(sleep_for)
+        self.increment_stat("query_failures")
         return None
 
     @staticmethod
@@ -287,7 +366,8 @@ Recipes:
 
         if excluded:
             preview = ", ".join(f"{name}({count})" for name, count in sorted(excluded)[:10])
-            print(f"[info] Excluding {len(excluded)} low-quality tag candidates from prompting: {preview}")
+            self.log(f"[info] Excluding {len(excluded)} low-quality tag candidates from prompting: {preview}")
+            self.increment_stat("excluded_tag_candidates", len(excluded))
 
         return sorted(set(candidate_names))
 
@@ -375,6 +455,7 @@ Recipes:
         tags_changed, tags_added = append_matches(tag_names, tags_by_name, tag_slugs, updated_tags)
 
         if not cats_changed and not tags_changed:
+            self.increment_stat("recipes_no_change")
             return False
 
         payload = {}
@@ -390,7 +471,10 @@ Recipes:
             summary_bits.append(f"tags={', '.join(tags_added or [t.get('name') for t in updated_tags])}")
 
         if self.dry_run:
-            print(f"[plan] {recipe_slug} -> {'; '.join(summary_bits)}")
+            self.log(f"[plan] {recipe_slug} -> {'; '.join(summary_bits)}")
+            self.increment_stat("recipes_planned")
+            self.increment_stat("categories_added", len(cats_added))
+            self.increment_stat("tags_added", len(tags_added))
             return True
 
         response = requests.patch(
@@ -400,10 +484,14 @@ Recipes:
             timeout=60,
         )
         if response.status_code != 200:
-            print(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
+            self.log(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
+            self.increment_stat("update_failures")
             return False
 
-        print(f"[recipe] {recipe_slug} -> {'; '.join(summary_bits)}")
+        self.log(f"[recipe] {recipe_slug} -> {'; '.join(summary_bits)}")
+        self.increment_stat("recipes_updated")
+        self.increment_stat("categories_added", len(cats_added))
+        self.increment_stat("tags_added", len(tags_added))
 
         with self.cache_lock:
             self.cache[recipe_slug] = {
@@ -463,7 +551,8 @@ Recipes:
                 continue
             recipe = recipes_by_slug.get(slug)
             if not recipe:
-                print(f"[warn] Ignoring unknown slug from model: {slug}")
+                self.log(f"[warn] Ignoring unknown slug from model: {slug}")
+                self.increment_stat("unknown_slug_count")
                 continue
 
             categories, tags = self.parse_entry_labels(entry)
@@ -472,7 +561,8 @@ Recipes:
 
         missing = sorted(set(recipes_by_slug) - processed)
         if missing:
-            print(f"[warn] Model returned no data for: {', '.join(missing)}")
+            self.log(f"[warn] Model returned no data for: {', '.join(missing)}")
+            self.increment_stat("model_missing_entry_count", len(missing))
 
         return len(recipes_by_slug)
 
@@ -487,7 +577,7 @@ Recipes:
             categories, tags = self.parse_entry_labels(entry)
             return {"slug": slug, "categories": categories, "tags": tags}
 
-        print(f"[warn] Per-recipe classify failed for {slug}; trying split category/tag prompts.")
+        self.log(f"[warn] Per-recipe classify failed for {slug}; trying split category/tag prompts.")
 
         categories = []
         category_results = self.safe_query_with_retry(self.make_category_prompt([recipe], category_names))
@@ -510,12 +600,15 @@ Recipes:
         return {"slug": slug, "categories": categories, "tags": tags}
 
     def process_batch_with_fallback(self, batch, category_names, tag_names, categories_by_name, tags_by_name):
-        print("[warn] Falling back to per-recipe classification for this batch.")
+        self.log("[warn] Falling back to per-recipe classification for this batch.")
+        self.increment_stat("fallback_batches")
         for recipe in batch:
             slug = (recipe.get("slug") or "").strip() or "(missing slug)"
+            self.increment_stat("per_recipe_fallback_attempts")
             entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names)
             if not entry:
-                print(f"[warn] No classification returned for {slug} after fallback attempts.")
+                self.log(f"[warn] No classification returned for {slug} after fallback attempts.")
+                self.increment_stat("per_recipe_no_classification")
                 self.advance_progress(1)
                 continue
 
@@ -536,6 +629,7 @@ Recipes:
             ]
             if cached_slugs:
                 self.advance_progress(len(cached_slugs))
+                self.increment_stat("cached_skipped", len(cached_slugs))
             batch = [
                 r
                 for r in batch
@@ -548,7 +642,8 @@ Recipes:
 
         parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names))
         if not isinstance(parsed, list):
-            print("[warn] Batch failed parsing after retries.")
+            self.log("[warn] Batch failed parsing after retries.")
+            self.increment_stat("batch_parse_failures")
             self.process_batch_with_fallback(batch, category_names, tag_names, categories_by_name, tags_by_name)
             return
 
@@ -562,6 +657,7 @@ Recipes:
         self.advance_progress(processed_count)
 
     def run(self):
+        self.reset_stats()
         mode = (
             "RE-CATEGORIZATION (All Recipes)"
             if self.replace_existing
@@ -571,9 +667,9 @@ Recipes:
                 "missing-either": "Categorize/Tag Missing Categories Or Tags",
             }.get(self.target_mode, "Categorize/Tag Missing Categories Or Tags")
         )
-        print(f"[start] Mode: {mode}")
-        print(f"[start] Provider: {self.provider_name}")
-        print(f"[start] Dry-run mode: {'ON' if self.dry_run else 'OFF'}")
+        self.log(f"[start] Mode: {mode}")
+        self.log(f"[start] Provider: {self.provider_name}")
+        self.log(f"[start] Dry-run mode: {'ON' if self.dry_run else 'OFF'}")
 
         all_recipes = self.get_all_recipes()
         categories = self.get_all_categories()
@@ -585,16 +681,19 @@ Recipes:
         tag_names = self.filter_tag_candidates(tags, all_recipes)
         if not tag_names:
             tag_names = sorted(name for name in {t.get("name", "").strip() for t in tags} if name)
-            print("[warn] Tag candidate filtering removed everything; using full tag list.")
+            self.log("[warn] Tag candidate filtering removed everything; using full tag list.")
 
         targets = self.select_targets(all_recipes)
-        print(f"Found {len(targets)} recipes to process.")
+        self.log(f"Found {len(targets)} recipes to process.")
 
         self.set_progress_total(len(targets))
         if not targets:
+            self.log("[done] Categorization complete.")
+            self.print_summary()
             return
 
-        threading.Thread(target=self.eta_reporter, daemon=True).start()
+        reporter = threading.Thread(target=self.eta_reporter, daemon=True)
+        reporter.start()
 
         batches = list(self.batch_recipes(targets, self.batch_size))
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -613,6 +712,10 @@ Recipes:
                 try:
                     future.result()
                 except Exception as exc:
-                    print(f"[error] Batch crashed: {exc}")
-
-        print("\n[done] Categorization complete.")
+                    self.log(f"[error] Batch crashed: {exc}")
+        self.progress_stop_event.set()
+        reporter.join(timeout=1)
+        done, total, start_time = self.progress_snapshot()
+        self.log(self.render_progress_line(done, total, start_time))
+        self.log("[done] Categorization complete.")
+        self.print_summary()
