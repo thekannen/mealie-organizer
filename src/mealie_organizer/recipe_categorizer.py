@@ -1,21 +1,56 @@
+from __future__ import annotations
+
 import argparse
 import json
 import random
 import time
+from typing import Callable
 
 import requests
 
 from .categorizer_core import MealieCategorizer
-from .config import env_or_config, secret
-
-MEALIE_URL = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api")
-BATCH_SIZE = env_or_config("BATCH_SIZE", "categorizer.batch_size", 2, int)
-MAX_WORKERS = env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int)
-TAG_MAX_NAME_LENGTH = env_or_config("TAG_MAX_NAME_LENGTH", "categorizer.tag_max_name_length", 24, int)
-TAG_MIN_USAGE = env_or_config("TAG_MIN_USAGE", "categorizer.tag_min_usage", 0, int)
+from .config import env_or_config, secret, to_bool
 
 
-def parse_args(forced_provider=None):
+def require_str(value: object, field: str) -> str:
+    if isinstance(value, str):
+        return value
+    raise ValueError(f"Invalid value for '{field}': expected string, got {type(value).__name__}")
+
+
+def require_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return int(value.strip())
+    raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
+def require_float(value: object, field: str) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.strip())
+    raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
+
+
+MEALIE_URL: str = require_str(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"), "mealie.url")
+BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 2, int), "categorizer.batch_size")
+MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int), "categorizer.max_workers")
+TAG_MAX_NAME_LENGTH: int = require_int(
+    env_or_config("TAG_MAX_NAME_LENGTH", "categorizer.tag_max_name_length", 24, int),
+    "categorizer.tag_max_name_length",
+)
+TAG_MIN_USAGE: int = require_int(env_or_config("TAG_MIN_USAGE", "categorizer.tag_min_usage", 0, int), "categorizer.tag_min_usage")
+
+
+def parse_args(forced_provider: str | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Categorize Mealie recipes using configured provider.")
     if not forced_provider:
         parser.add_argument(
@@ -33,7 +68,7 @@ def parse_args(forced_provider=None):
     return parser.parse_args()
 
 
-def derive_target_mode(args):
+def derive_target_mode(args: argparse.Namespace) -> str:
     if args.missing_tags and args.missing_categories:
         return "missing-either"
     if args.missing_tags:
@@ -43,9 +78,9 @@ def derive_target_mode(args):
     return "missing-either"
 
 
-def resolve_provider(cli_provider=None, forced_provider=None):
+def resolve_provider(cli_provider: str | None = None, forced_provider: str | None = None) -> str:
     provider = forced_provider or cli_provider or env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "ollama")
-    provider = (provider or "").strip().lower()
+    provider = require_str(provider, "categorizer.provider").strip().lower()
     if provider not in {"ollama", "chatgpt"}:
         raise ValueError(
             "Invalid provider. Use 'ollama' or 'chatgpt' via --provider "
@@ -54,11 +89,21 @@ def resolve_provider(cli_provider=None, forced_provider=None):
     return provider
 
 
-def cache_file_for_provider(provider):
-    return env_or_config("CACHE_FILE", f"categorizer.cache_files.{provider}", f"cache/results_{provider}.json")
+def cache_file_for_provider(provider: str) -> str:
+    return require_str(
+        env_or_config("CACHE_FILE", f"categorizer.cache_files.{provider}", f"cache/results_{provider}.json"),
+        f"categorizer.cache_files.{provider}",
+    )
 
 
-def query_chatgpt(prompt_text, model, base_url, api_key, request_timeout, http_retries):
+def query_chatgpt(
+    prompt_text: str,
+    model: str,
+    base_url: str,
+    api_key: str,
+    request_timeout: int,
+    http_retries: int,
+) -> str | None:
     payload = {
         "model": model,
         "temperature": 0,
@@ -110,7 +155,14 @@ def query_chatgpt(prompt_text, model, base_url, api_key, request_timeout, http_r
     return None
 
 
-def query_ollama(prompt_text, model, url, request_timeout, http_retries, options):
+def query_ollama(
+    prompt_text: str,
+    model: str,
+    url: str,
+    request_timeout: int,
+    http_retries: int,
+    options: dict[str, int | float],
+) -> str | None:
     payload = {
         "model": model,
         "prompt": prompt_text + "\n\nRespond only with valid JSON.",
@@ -164,43 +216,90 @@ def query_ollama(prompt_text, model, url, request_timeout, http_retries, options
     return None
 
 
-def build_provider_query(provider):
+def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], str]:
     if provider == "chatgpt":
         api_key = secret("OPENAI_API_KEY", required=True)
-        base_url = env_or_config("OPENAI_BASE_URL", "providers.chatgpt.base_url", "https://api.openai.com/v1")
-        model = env_or_config("OPENAI_MODEL", "providers.chatgpt.model", "gpt-4o-mini")
-        request_timeout = env_or_config("OPENAI_REQUEST_TIMEOUT", "providers.chatgpt.request_timeout", 120, int)
-        http_retries = max(1, env_or_config("OPENAI_HTTP_RETRIES", "providers.chatgpt.http_retries", 3, int))
+        base_url = require_str(
+            env_or_config("OPENAI_BASE_URL", "providers.chatgpt.base_url", "https://api.openai.com/v1"),
+            "providers.chatgpt.base_url",
+        )
+        model = require_str(
+            env_or_config("OPENAI_MODEL", "providers.chatgpt.model", "gpt-4o-mini"),
+            "providers.chatgpt.model",
+        )
+        request_timeout = require_int(
+            env_or_config("OPENAI_REQUEST_TIMEOUT", "providers.chatgpt.request_timeout", 120, int),
+            "providers.chatgpt.request_timeout",
+        )
+        http_retries = max(
+            1,
+            require_int(
+                env_or_config("OPENAI_HTTP_RETRIES", "providers.chatgpt.http_retries", 3, int),
+                "providers.chatgpt.http_retries",
+            ),
+        )
 
-        def _query(prompt_text):
+        def _query_chatgpt(prompt_text: str) -> str | None:
             return query_chatgpt(prompt_text, model, base_url, api_key, request_timeout, http_retries)
 
-        return _query, f"ChatGPT ({model})"
+        return _query_chatgpt, f"ChatGPT ({model})"
 
-    model = env_or_config("OLLAMA_MODEL", "providers.ollama.model", "mistral:7b")
-    url = env_or_config("OLLAMA_URL", "providers.ollama.url", "http://localhost:11434/api")
-    request_timeout = env_or_config("OLLAMA_REQUEST_TIMEOUT", "providers.ollama.request_timeout", 180, int)
-    http_retries = max(1, env_or_config("OLLAMA_HTTP_RETRIES", "providers.ollama.http_retries", 3, int))
+    model = require_str(
+        env_or_config("OLLAMA_MODEL", "providers.ollama.model", "mistral:7b"),
+        "providers.ollama.model",
+    )
+    url = require_str(
+        env_or_config("OLLAMA_URL", "providers.ollama.url", "http://localhost:11434/api"),
+        "providers.ollama.url",
+    )
+    request_timeout = require_int(
+        env_or_config("OLLAMA_REQUEST_TIMEOUT", "providers.ollama.request_timeout", 180, int),
+        "providers.ollama.request_timeout",
+    )
+    http_retries = max(
+        1,
+        require_int(
+            env_or_config("OLLAMA_HTTP_RETRIES", "providers.ollama.http_retries", 3, int),
+            "providers.ollama.http_retries",
+        ),
+    )
     options = {
-        "num_ctx": env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", 1024, int),
-        "temperature": env_or_config("OLLAMA_TEMPERATURE", "providers.ollama.options.temperature", 0.1, float),
-        "num_predict": env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 96, int),
-        "top_p": env_or_config("OLLAMA_TOP_P", "providers.ollama.options.top_p", 0.8, float),
-        "num_thread": env_or_config("OLLAMA_NUM_THREAD", "providers.ollama.options.num_thread", 8, int),
+        "num_ctx": require_int(
+            env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", 1024, int),
+            "providers.ollama.options.num_ctx",
+        ),
+        "temperature": require_float(
+            env_or_config("OLLAMA_TEMPERATURE", "providers.ollama.options.temperature", 0.1, float),
+            "providers.ollama.options.temperature",
+        ),
+        "num_predict": require_int(
+            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 96, int),
+            "providers.ollama.options.num_predict",
+        ),
+        "top_p": require_float(
+            env_or_config("OLLAMA_TOP_P", "providers.ollama.options.top_p", 0.8, float),
+            "providers.ollama.options.top_p",
+        ),
+        "num_thread": require_int(
+            env_or_config("OLLAMA_NUM_THREAD", "providers.ollama.options.num_thread", 8, int),
+            "providers.ollama.options.num_thread",
+        ),
     }
 
-    def _query(prompt_text):
+    def _query_ollama(prompt_text: str) -> str | None:
         return query_ollama(prompt_text, model, url, request_timeout, http_retries, options)
 
-    return _query, f"Ollama ({model})"
+    return _query_ollama, f"Ollama ({model})"
 
 
-def main(forced_provider=None):
+def main(forced_provider: str | None = None) -> None:
     args = parse_args(forced_provider=forced_provider)
 
     mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
+
+    dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
 
     provider = resolve_provider(getattr(args, "provider", None), forced_provider=forced_provider)
     query_text, provider_name = build_provider_query(provider)
@@ -217,6 +316,7 @@ def main(forced_provider=None):
         target_mode=derive_target_mode(args),
         tag_max_name_length=TAG_MAX_NAME_LENGTH,
         tag_min_usage=TAG_MIN_USAGE,
+        dry_run=dry_run,
     )
     categorizer.run()
 

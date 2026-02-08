@@ -1,4 +1,7 @@
 {
+  "runtime": {
+    "dry_run": false
+  },
   "mealie": {
     "url": "http://your.server.ip.address:9000/api"
   },

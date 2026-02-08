@@ -49,6 +49,7 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 ## Configuration Model
 
 - `configs/config.json`: central non-secret defaults (provider, models, paths, batch sizes, retries).
+- `runtime.dry_run`: when `true`, write operations are planned and logged but not sent to Mealie.
 - `.env`: secrets only.
 
 Precedence:
@@ -216,6 +217,16 @@ python3 -m mealie_organizer.recipe_categorizer --missing-tags
 python3 -m mealie_organizer.recipe_categorizer --missing-categories
 python3 -m mealie_organizer.recipe_categorizer --recat
 ```
+
+Dry-run mode (config-driven):
+
+```json
+"runtime": {
+  "dry_run": true
+}
+```
+
+With dry-run enabled, taxonomy imports/cleanup and recipe metadata updates are logged as `[plan]` actions and no write requests are sent to Mealie.
 
 ## Development
 

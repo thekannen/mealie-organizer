@@ -11,6 +11,28 @@ import requests
 from .config import env_or_config
 
 
+def require_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return int(value.strip())
+    raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
+def require_float(value: object, field: str) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.strip())
+    raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
+
+
 def parse_json_response(result_text):
     cleaned = result_text.strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
@@ -44,6 +66,7 @@ class MealieCategorizer:
         target_mode="missing-either",
         tag_max_name_length=24,
         tag_min_usage=0,
+        dry_run=False,
     ):
         self.mealie_url = mealie_url.rstrip("/")
         self.batch_size = batch_size
@@ -55,9 +78,17 @@ class MealieCategorizer:
         self.target_mode = target_mode
         self.tag_max_name_length = tag_max_name_length
         self.tag_min_usage = tag_min_usage
-        self.query_retries = max(1, env_or_config("QUERY_RETRIES", "categorizer.query_retries", 3, int))
-        self.query_retry_base_seconds = env_or_config(
-            "QUERY_RETRY_BASE_SECONDS", "categorizer.query_retry_base_seconds", 1.25, float
+        self.dry_run = dry_run
+        self.query_retries = max(
+            1,
+            require_int(
+                env_or_config("QUERY_RETRIES", "categorizer.query_retries", 3, int),
+                "categorizer.query_retries",
+            ),
+        )
+        self.query_retry_base_seconds = require_float(
+            env_or_config("QUERY_RETRY_BASE_SECONDS", "categorizer.query_retry_base_seconds", 1.25, float),
+            "categorizer.query_retry_base_seconds",
         )
         self.headers = {
             "Authorization": f"Bearer {mealie_api_key}",
@@ -327,6 +358,16 @@ Recipes:
         if tags_changed:
             payload["tags"] = updated_tags
 
+        summary_bits = []
+        if cats_changed:
+            summary_bits.append(f"cats={', '.join(cats_added or [c.get('name') for c in updated_categories])}")
+        if tags_changed:
+            summary_bits.append(f"tags={', '.join(tags_added or [t.get('name') for t in updated_tags])}")
+
+        if self.dry_run:
+            print(f"[plan] {recipe_slug} -> {'; '.join(summary_bits)}")
+            return True
+
         response = requests.patch(
             f"{self.mealie_url}/recipes/{recipe_slug}",
             headers=self.headers,
@@ -337,11 +378,6 @@ Recipes:
             print(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
             return False
 
-        summary_bits = []
-        if cats_changed:
-            summary_bits.append(f"cats={', '.join(cats_added or [c.get('name') for c in updated_categories])}")
-        if tags_changed:
-            summary_bits.append(f"tags={', '.join(tags_added or [t.get('name') for t in updated_tags])}")
         print(f"[recipe] {recipe_slug} -> {'; '.join(summary_bits)}")
 
         with self.cache_lock:
@@ -425,6 +461,7 @@ Recipes:
         )
         print(f"[start] Mode: {mode}")
         print(f"[start] Provider: {self.provider_name}")
+        print(f"[start] Dry-run mode: {'ON' if self.dry_run else 'OFF'}")
 
         all_recipes = self.get_all_recipes()
         categories = self.get_all_categories()

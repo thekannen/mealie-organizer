@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path
+from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path, to_bool
 
 DEFAULT_CATEGORIES_FILE = env_or_config(
     "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
@@ -14,9 +14,10 @@ DEFAULT_TAGS_FILE = env_or_config("TAXONOMY_TAGS_FILE", "taxonomy.tags_file", "c
 
 
 class MealieTaxonomyManager:
-    def __init__(self, base_url, api_key, timeout=60):
+    def __init__(self, base_url, api_key, timeout=60, dry_run=False):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.dry_run = dry_run
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -54,6 +55,8 @@ class MealieTaxonomyManager:
             print(f"[ok] No existing {endpoint} to delete.")
             return
 
+        mode = "DRY-RUN" if self.dry_run else "APPLY"
+        print(f"[start] Delete mode ({endpoint}): {mode}")
         print(f"[start] Deleting {len(existing)} existing {endpoint}...")
         for item in existing.values():
             item_id = item.get("id")
@@ -61,6 +64,11 @@ class MealieTaxonomyManager:
             if not item_id:
                 print(f"  [warn] Skipping '{name}' (missing id)")
                 continue
+
+            if self.dry_run:
+                print(f"  [plan] Delete: {name}")
+                continue
+
             response = self.session.delete(
                 f"{self.base_url}/organizers/{endpoint}/{item_id}",
                 timeout=self.timeout,
@@ -74,7 +82,12 @@ class MealieTaxonomyManager:
         if replace:
             self.delete_all(endpoint)
 
-        existing = self.existing_lookup(endpoint)
+        if replace and self.dry_run:
+            # Simulate empty endpoint after planned deletes so output reflects what apply mode would do.
+            existing = {}
+        else:
+            existing = self.existing_lookup(endpoint)
+
         created = 0
         skipped = 0
         failed = 0
@@ -85,6 +98,12 @@ class MealieTaxonomyManager:
             if key in existing:
                 skipped += 1
                 print(f"[skip] Exists: {name}")
+                continue
+
+            if self.dry_run:
+                created += 1
+                existing[key] = {"name": name}
+                print(f"[plan] Add: {name}")
                 continue
 
             response = self.session.post(
@@ -132,8 +151,11 @@ class MealieTaxonomyManager:
                 if tag and tag.get("id"):
                     candidates.append({"id": tag["id"], "name": name, "usage": count})
 
-        mode = "APPLY" if apply else "DRY-RUN"
+        effective_apply = apply and not self.dry_run
+        mode = "APPLY" if effective_apply else "DRY-RUN"
         print(f"[start] Tag cleanup mode: {mode}")
+        if apply and self.dry_run:
+            print("[info] runtime.dry_run=true, so cleanup deletes are planned only.")
         print(f"[start] Candidate tags: {len(candidates)}")
 
         if not candidates:
@@ -141,7 +163,7 @@ class MealieTaxonomyManager:
             return
 
         for item in candidates:
-            if apply:
+            if effective_apply:
                 response = self.session.delete(
                     f"{self.base_url}/organizers/tags/{item['id']}",
                     timeout=self.timeout,
@@ -287,7 +309,11 @@ def main():
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
 
-    manager = MealieTaxonomyManager(mealie_url, mealie_api_key, timeout=args.timeout)
+    dry_run = env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool)
+    if dry_run:
+        print("[start] runtime.dry_run=true (no write operations will be sent to Mealie).")
+
+    manager = MealieTaxonomyManager(mealie_url, mealie_api_key, timeout=args.timeout, dry_run=dry_run)
 
     if args.command == "import":
         file_path, items = load_json_items(args.file)

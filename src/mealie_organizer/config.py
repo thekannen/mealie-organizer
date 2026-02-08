@@ -43,6 +43,20 @@ def config_value(path, default=None):
     return current
 
 
+def to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", ""}:
+            return False
+    raise ValueError(f"Invalid boolean value: {value}")
+
+
 def env_or_config(_env_key, config_path, default=None, cast=None):
     raw = config_value(config_path, default)
     if raw is None:

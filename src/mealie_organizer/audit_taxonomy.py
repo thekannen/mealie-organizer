@@ -7,6 +7,12 @@ import requests
 from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path
 
 
+def require_str(value: object, field: str) -> str:
+    if isinstance(value, str):
+        return value
+    raise ValueError(f"Invalid value for '{field}': expected string, got {type(value).__name__}")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Audit Mealie category/tag quality and usage.")
     parser.add_argument(
@@ -72,7 +78,10 @@ def find_similar_tags(tags):
 def main():
     args = parse_args()
 
-    mealie_url = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api").rstrip("/")
+    mealie_url = require_str(
+        env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"),
+        "mealie.url",
+    ).rstrip("/")
     mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_url or not mealie_api_key:
         raise RuntimeError("MEALIE_URL and MEALIE_API_KEY are required in environment or .env")
