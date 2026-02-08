@@ -73,11 +73,11 @@ Run from cloned repo:
 Run directly on server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | bash
 ```
 
 Common flags:
-- `--target-dir <dir>` clone/update target (default `$HOME/mealie-scripts`)
+- `--target-dir <dir>` clone/update target (default `$HOME/mealie-organizer`)
 - `--repo-url <url>` override repo URL
 - `--repo-branch <branch>` override branch
 - `--use-current-repo` use current path and skip clone/update
@@ -91,7 +91,7 @@ Common flags:
 Cron examples:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-scripts/main/scripts/install/ubuntu_setup_mealie.sh | \
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | \
 bash -s -- --setup-cron --cron-schedule "0 */6 * * *"
 ```
 
