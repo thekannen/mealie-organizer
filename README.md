@@ -50,12 +50,13 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 
 - `configs/config.json`: central non-secret defaults (provider, models, paths, batch sizes, retries).
 - `runtime.dry_run`: when `true`, write operations are planned and logged but not sent to Mealie.
-- `.env`: secrets only.
+- `.env`: environment-specific user settings and secrets (especially useful in Docker/Portainer). Values here override `configs/config.json`.
 
 Precedence:
 1. CLI flags (where supported)
-2. `configs/config.json`
-3. Hardcoded fallback in code
+2. Environment variables (`.env`, Docker env, Portainer env)
+3. `configs/config.json`
+4. Hardcoded fallback in code
 
 ## Quick Start
 
@@ -72,7 +73,7 @@ cp .env.example .env
 ### Prerequisites
 
 - Docker Engine + Docker Compose plugin
-- `.env` with required secrets (at minimum `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
+- `.env` with required user settings and secrets (at minimum `MEALIE_URL` and `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
 - `configs/config.json` configured for your Mealie instance
 
 If your Ollama instance runs on the Docker host, set `providers.ollama.url` in `configs/config.json` to:

@@ -5,21 +5,30 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 CONFIG_FILE = REPO_ROOT / "configs" / "config.json"
-DOTENV_SECRET_KEYS = {"MEALIE_API_KEY", "OPENAI_API_KEY"}
 
 
 def load_env_file(path):
     if not path.exists():
         return
+
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+
         key, value = line.split("=", 1)
         key = key.strip()
-        if key not in DOTENV_SECRET_KEYS:
+        if not key:
             continue
-        os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
 
 
 load_env_file(ENV_FILE)
@@ -57,8 +66,15 @@ def to_bool(value):
     raise ValueError(f"Invalid boolean value: {value}")
 
 
-def env_or_config(_env_key, config_path, default=None, cast=None):
-    raw = config_value(config_path, default)
+def env_or_config(env_key, config_path, default=None, cast=None):
+    raw_env = os.environ.get(env_key)
+    if raw_env is not None and raw_env != "":
+        raw = raw_env
+        source = f"env '{env_key}'"
+    else:
+        raw = config_value(config_path, default)
+        source = f"config '{config_path}'"
+
     if raw is None:
         return None
 
@@ -68,7 +84,7 @@ def env_or_config(_env_key, config_path, default=None, cast=None):
     try:
         return cast(raw)
     except Exception as exc:
-        raise ValueError(f"Invalid value for config '{config_path}': {raw}") from exc
+        raise ValueError(f"Invalid value from {source}: {raw}") from exc
 
 
 def secret(env_key, required=False, default=""):
