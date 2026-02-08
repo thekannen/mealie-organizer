@@ -220,7 +220,7 @@ setup_cron_jobs() {
 
     add_or_replace_cron_line \
       "MEALIE_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_scripts.recipe_categorizer${provider_arg} >> logs/cron_categorizer.log 2>&1' # MEALIE_CATEGORIZER"
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_organizer.recipe_categorizer${provider_arg} >> logs/cron_categorizer.log 2>&1' # MEALIE_CATEGORIZER"
     remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
     remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
     echo "[ok] Cron job set for categorizer (provider=$provider_note): $CRON_SCHEDULE"

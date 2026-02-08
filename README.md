@@ -1,6 +1,6 @@
-# Mealie Automation Scripts
+# Mealie Organizer
 
-Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
+Standalone organizer utilities for managing Mealie taxonomy and AI-powered categorization.
 
 ## Included
 
@@ -23,7 +23,7 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │       ├── categories.json
 │       └── tags.json
 ├── src/
-│   └── mealie_scripts/
+│   └── mealie_organizer/
 │       ├── __init__.py
 │       ├── config.py
 │       ├── taxonomy_manager.py
@@ -165,7 +165,7 @@ bash -s -- --setup-cron --cron-schedule "0 */6 * * *"
 Taxonomy refresh:
 
 ```bash
-python3 -m mealie_scripts.taxonomy_manager refresh \
+python3 -m mealie_organizer.taxonomy_manager refresh \
   --categories-file configs/taxonomy/categories.json \
   --tags-file configs/taxonomy/tags.json \
   --replace-categories --replace-tags \
@@ -175,13 +175,13 @@ python3 -m mealie_scripts.taxonomy_manager refresh \
 Taxonomy import:
 
 ```bash
-python3 -m mealie_scripts.taxonomy_manager import \
+python3 -m mealie_organizer.taxonomy_manager import \
   --file configs/taxonomy/categories.json \
   --endpoint categories --replace
 ```
 
 ```bash
-python3 -m mealie_scripts.taxonomy_manager import \
+python3 -m mealie_organizer.taxonomy_manager import \
   --file configs/taxonomy/tags.json \
   --endpoint tags --replace
 ```
@@ -189,13 +189,13 @@ python3 -m mealie_scripts.taxonomy_manager import \
 Taxonomy audit:
 
 ```bash
-python3 -m mealie_scripts.audit_taxonomy
+python3 -m mealie_organizer.audit_taxonomy
 ```
 
 Categorize recipes:
 
 ```bash
-python3 -m mealie_scripts.recipe_categorizer
+python3 -m mealie_organizer.recipe_categorizer
 ```
 
 Installed command alias (after `pip install -e .`):
@@ -212,9 +212,9 @@ Provider selection:
 Run modes:
 
 ```bash
-python3 -m mealie_scripts.recipe_categorizer --missing-tags
-python3 -m mealie_scripts.recipe_categorizer --missing-categories
-python3 -m mealie_scripts.recipe_categorizer --recat
+python3 -m mealie_organizer.recipe_categorizer --missing-tags
+python3 -m mealie_organizer.recipe_categorizer --missing-categories
+python3 -m mealie_organizer.recipe_categorizer --recat
 ```
 
 ## Development

@@ -1,6 +1,6 @@
 import pytest
 
-from mealie_scripts.taxonomy_manager import normalize_payload_items, MealieTaxonomyManager
+from mealie_organizer.taxonomy_manager import normalize_payload_items, MealieTaxonomyManager
 
 
 def test_normalize_payload_items_from_strings():

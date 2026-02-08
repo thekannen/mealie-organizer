@@ -1,4 +1,4 @@
-from mealie_scripts.categorizer_core import parse_json_response
+from mealie_organizer.categorizer_core import parse_json_response
 
 
 def test_parse_json_response_handles_json_fence():

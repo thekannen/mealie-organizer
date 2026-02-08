@@ -2,7 +2,7 @@ import types
 
 import pytest
 
-from mealie_scripts.recipe_categorizer import cache_file_for_provider, derive_target_mode, resolve_provider
+from mealie_organizer.recipe_categorizer import cache_file_for_provider, derive_target_mode, resolve_provider
 
 
 def test_resolve_provider_prefers_forced_provider():

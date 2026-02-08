@@ -10,20 +10,20 @@ run_task() {
   case "$TASK" in
     categorize)
       if [ -n "$PROVIDER" ]; then
-        python -m mealie_scripts.recipe_categorizer --provider "$PROVIDER"
+        python -m mealie_organizer.recipe_categorizer --provider "$PROVIDER"
       else
-        python -m mealie_scripts.recipe_categorizer
+        python -m mealie_organizer.recipe_categorizer
       fi
       ;;
     taxonomy-refresh)
-      python -m mealie_scripts.taxonomy_manager refresh \
+      python -m mealie_organizer.taxonomy_manager refresh \
         --categories-file configs/taxonomy/categories.json \
         --tags-file configs/taxonomy/tags.json \
         --replace-categories --replace-tags \
         --cleanup --cleanup-only-unused --cleanup-delete-noisy
       ;;
     taxonomy-audit)
-      python -m mealie_scripts.audit_taxonomy
+      python -m mealie_organizer.audit_taxonomy
       ;;
     *)
       echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, or taxonomy-audit."
