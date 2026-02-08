@@ -55,6 +55,7 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 
 - `configs/config.json`: central non-secret defaults (taxonomy file paths, batching/concurrency, retries, provider HTTP tuning).
 - `.env`: environment-specific user settings and secrets (especially useful in Docker/Portainer). Values here override `configs/config.json`.
+- `TAXONOMY_REFRESH_MODE`: controls `TASK=taxonomy-refresh` behavior (`merge` keeps existing organizer values and adds missing template values; `replace` performs full rebuild).
 
 Precedence:
 1. CLI flags (where supported)
@@ -107,6 +108,8 @@ docker compose logs -f mealie-organizer
 ```bash
 docker compose run --rm -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
+# Full rebuild mode (destructive):
+docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once -e TAXONOMY_REFRESH_MODE=replace mealie-organizer
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 ```
 
@@ -155,6 +158,8 @@ Taxonomy refresh once:
 
 ```bash
 docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
+# Full rebuild mode (destructive):
+docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once -e TAXONOMY_REFRESH_MODE=replace mealie-organizer
 ```
 
 Taxonomy audit once:
@@ -238,10 +243,16 @@ Taxonomy refresh:
 
 ```bash
 python3 -m mealie_organizer.taxonomy_manager refresh \
+  --mode merge \
   --categories-file configs/taxonomy/categories.json \
   --tags-file configs/taxonomy/tags.json \
-  --replace-categories --replace-tags \
   --cleanup --cleanup-only-unused --cleanup-delete-noisy
+
+# Full rebuild (destructive)
+python3 -m mealie_organizer.taxonomy_manager refresh \
+  --mode replace \
+  --categories-file configs/taxonomy/categories.json \
+  --tags-file configs/taxonomy/tags.json
 ```
 
 Taxonomy import:

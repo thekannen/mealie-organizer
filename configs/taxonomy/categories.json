@@ -1,15 +1,44 @@
 [
-  {"name": "Breakfast"},
-  {"name": "Brunch"},
-  {"name": "Lunch"},
-  {"name": "Dinner"},
-  {"name": "Appetizer"},
-  {"name": "Side"},
-  {"name": "Soup"},
-  {"name": "Salad"},
-  {"name": "Snack"},
-  {"name": "Dessert"},
-  {"name": "Drink"},
-  {"name": "Sauce"},
-  {"name": "Bread"}
+  {
+    "name": "Breakfast"
+  },
+  {
+    "name": "Brunch"
+  },
+  {
+    "name": "Lunch"
+  },
+  {
+    "name": "Dinner"
+  },
+  {
+    "name": "Appetizer"
+  },
+  {
+    "name": "Side"
+  },
+  {
+    "name": "Soup"
+  },
+  {
+    "name": "Salad"
+  },
+  {
+    "name": "Snack"
+  },
+  {
+    "name": "Dessert"
+  },
+  {
+    "name": "Drink"
+  },
+  {
+    "name": "Sauce"
+  },
+  {
+    "name": "Bread"
+  },
+  {
+    "name": "Originals"
+  }
 ]

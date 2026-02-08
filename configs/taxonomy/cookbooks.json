@@ -1,8 +1,8 @@
 [
   {
     "name": "Weeknight Fast Dinners",
-    "description": "Dinner recipes for fast weekday cooking.",
-    "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\"]",
+    "description": "Dinner recipes for fast weekday cooking and low-mess prep.",
+    "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\", \"One-Pot\"]",
     "public": false,
     "position": 1
   },
@@ -28,23 +28,23 @@
     "position": 4
   },
   {
-    "name": "Gluten and Dairy Free",
-    "description": "Recipes tagged for both gluten-free and dairy-free needs.",
-    "queryFilterString": "tags.name IN [\"Gluten-Free\"] AND tags.name IN [\"Dairy-Free\"]",
+    "name": "Allergy Friendly",
+    "description": "Recipes tagged for common dietary restrictions.",
+    "queryFilterString": "tags.name IN [\"Gluten-Free\", \"Dairy-Free\", \"Nut-Free\"]",
     "public": false,
     "position": 5
   },
   {
-    "name": "No-Cook Lunches",
-    "description": "Fresh lunches that avoid cooking.",
-    "queryFilterString": "recipeCategory.name IN [\"Lunch\"] AND tags.name IN [\"No-Cook\", \"Fresh\"]",
+    "name": "Fresh and Light",
+    "description": "Lighter recipes with fresh, lower-carb, or no-cook signals.",
+    "queryFilterString": "tags.name IN [\"Fresh\", \"No-Cook\", \"Low-Carb\", \"Mediterranean\"]",
     "public": false,
     "position": 6
   },
   {
-    "name": "One-Pot and Sheet Pan",
-    "description": "Low-mess weeknight cooking methods.",
-    "queryFilterString": "tags.name IN [\"One-Pot\", \"Sheet Pan\"]",
+    "name": "Comfort Food Favorites",
+    "description": "Hearty comfort recipes for regular rotation.",
+    "queryFilterString": "tags.name IN [\"Comfort Food\"]",
     "public": false,
     "position": 7
   },
@@ -54,5 +54,12 @@
     "queryFilterString": "tags.name IN [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
     "public": false,
     "position": 8
+  },
+  {
+    "name": "Originals",
+    "description": "Manually created home recipes and non-URL imports.",
+    "queryFilterString": "recipeCategory.name IN [\"Originals\"]",
+    "public": false,
+    "position": 9
   }
 ]

@@ -1,6 +1,10 @@
 import pytest
 
-from mealie_organizer.taxonomy_manager import MealieTaxonomyManager, normalize_payload_items
+from mealie_organizer.taxonomy_manager import (
+    MealieTaxonomyManager,
+    normalize_payload_items,
+    resolve_refresh_replace_flags,
+)
 
 
 def test_normalize_payload_items_from_strings():
@@ -60,3 +64,15 @@ def test_import_items_replace_dry_run_plans_add(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "[plan] Add: Dinner" in out
     assert "[skip] Exists: Dinner" not in out
+
+
+def test_resolve_refresh_replace_flags_merge_defaults_to_non_destructive():
+    assert resolve_refresh_replace_flags("merge", False, False) == (False, False)
+
+
+def test_resolve_refresh_replace_flags_merge_honors_partial_replace_flags():
+    assert resolve_refresh_replace_flags("merge", True, False) == (True, False)
+
+
+def test_resolve_refresh_replace_flags_replace_forces_full_replace():
+    assert resolve_refresh_replace_flags("replace", False, False) == (True, True)

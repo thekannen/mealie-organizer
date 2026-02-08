@@ -37,6 +37,9 @@
     "cleanup": {
       "max_length": 24,
       "min_usage": 1
+    },
+    "refresh": {
+      "mode": "merge"
     }
   }
 }

@@ -12,6 +12,7 @@ services:
       RUN_MODE: loop
       RUN_INTERVAL_SECONDS: 21600
       PROVIDER: ""
+      TAXONOMY_REFRESH_MODE: merge
     volumes:
       - ./configs:/app/configs
       - ./cache:/app/cache

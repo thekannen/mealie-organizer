@@ -16,10 +16,11 @@ run_task() {
       fi
       ;;
     taxonomy-refresh)
+      TAXONOMY_REFRESH_MODE="${TAXONOMY_REFRESH_MODE:-merge}"
       python -m mealie_organizer.taxonomy_manager refresh \
+        --mode "$TAXONOMY_REFRESH_MODE" \
         --categories-file configs/taxonomy/categories.json \
         --tags-file configs/taxonomy/tags.json \
-        --replace-categories --replace-tags \
         --cleanup --cleanup-only-unused --cleanup-delete-noisy
       ;;
     taxonomy-audit)

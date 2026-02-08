@@ -282,6 +282,12 @@ def build_parser():
     refresh_parser.add_argument("--categories-file", default=DEFAULT_CATEGORIES_FILE, help="Category JSON input file.")
     refresh_parser.add_argument("--tags-file", default=DEFAULT_TAGS_FILE, help="Tag JSON input file (optional).")
     refresh_parser.add_argument(
+        "--mode",
+        choices=["merge", "replace"],
+        default=env_or_config("TAXONOMY_REFRESH_MODE", "taxonomy.refresh.mode", "merge"),
+        help="Refresh mode: 'merge' keeps existing taxonomy and adds missing items; 'replace' deletes existing items first.",
+    )
+    refresh_parser.add_argument(
         "--replace-categories",
         action="store_true",
         help="Delete existing categories before importing categories file.",
@@ -299,6 +305,13 @@ def build_parser():
     refresh_parser.add_argument("--cleanup-only-unused", action="store_true")
 
     return parser
+
+
+def resolve_refresh_replace_flags(mode, replace_categories, replace_tags):
+    normalized = str(mode or "merge").strip().lower()
+    if normalized == "replace":
+        return True, True
+    return bool(replace_categories), bool(replace_tags)
 
 
 def main():
@@ -351,14 +364,21 @@ def main():
         return
 
     if args.command == "refresh":
+        replace_categories, replace_tags = resolve_refresh_replace_flags(
+            args.mode,
+            args.replace_categories,
+            args.replace_tags,
+        )
+        print(f"[start] Refresh mode: {args.mode}")
+
         categories_file, categories = load_json_items(args.categories_file)
         print(f"[start] Import categories from {categories_file.relative_to(REPO_ROOT)}")
-        manager.import_items("categories", categories, replace=args.replace_categories)
+        manager.import_items("categories", categories, replace=replace_categories)
 
         if args.tags_file:
             tags_file, tags = load_json_items(args.tags_file)
             print(f"[start] Import tags from {tags_file.relative_to(REPO_ROOT)}")
-            manager.import_items("tags", tags, replace=args.replace_tags)
+            manager.import_items("tags", tags, replace=replace_tags)
         else:
             print("[warn] No --tags-file provided; skipping tag import.")
 
