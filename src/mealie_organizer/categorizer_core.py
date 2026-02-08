@@ -529,10 +529,20 @@ Recipes:
             return
 
         if not self.replace_existing and not self.dry_run:
-            cached_slugs = [r["slug"] for r in batch if r.get("slug") in self.cache]
+            cached_slugs = [
+                r["slug"]
+                for r in batch
+                if r.get("slug") in self.cache and (r.get("recipeCategory") or []) and (r.get("tags") or [])
+            ]
             if cached_slugs:
                 self.advance_progress(len(cached_slugs))
-            batch = [r for r in batch if r.get("slug") not in self.cache]
+            batch = [
+                r
+                for r in batch
+                if not (
+                    r.get("slug") in self.cache and (r.get("recipeCategory") or []) and (r.get("tags") or [])
+                )
+            ]
             if not batch:
                 return
 

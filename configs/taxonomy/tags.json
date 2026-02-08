@@ -1,46 +1,152 @@
 [
-  {"name": "American"},
-  {"name": "Italian"},
-  {"name": "Mexican"},
-  {"name": "Mediterranean"},
-  {"name": "Middle Eastern"},
-  {"name": "Indian"},
-  {"name": "Thai"},
-  {"name": "Chinese"},
-  {"name": "Japanese"},
-  {"name": "Korean"},
-  {"name": "Vietnamese"},
-  {"name": "Latin American"},
-  {"name": "Vegetarian"},
-  {"name": "Vegan"},
-  {"name": "Pescatarian"},
-  {"name": "Gluten-Free"},
-  {"name": "Dairy-Free"},
-  {"name": "Nut-Free"},
-  {"name": "Low-Carb"},
-  {"name": "High-Protein"},
-  {"name": "One-Pot"},
-  {"name": "Sheet Pan"},
-  {"name": "Slow Cooker"},
-  {"name": "Instant Pot"},
-  {"name": "Air Fryer"},
-  {"name": "Stovetop"},
-  {"name": "Grilled"},
-  {"name": "Roasted"},
-  {"name": "Baked"},
-  {"name": "No-Cook"},
-  {"name": "Weeknight"},
-  {"name": "Meal Prep"},
-  {"name": "Make-Ahead"},
-  {"name": "Freezer-Friendly"},
-  {"name": "Kid-Friendly"},
-  {"name": "Holiday"},
-  {"name": "Party"},
-  {"name": "Crowd-Pleaser"},
-  {"name": "30-Minute"},
-  {"name": "5-Ingredient"},
-  {"name": "Beginner-Friendly"},
-  {"name": "Spicy"},
-  {"name": "Comfort Food"},
-  {"name": "Fresh"}
+  {
+    "name": "American"
+  },
+  {
+    "name": "Italian"
+  },
+  {
+    "name": "Mexican"
+  },
+  {
+    "name": "Mediterranean"
+  },
+  {
+    "name": "Middle Eastern"
+  },
+  {
+    "name": "Indian"
+  },
+  {
+    "name": "Thai"
+  },
+  {
+    "name": "Chinese"
+  },
+  {
+    "name": "Japanese"
+  },
+  {
+    "name": "Korean"
+  },
+  {
+    "name": "Vietnamese"
+  },
+  {
+    "name": "Latin American"
+  },
+  {
+    "name": "Vegetarian"
+  },
+  {
+    "name": "Vegan"
+  },
+  {
+    "name": "Pescatarian"
+  },
+  {
+    "name": "Gluten-Free"
+  },
+  {
+    "name": "Dairy-Free"
+  },
+  {
+    "name": "Nut-Free"
+  },
+  {
+    "name": "Low-Carb"
+  },
+  {
+    "name": "High-Protein"
+  },
+  {
+    "name": "One-Pot"
+  },
+  {
+    "name": "Sheet Pan"
+  },
+  {
+    "name": "Slow Cooker"
+  },
+  {
+    "name": "Instant Pot"
+  },
+  {
+    "name": "Air Fryer"
+  },
+  {
+    "name": "Stovetop"
+  },
+  {
+    "name": "Grilled"
+  },
+  {
+    "name": "Roasted"
+  },
+  {
+    "name": "Baked"
+  },
+  {
+    "name": "Baking"
+  },
+  {
+    "name": "No-Cook"
+  },
+  {
+    "name": "Cocktail"
+  },
+  {
+    "name": "Condiment"
+  },
+  {
+    "name": "Weeknight"
+  },
+  {
+    "name": "Meal Prep"
+  },
+  {
+    "name": "Make-Ahead"
+  },
+  {
+    "name": "Freezer-Friendly"
+  },
+  {
+    "name": "Kid-Friendly"
+  },
+  {
+    "name": "Holiday"
+  },
+  {
+    "name": "Party"
+  },
+  {
+    "name": "Crowd-Pleaser"
+  },
+  {
+    "name": "30-Minute"
+  },
+  {
+    "name": "5-Ingredient"
+  },
+  {
+    "name": "Beginner-Friendly"
+  },
+  {
+    "name": "Spicy"
+  },
+  {
+    "name": "Comfort Food"
+  },
+  {
+    "name": "Fresh"
+  },
+  {
+    "name": "Citrus"
+  },
+  {
+    "name": "Chocolate"
+  },
+  {
+    "name": "Sweet"
+  }
 ]

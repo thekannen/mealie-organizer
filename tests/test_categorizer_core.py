@@ -193,3 +193,48 @@ def test_process_batch_fallback_uses_split_category_and_tag_prompts(monkeypatch,
     )
 
     assert updates == [("split-recipe", ["Dinner"], ["Quick"])]
+
+
+def test_process_batch_does_not_skip_cached_when_tags_missing(monkeypatch, tmp_path):
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=False,
+    )
+    categorizer.cache = {"needs-tags": {"categories": ["Sauce"], "tags": []}}
+
+    recipe = {
+        "slug": "needs-tags",
+        "name": "Needs Tags",
+        "ingredients": [],
+        "recipeCategory": [{"name": "Sauce", "slug": "sauce"}],
+        "tags": [],
+    }
+
+    def fake_safe_query_with_retry(prompt_text, retries=None):
+        return [{"slug": "needs-tags", "categories": ["Sauce"], "tags": ["Quick"]}]
+
+    updates = []
+
+    def fake_update(recipe_data, categories, tags, categories_lookup, tags_lookup):
+        updates.append((recipe_data["slug"], categories, tags))
+        return True
+
+    monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
+    monkeypatch.setattr(categorizer, "update_recipe_metadata", fake_update)
+
+    categorizer.process_batch(
+        [recipe],
+        ["Sauce"],
+        ["Quick"],
+        {"sauce": {"name": "Sauce"}},
+        {"quick": {"name": "Quick"}},
+    )
+
+    assert updates == [("needs-tags", ["Sauce"], ["Quick"])]

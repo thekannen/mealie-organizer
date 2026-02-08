@@ -37,7 +37,8 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 │       └── recipe_categorizer_chatgpt.py
 ├── scripts/
 │   ├── docker/
-│   │   └── entrypoint.sh
+│   │   ├── entrypoint.sh
+│   │   └── update.sh
 │   └── install/
 │       └── ubuntu_setup_mealie.sh
 ├── tests/
@@ -109,6 +110,12 @@ docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organiz
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 ```
 
+8. Update later with the built-in updater script.
+
+```bash
+./scripts/docker/update.sh
+```
+
 ## Docker Deployment
 
 ### Prerequisites
@@ -164,10 +171,24 @@ docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 
 ### Update and redeploy
 
+Recommended (safe one-command updater):
+
+```bash
+./scripts/docker/update.sh
+```
+
+Manual equivalent:
+
 ```bash
 git pull
-docker compose up -d --build
+docker compose up -d --build --remove-orphans mealie-organizer
 ```
+
+Updater options:
+- `--skip-git-pull` restart using local code only
+- `--no-build` restart without image rebuild
+- `--branch <name>` update from a different branch
+- `--prune` remove dangling images after update
 
 ### Logs and stop
 
