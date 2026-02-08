@@ -7,6 +7,7 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 - Taxonomy reset/import/cleanup lifecycle manager
 - Recipe categorization via Ollama or ChatGPT/OpenAI-compatible APIs
 - Taxonomy auditing and cleanup tooling
+- Cookbook sync and organization views
 - Ubuntu setup script
 - Docker deployment path
 
@@ -21,13 +22,15 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 │   ├── config.json
 │   └── taxonomy/
 │       ├── categories.json
-│       └── tags.json
+│       ├── tags.json
+│       └── cookbooks.json
 ├── src/
 │   └── mealie_organizer/
 │       ├── __init__.py
 │       ├── config.py
 │       ├── taxonomy_manager.py
 │       ├── audit_taxonomy.py
+│       ├── cookbook_manager.py
 │       ├── categorizer_core.py
 │       ├── recipe_categorizer.py
 │       ├── recipe_categorizer_ollama.py
@@ -40,7 +43,8 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 ├── tests/
 │   ├── test_categorizer_core.py
 │   ├── test_taxonomy_manager.py
-│   └── test_recipe_categorizer.py
+│   ├── test_recipe_categorizer.py
+│   └── test_cookbook_manager.py
 ├── .env.example
 ├── pyproject.toml
 └── README.md
@@ -49,7 +53,6 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 ## Configuration Model
 
 - `configs/config.json`: central non-secret defaults (provider, models, paths, batch sizes, retries).
-- `runtime.dry_run`: when `true`, write operations are planned and logged but not sent to Mealie.
 - `.env`: environment-specific user settings and secrets (especially useful in Docker/Portainer). Values here override `configs/config.json`.
 
 Precedence:
@@ -76,11 +79,13 @@ cp .env.example .env
 - `.env` with required user settings and secrets (at minimum `MEALIE_URL` and `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
 - `configs/config.json` configured for your Mealie instance
 
-If your Ollama instance runs on the Docker host, set `providers.ollama.url` in `configs/config.json` to:
+If your Ollama instance is not local to the container, set `OLLAMA_URL` in `.env` (or Portainer env vars) to:
 
 ```text
 http://host.docker.internal:11434/api
 ```
+
+`OLLAMA_URL` overrides `providers.ollama.url` in `configs/config.json`.
 
 ### Start as a long-running service
 
@@ -111,6 +116,12 @@ Taxonomy audit once:
 
 ```bash
 docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
+```
+
+Cookbook sync once:
+
+```bash
+docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 ```
 
 ### Update and redeploy
@@ -194,21 +205,36 @@ Taxonomy audit:
 python3 -m mealie_organizer.audit_taxonomy
 ```
 
+Cookbook sync:
+
+```bash
+python3 -m mealie_organizer.cookbook_manager sync
+```
+
+Cookbook sync with cleanup of unmanaged cookbooks:
+
+```bash
+python3 -m mealie_organizer.cookbook_manager sync --replace
+```
+
 Categorize recipes:
 
 ```bash
 python3 -m mealie_organizer.recipe_categorizer
 ```
 
-Installed command alias (after `pip install -e .`):
+Installed command aliases (after `pip install -e .`):
 
 ```bash
 mealie-categorizer
+mealie-taxonomy
+mealie-taxonomy-audit
+mealie-cookbooks
 ```
 
 Provider selection:
 
-- Set `categorizer.provider` in `configs/config.json` to `ollama` or `chatgpt` (single source of truth).
+- Set `CATEGORIZER_PROVIDER` in `.env` (or container env vars) to `ollama` or `chatgpt` for deployment-specific behavior.
 - Or override per command with `--provider`.
 
 Run modes:
@@ -219,15 +245,13 @@ python3 -m mealie_organizer.recipe_categorizer --missing-categories
 python3 -m mealie_organizer.recipe_categorizer --recat
 ```
 
-Dry-run mode (config-driven):
+Dry-run mode (env-driven):
 
-```json
-"runtime": {
-  "dry_run": true
-}
+```bash
+DRY_RUN=true
 ```
 
-With dry-run enabled, taxonomy imports/cleanup and recipe metadata updates are logged as `[plan]` actions and no write requests are sent to Mealie.
+With dry-run enabled, taxonomy imports/cleanup, cookbook sync actions, and recipe metadata updates are logged as `[plan]` actions and no write requests are sent to Mealie.
 
 ## Development
 
@@ -239,5 +263,5 @@ python3 -m pytest
 
 ## Notes
 
-- Default provider and model are controlled by `configs/config.json`.
-- Keep secrets only in `.env`; keep non-secret runtime settings in `configs/config.json`.
+- Default provider behavior is controlled by `configs/config.json`; deployment-specific model selection should be set via env vars (`CATEGORIZER_PROVIDER`, `OLLAMA_MODEL`, `OPENAI_MODEL`, `OLLAMA_URL`).
+- Keep environment-specific settings and secrets in `.env`; keep reusable defaults in `configs/config.json` and cookbook definitions in `configs/taxonomy/cookbooks.json`.
