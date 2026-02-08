@@ -192,6 +192,31 @@ Recipes:
         return prompt.strip()
 
     @staticmethod
+    def make_category_prompt(recipes, category_names):
+        categories_text = "\n".join(f"- {name}" for name in category_names)
+        prompt = f"""
+You are a food recipe category selector.
+
+Select one or more applicable categories for each recipe from THIS LIST ONLY:
+{categories_text}
+
+Return ONLY valid JSON array like:
+[
+  {{"slug": "recipe-slug", "categories": ["Dinner"]}}
+]
+
+If absolutely no categories match, use an empty array. No commentary.
+
+Recipes:
+"""
+        for recipe in recipes:
+            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
+            prompt += (
+                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
+            )
+        return prompt.strip()
+
+    @staticmethod
     def make_tag_prompt(recipes, tag_names):
         tags_text = "\n".join(f"- {name}" for name in tag_names)
         prompt = f"""
@@ -393,6 +418,112 @@ Recipes:
         for i in range(0, len(recipes), size):
             yield recipes[i : i + size]
 
+    @staticmethod
+    def normalize_name_list(value):
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r"[;,]", value) if item.strip()]
+        if isinstance(value, list):
+            normalized = []
+            for item in value:
+                text = str(item).strip()
+                if text:
+                    normalized.append(text)
+            return normalized
+        return []
+
+    def extract_entry_for_slug(self, parsed, slug):
+        if not isinstance(parsed, list):
+            return None
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            if (entry.get("slug") or "").strip() == slug:
+                return entry
+        return None
+
+    def parse_entry_labels(self, entry):
+        categories = self.normalize_name_list(entry.get("categories"))
+        tags_field = entry.get("tags")
+        if tags_field is None:
+            tags_field = entry.get("tag") or entry.get("labels")
+        tags = self.normalize_name_list(tags_field)
+        return categories, tags
+
+    def apply_parsed_entries_to_batch(self, batch, parsed, tag_names, categories_by_name, tags_by_name):
+        recipes_by_slug = {r.get("slug"): r for r in batch if r.get("slug")}
+        processed = set()
+        self.ensure_tags_for_entries(parsed, recipes_by_slug, tag_names)
+
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+
+            slug = (entry.get("slug") or "").strip()
+            if not slug:
+                continue
+            recipe = recipes_by_slug.get(slug)
+            if not recipe:
+                print(f"[warn] Ignoring unknown slug from model: {slug}")
+                continue
+
+            categories, tags = self.parse_entry_labels(entry)
+            self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
+            processed.add(slug)
+
+        missing = sorted(set(recipes_by_slug) - processed)
+        if missing:
+            print(f"[warn] Model returned no data for: {', '.join(missing)}")
+
+        return len(recipes_by_slug)
+
+    def classify_single_recipe_with_fallback(self, recipe, category_names, tag_names):
+        slug = (recipe.get("slug") or "").strip()
+        if not slug:
+            return None
+
+        parsed = self.safe_query_with_retry(self.make_prompt([recipe], category_names, tag_names))
+        entry = self.extract_entry_for_slug(parsed, slug)
+        if entry:
+            categories, tags = self.parse_entry_labels(entry)
+            return {"slug": slug, "categories": categories, "tags": tags}
+
+        print(f"[warn] Per-recipe classify failed for {slug}; trying split category/tag prompts.")
+
+        categories = []
+        category_results = self.safe_query_with_retry(self.make_category_prompt([recipe], category_names))
+        category_entry = self.extract_entry_for_slug(category_results, slug)
+        if category_entry:
+            categories = self.normalize_name_list(category_entry.get("categories"))
+
+        tags = []
+        tag_results = self.safe_query_with_retry(self.make_tag_prompt([recipe], tag_names))
+        tag_entry = self.extract_entry_for_slug(tag_results, slug)
+        if tag_entry:
+            tags_field = tag_entry.get("tags")
+            if tags_field is None:
+                tags_field = tag_entry.get("tag") or tag_entry.get("labels")
+            tags = self.normalize_name_list(tags_field)
+
+        if not categories and not tags:
+            return None
+
+        return {"slug": slug, "categories": categories, "tags": tags}
+
+    def process_batch_with_fallback(self, batch, category_names, tag_names, categories_by_name, tags_by_name):
+        print("[warn] Falling back to per-recipe classification for this batch.")
+        for recipe in batch:
+            slug = (recipe.get("slug") or "").strip() or "(missing slug)"
+            entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names)
+            if not entry:
+                print(f"[warn] No classification returned for {slug} after fallback attempts.")
+                self.advance_progress(1)
+                continue
+
+            categories = self.normalize_name_list(entry.get("categories"))
+            tags = self.normalize_name_list(entry.get("tags"))
+            self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
+            self.advance_progress(1)
+
     def process_batch(self, batch, category_names, tag_names, categories_by_name, tags_by_name):
         if not batch:
             return
@@ -406,48 +537,19 @@ Recipes:
                 return
 
         parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names))
-        if not parsed:
-            print("[warn] Batch failed parsing after retries.")
-            self.advance_progress(len(batch))
-            return
-
         if not isinstance(parsed, list):
-            print("[warn] Model response was not a list; skipping batch.")
-            self.advance_progress(len(batch))
+            print("[warn] Batch failed parsing after retries.")
+            self.process_batch_with_fallback(batch, category_names, tag_names, categories_by_name, tags_by_name)
             return
 
-        recipes_by_slug = {r.get("slug"): r for r in batch if r.get("slug")}
-        processed = set()
-        self.ensure_tags_for_entries(parsed, recipes_by_slug, tag_names)
-
-        for entry in parsed:
-            slug = (entry.get("slug") or "").strip()
-            if not slug:
-                continue
-            recipe = recipes_by_slug.get(slug)
-            if not recipe:
-                print(f"[warn] Ignoring unknown slug from model: {slug}")
-                continue
-
-            categories = entry.get("categories") or []
-            tags_field = entry.get("tags")
-            if tags_field is None:
-                tags_field = entry.get("tag") or entry.get("labels")
-            if isinstance(tags_field, str):
-                tags = [t.strip() for t in re.split(r"[;,]", tags_field) if t.strip()]
-            elif isinstance(tags_field, list):
-                tags = tags_field
-            else:
-                tags = []
-
-            self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
-            processed.add(slug)
-
-        missing = set(recipes_by_slug) - processed
-        if missing:
-            print(f"[warn] Model returned no data for: {', '.join(sorted(missing))}")
-
-        self.advance_progress(len(recipes_by_slug))
+        processed_count = self.apply_parsed_entries_to_batch(
+            batch,
+            parsed,
+            tag_names,
+            categories_by_name,
+            tags_by_name,
+        )
+        self.advance_progress(processed_count)
 
     def run(self):
         mode = (

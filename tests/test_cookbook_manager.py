@@ -72,3 +72,16 @@ def test_sync_cookbooks_dry_run_plans_create_update_delete(monkeypatch, capsys):
     assert "[plan] Create cookbook: Meal Prep" in out
     assert "[plan] Delete cookbook: To Remove" in out
     assert (created, updated, deleted, skipped, failed) == (1, 1, 1, 0, 0)
+
+
+def test_normalize_cookbook_items_converts_contains_any_to_in():
+    items = normalize_cookbook_items(
+        [
+            {
+                "name": "Quick Meals",
+                "queryFilterString": "tags.name CONTAINS_ANY [\"Quick\", \"Weeknight\"]",
+            }
+        ]
+    )
+
+    assert items[0]["queryFilterString"] == 'tags.name IN ["Quick", "Weeknight"]'

@@ -1,7 +1,8 @@
 import argparse
-import json
 from pathlib import Path
 
+import json
+import re
 import requests
 
 from .config import REPO_ROOT, env_or_config, require_mealie_url, resolve_repo_path, secret, to_bool
@@ -32,6 +33,11 @@ def require_int(value: object, field: str) -> int:
     if isinstance(value, str):
         return int(value.strip())
     raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
+def normalize_query_filter_string(value: str) -> str:
+    normalized = re.sub(r"\bCONTAINS[_ ]ANY\b", "IN", value, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 class MealieCookbookManager:
@@ -184,7 +190,9 @@ def normalize_cookbook_items(raw_data: object) -> list[dict]:
             raise ValueError(f"Cookbook #{idx} must include a non-empty 'name'.")
 
         description = require_str(entry.get("description", ""), f"cookbooks[{idx}].description")
-        query_filter = require_str(entry.get("queryFilterString", ""), f"cookbooks[{idx}].queryFilterString")
+        query_filter = normalize_query_filter_string(
+            require_str(entry.get("queryFilterString", ""), f"cookbooks[{idx}].queryFilterString")
+        )
         public = require_bool(entry.get("public", False), f"cookbooks[{idx}].public")
         position = require_int(entry.get("position", idx), f"cookbooks[{idx}].position")
 

@@ -2,56 +2,56 @@
   {
     "name": "Weeknight Fast Dinners",
     "description": "Dinner recipes for fast weekday cooking.",
-    "queryFilterString": "recipeCategory.name CONTAINS_ANY [\"Dinner\"] AND tags.name CONTAINS_ANY [\"Weeknight\", \"30-Minute\"]",
+    "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\"]",
     "public": false,
     "position": 1
   },
   {
     "name": "Meal Prep Queue",
     "description": "Recipes suited for prep, storage, and reheating.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"Meal Prep\", \"Make-Ahead\", \"Freezer-Friendly\"]",
+    "queryFilterString": "tags.name IN [\"Meal Prep\", \"Make-Ahead\", \"Freezer-Friendly\"]",
     "public": false,
     "position": 2
   },
   {
     "name": "High Protein",
     "description": "Protein-forward meals and snacks.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"High-Protein\"]",
+    "queryFilterString": "tags.name IN [\"High-Protein\"]",
     "public": false,
     "position": 3
   },
   {
     "name": "Plant-Based",
     "description": "Vegetarian and vegan-friendly recipes.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"Vegetarian\", \"Vegan\"]",
+    "queryFilterString": "tags.name IN [\"Vegetarian\", \"Vegan\"]",
     "public": false,
     "position": 4
   },
   {
     "name": "Gluten and Dairy Free",
     "description": "Recipes tagged for both gluten-free and dairy-free needs.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"Gluten-Free\"] AND tags.name CONTAINS_ANY [\"Dairy-Free\"]",
+    "queryFilterString": "tags.name IN [\"Gluten-Free\"] AND tags.name IN [\"Dairy-Free\"]",
     "public": false,
     "position": 5
   },
   {
     "name": "No-Cook Lunches",
     "description": "Fresh lunches that avoid cooking.",
-    "queryFilterString": "recipeCategory.name CONTAINS_ANY [\"Lunch\"] AND tags.name CONTAINS_ANY [\"No-Cook\", \"Fresh\"]",
+    "queryFilterString": "recipeCategory.name IN [\"Lunch\"] AND tags.name IN [\"No-Cook\", \"Fresh\"]",
     "public": false,
     "position": 6
   },
   {
     "name": "One-Pot and Sheet Pan",
     "description": "Low-mess weeknight cooking methods.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"One-Pot\", \"Sheet Pan\"]",
+    "queryFilterString": "tags.name IN [\"One-Pot\", \"Sheet Pan\"]",
     "public": false,
     "position": 7
   },
   {
     "name": "Crowd and Holiday",
     "description": "Recipes for gatherings and celebrations.",
-    "queryFilterString": "tags.name CONTAINS_ANY [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
+    "queryFilterString": "tags.name IN [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
     "public": false,
     "position": 8
   }
