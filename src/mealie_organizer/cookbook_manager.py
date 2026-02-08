@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-from .config import REPO_ROOT, env_or_config, resolve_repo_path, secret, to_bool
+from .config import REPO_ROOT, env_or_config, require_mealie_url, resolve_repo_path, secret, to_bool
 
 DEFAULT_COOKBOOKS_FILE = env_or_config("COOKBOOKS_FILE", "taxonomy.cookbooks_file", "configs/taxonomy/cookbooks.json")
 
@@ -113,7 +113,7 @@ class MealieCookbookManager:
             or (existing.get("queryFilterString") or "") != desired.get("queryFilterString")
         )
 
-    def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int]:
+    def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int, int]:
         existing = self.get_cookbooks()
         existing_by_name = {
             str(cb.get("name", "")).strip().lower(): cb for cb in existing if str(cb.get("name", "")).strip()
@@ -121,6 +121,7 @@ class MealieCookbookManager:
 
         created = 0
         updated = 0
+        deleted = 0
         skipped = 0
         failed = 0
 
@@ -162,11 +163,11 @@ class MealieCookbookManager:
                     failed += 1
                     continue
                 if self.delete_cookbook(str(cookbook_id), str(name)):
-                    updated += 1
+                    deleted += 1
                 else:
                     failed += 1
 
-        return created, updated, skipped, failed
+        return created, updated, deleted, skipped, failed
 
 
 def normalize_cookbook_items(raw_data: object) -> list[dict]:
@@ -234,10 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    mealie_url = require_str(
-        env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"),
-        "mealie.url",
-    )
+    mealie_url = require_mealie_url(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"))
     mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
@@ -251,8 +249,8 @@ def main() -> None:
     if args.command == "sync":
         file_path, items = load_cookbook_items(args.file)
         print(f"[start] Syncing {len(items)} cookbook(s) from {file_path.relative_to(REPO_ROOT)}")
-        created, updated, skipped, failed = manager.sync_cookbooks(items, replace=args.replace)
-        print(f"[done] cookbooks created={created} updated={updated} skipped={skipped} failed={failed}")
+        created, updated, deleted, skipped, failed = manager.sync_cookbooks(items, replace=args.replace)
+        print(f"[done] cookbooks created={created} updated={updated} deleted={deleted} skipped={skipped} failed={failed}")
 
 
 if __name__ == "__main__":

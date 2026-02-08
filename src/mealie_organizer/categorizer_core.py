@@ -397,7 +397,7 @@ Recipes:
         if not batch:
             return
 
-        if not self.replace_existing:
+        if not self.replace_existing and not self.dry_run:
             cached_slugs = [r["slug"] for r in batch if r.get("slug") in self.cache]
             if cached_slugs:
                 self.advance_progress(len(cached_slugs))

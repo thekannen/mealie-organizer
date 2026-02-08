@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-from .config import REPO_ROOT, env_or_config, secret, resolve_repo_path, to_bool
+from .config import REPO_ROOT, env_or_config, require_mealie_url, secret, resolve_repo_path, to_bool
 
 DEFAULT_CATEGORIES_FILE = env_or_config(
     "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
@@ -304,7 +304,7 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
 
-    mealie_url = env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api")
+    mealie_url = require_mealie_url(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"))
     mealie_api_key = secret("MEALIE_API_KEY")
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")

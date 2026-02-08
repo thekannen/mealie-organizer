@@ -1,6 +1,6 @@
 import pytest
 
-from mealie_organizer.config import env_or_config, to_bool
+from mealie_organizer.config import env_or_config, require_mealie_url, to_bool
 
 
 @pytest.mark.parametrize(
@@ -38,3 +38,17 @@ def test_env_or_config_empty_env_falls_back(monkeypatch):
 def test_env_or_config_bool_from_env(monkeypatch):
     monkeypatch.setenv("UNIT_TEST_BOOL", "true")
     assert env_or_config("UNIT_TEST_BOOL", "no.such.path", False, to_bool) is True
+
+
+def test_require_mealie_url_normalizes_trailing_slash():
+    assert require_mealie_url("http://localhost:9000/api/") == "http://localhost:9000/api"
+
+
+def test_require_mealie_url_rejects_placeholder():
+    with pytest.raises(RuntimeError):
+        require_mealie_url("http://your.server.ip.address:9000/api")
+
+
+def test_require_mealie_url_rejects_non_string():
+    with pytest.raises(RuntimeError):
+        require_mealie_url({"url": "http://localhost:9000/api"})

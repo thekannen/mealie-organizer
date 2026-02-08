@@ -25,7 +25,7 @@ Options:
   --target-dir <dir>           Target directory for cloned repo.
   --use-current-repo           Skip clone/update and use script's current repo.
   --update                     Only update the repo from GitHub, then exit.
-  --provider <ollama|chatgpt>  Override provider for cron run (default: config.json).
+  --provider <ollama|chatgpt>  Override provider for cron run (default: .env/environment).
   --install-ollama             Install Ollama if missing.
   --skip-apt-update            Skip apt-get update.
   --setup-cron                 Install/update cron jobs.
@@ -212,7 +212,7 @@ setup_cron_jobs() {
 
   if [ -n "$CRON_SCHEDULE" ]; then
     local provider_arg=""
-    local provider_note="config.json"
+    local provider_note=".env/environment"
     if [ -n "$PROVIDER" ]; then
       provider_arg=" --provider $PROVIDER"
       provider_note="$PROVIDER"
@@ -255,7 +255,7 @@ echo "[done] Ubuntu setup complete"
 echo "Repo path: $REPO_ROOT"
 echo "Next:"
 echo "  1) Set secrets in $REPO_ROOT/.env"
-echo "  2) Set non-secret config in $REPO_ROOT/configs/config.json (including mealie.url)"
+echo "  2) Set user settings in $REPO_ROOT/.env (especially MEALIE_URL and CATEGORIZER_PROVIDER)"
 echo "  3) Run categorizer:"
 echo "     cd \"$REPO_ROOT\" && . .venv/bin/activate && mealie-categorizer"
 echo "     # or without activating venv:"

@@ -52,7 +52,7 @@ Standalone organizer utilities for managing Mealie taxonomy and AI-powered categ
 
 ## Configuration Model
 
-- `configs/config.json`: central non-secret defaults (provider, models, paths, batch sizes, retries).
+- `configs/config.json`: central non-secret defaults (taxonomy file paths, batching/concurrency, retries, provider HTTP tuning).
 - `.env`: environment-specific user settings and secrets (especially useful in Docker/Portainer). Values here override `configs/config.json`.
 
 Precedence:
@@ -77,7 +77,7 @@ cp .env.example .env
 
 - Docker Engine + Docker Compose plugin
 - `.env` with required user settings and secrets (at minimum `MEALIE_URL` and `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
-- `configs/config.json` configured for your Mealie instance
+- Optional: adjust reusable defaults in `configs/config.json` for your environment
 
 If your Ollama instance is not local to the container, set `OLLAMA_URL` in `.env` (or Portainer env vars) to:
 
@@ -85,7 +85,7 @@ If your Ollama instance is not local to the container, set `OLLAMA_URL` in `.env
 http://host.docker.internal:11434/api
 ```
 
-`OLLAMA_URL` overrides `providers.ollama.url` in `configs/config.json`.
+`OLLAMA_URL` is the recommended way to set the endpoint per deployment (Docker/Portainer/host).
 
 ### Start as a long-running service
 
@@ -160,7 +160,7 @@ Common flags:
 - `--repo-branch <branch>` override branch
 - `--use-current-repo` use current path and skip clone/update
 - `--update` update repo only, then exit
-- `--provider <ollama|chatgpt>` optional cron provider override (otherwise uses `configs/config.json`)
+- `--provider <ollama|chatgpt>` optional cron provider override (otherwise uses `CATEGORIZER_PROVIDER` from `.env`/environment)
 - `--install-ollama` install Ollama if missing
 - `--skip-apt-update` skip apt update
 - `--setup-cron` configure cron job
@@ -263,5 +263,5 @@ python3 -m pytest
 
 ## Notes
 
-- Default provider behavior is controlled by `configs/config.json`; deployment-specific model selection should be set via env vars (`CATEGORIZER_PROVIDER`, `OLLAMA_MODEL`, `OPENAI_MODEL`, `OLLAMA_URL`).
+- Provider and model selection should be set via env vars (`CATEGORIZER_PROVIDER`, `OLLAMA_MODEL`, `OPENAI_MODEL`, `OLLAMA_URL`); `configs/config.json` remains a fallback for non-secret defaults.
 - Keep environment-specific settings and secrets in `.env`; keep reusable defaults in `configs/config.json` and cookbook definitions in `configs/taxonomy/cookbooks.json`.
