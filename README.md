@@ -8,11 +8,15 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 - Recipe categorization via Ollama or ChatGPT/OpenAI-compatible APIs
 - Taxonomy auditing and cleanup tooling
 - Ubuntu setup script
+- Docker deployment path
 
 ## Structure
 
 ```text
 .
+├── .dockerignore
+├── Dockerfile
+├── docker-compose.yml
 ├── configs/
 │   ├── config.json
 │   └── taxonomy/
@@ -29,6 +33,8 @@ Standalone utilities for managing Mealie taxonomy and AI-powered categorization.
 │       ├── recipe_categorizer_ollama.py
 │       └── recipe_categorizer_chatgpt.py
 ├── scripts/
+│   ├── docker/
+│   │   └── entrypoint.sh
 │   └── install/
 │       └── ubuntu_setup_mealie.sh
 ├── tests/
@@ -58,6 +64,65 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .[dev]
 cp .env.example .env
+```
+
+## Docker Deployment
+
+### Prerequisites
+
+- Docker Engine + Docker Compose plugin
+- `.env` with required secrets (at minimum `MEALIE_API_KEY`; include `OPENAI_API_KEY` if using ChatGPT provider)
+- `configs/config.json` configured for your Mealie instance
+
+If your Ollama instance runs on the Docker host, set `providers.ollama.url` in `configs/config.json` to:
+
+```text
+http://host.docker.internal:11434/api
+```
+
+### Start as a long-running service
+
+```bash
+docker compose up -d --build
+```
+
+Defaults in `docker-compose.yml`:
+- `TASK=categorize`
+- `RUN_MODE=loop`
+- `RUN_INTERVAL_SECONDS=21600` (every 6 hours)
+
+### Run one-shot jobs
+
+Categorizer once:
+
+```bash
+docker compose run --rm -e RUN_MODE=once mealie-organizer
+```
+
+Taxonomy refresh once:
+
+```bash
+docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
+```
+
+Taxonomy audit once:
+
+```bash
+docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
+```
+
+### Update and redeploy
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+### Logs and stop
+
+```bash
+docker compose logs -f mealie-organizer
+docker compose down
 ```
 
 ## Install Scripts

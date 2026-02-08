@@ -1,0 +1,21 @@
+services:
+  mealie-organizer:
+    build:
+      context: .
+    image: mealie-organizer:latest
+    container_name: mealie-organizer
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TASK: categorize
+      RUN_MODE: loop
+      RUN_INTERVAL_SECONDS: 21600
+      PROVIDER: ""
+    volumes:
+      - ./configs:/app/configs
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
