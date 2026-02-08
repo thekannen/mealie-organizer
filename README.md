@@ -168,6 +168,27 @@ git pull
 docker compose up -d --build --remove-orphans mealie-organizer
 ```
 
+## Versioning
+
+This repo uses SemVer with a single source of truth in `VERSION`.
+
+- Package metadata reads version from `VERSION` (via `pyproject.toml` dynamic version)
+- Runtime `mealie_organizer.__version__` resolves to installed package version, or `VERSION` when running from source
+- Release helper: `scripts/release.sh`
+
+Examples:
+
+```bash
+# bump patch (e.g. 0.1.0 -> 0.1.1)
+scripts/release.sh patch
+
+# bump minor and create git tag
+scripts/release.sh minor --tag
+
+# set exact version
+scripts/release.sh 1.0.0 --tag
+```
+
 ## Local development (macOS/Linux)
 
 1. Create and activate a virtual environment.

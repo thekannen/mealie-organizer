@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mealie-organizer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Automation tools for Mealie taxonomy and categorization"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -33,3 +33,6 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
