@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
@@ -109,6 +111,125 @@ class MealieCookbookManager:
         print(f"[error] Delete failed for '{name}': {response.status_code} {response.text}")
         return False
 
+    def get_items(self, endpoint: str) -> list[dict]:
+        response = self.session.get(f"{self.base_url}/organizers/{endpoint}?perPage=1000", timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict):
+            items = data.get("items", data.get("data", []))
+            return items if isinstance(items, list) else []
+        if isinstance(data, list):
+            return data
+        return []
+
+    def build_name_id_maps(self) -> tuple[dict[str, str], dict[str, str]]:
+        categories = self.get_items("categories")
+        tags = self.get_items("tags")
+
+        category_ids_by_name = {
+            str(item.get("name", "")).strip().lower(): str(item.get("id"))
+            for item in categories
+            if item.get("name") and item.get("id")
+        }
+        tag_ids_by_name = {
+            str(item.get("name", "")).strip().lower(): str(item.get("id"))
+            for item in tags
+            if item.get("name") and item.get("id")
+        }
+        return category_ids_by_name, tag_ids_by_name
+
+    @staticmethod
+    def parse_filter_values(raw_values: str) -> list[str] | None:
+        try:
+            parsed = json.loads(f"[{raw_values}]")
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(parsed, list):
+            return None
+
+        values: list[str] = []
+        for value in parsed:
+            text = str(value).strip()
+            if text:
+                values.append(text)
+        return values
+
+    def replace_name_filter_with_ids(
+        self,
+        query_filter: str,
+        pattern: str,
+        target_attribute: str,
+        id_lookup: dict[str, str],
+        entity_name: str,
+    ) -> str:
+        def _repl(match: re.Match[str]) -> str:
+            operator = " ".join(match.group("op").upper().split())
+            raw_values = match.group("vals")
+            names = self.parse_filter_values(raw_values)
+            if names is None:
+                print(f"[warn] Could not parse {entity_name} name list in query filter: {match.group(0)}")
+                return match.group(0)
+
+            ids: list[str] = []
+            missing: list[str] = []
+            for name in names:
+                found_id = id_lookup.get(name.strip().lower())
+                if found_id:
+                    ids.append(found_id)
+                else:
+                    missing.append(name)
+
+            if missing or not ids:
+                print(
+                    f"[warn] Could not resolve {entity_name} names in query filter: "
+                    f"{', '.join(missing or names)}; keeping original filter."
+                )
+                return match.group(0)
+
+            id_list = ",".join(f'"{value}"' for value in ids)
+            return f"{target_attribute} {operator} [{id_list}]"
+
+        return re.sub(pattern, _repl, query_filter, flags=re.IGNORECASE)
+
+    def compile_query_filter_for_editor(
+        self,
+        query_filter: str,
+        category_ids_by_name: dict[str, str],
+        tag_ids_by_name: dict[str, str],
+    ) -> str:
+        compiled = query_filter
+        compiled = self.replace_name_filter_with_ids(
+            compiled,
+            r"\b(?:recipe_category|recipeCategory)\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            "recipe_category.id",
+            category_ids_by_name,
+            "category",
+        )
+        compiled = self.replace_name_filter_with_ids(
+            compiled,
+            r"\btags\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            "tags.id",
+            tag_ids_by_name,
+            "tag",
+        )
+        return normalize_query_filter_string(compiled)
+
+    def prepare_cookbook_payload(
+        self,
+        item: dict,
+        category_ids_by_name: dict[str, str],
+        tag_ids_by_name: dict[str, str],
+    ) -> dict:
+        payload = dict(item)
+        query_filter = str(payload.get("queryFilterString", ""))
+        payload["queryFilterString"] = self.compile_query_filter_for_editor(
+            query_filter,
+            category_ids_by_name,
+            tag_ids_by_name,
+        )
+        return payload
+
     @staticmethod
     def has_changes(existing: dict, desired: dict) -> bool:
         return (
@@ -120,6 +241,19 @@ class MealieCookbookManager:
         )
 
     def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int, int]:
+        category_ids_by_name: dict[str, str] = {}
+        tag_ids_by_name: dict[str, str] = {}
+        if any('.name' in str(item.get('queryFilterString', '')) for item in desired):
+            try:
+                category_ids_by_name, tag_ids_by_name = self.build_name_id_maps()
+            except Exception as exc:
+                print(f"[warn] Could not build organizer id maps for cookbook filters: {exc}")
+
+        prepared_desired = [
+            self.prepare_cookbook_payload(item, category_ids_by_name, tag_ids_by_name)
+            for item in desired
+        ]
+
         existing = self.get_cookbooks()
         existing_by_name = {
             str(cb.get("name", "")).strip().lower(): cb for cb in existing if str(cb.get("name", "")).strip()
@@ -131,7 +265,7 @@ class MealieCookbookManager:
         skipped = 0
         failed = 0
 
-        for item in desired:
+        for item in prepared_desired:
             name = item["name"]
             key = name.strip().lower()
             match = existing_by_name.get(key)
@@ -158,7 +292,7 @@ class MealieCookbookManager:
                 print(f"[skip] Cookbook unchanged: {name}")
 
         if replace:
-            desired_names = {item["name"].strip().lower() for item in desired}
+            desired_names = {item["name"].strip().lower() for item in prepared_desired}
             for key, cb in existing_by_name.items():
                 if key in desired_names:
                     continue
