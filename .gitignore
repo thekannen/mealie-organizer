@@ -6,3 +6,4 @@ cache/
 *.log
 .pytest_cache/
 reports/
+.DS_Store
