@@ -1,5 +1,5 @@
 services:
-  mealie-organizer:
+  cookdex:
     build:
       context: .
-    image: ${MEALIE_ORGANIZER_LOCAL_IMAGE:-mealie-organizer:local}
+    image: ${COOKDEX_LOCAL_IMAGE:-cookdex:local}

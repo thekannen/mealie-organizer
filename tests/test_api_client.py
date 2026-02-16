@@ -1,7 +1,7 @@
 import requests
 import pytest
 
-from mealie_organizer.api_client import MealieApiClient
+from cookdex.api_client import MealieApiClient
 
 
 def _http_404_error(message: str) -> requests.HTTPError:

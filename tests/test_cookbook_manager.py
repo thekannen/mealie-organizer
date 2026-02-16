@@ -1,6 +1,6 @@
 import pytest
 
-from mealie_organizer.cookbook_manager import MealieCookbookManager, normalize_cookbook_items
+from cookdex.cookbook_manager import MealieCookbookManager, normalize_cookbook_items
 
 
 def test_normalize_cookbook_items_minimal_defaults():

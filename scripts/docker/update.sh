@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 BRANCH="${BRANCH:-main}"
-SERVICE="${SERVICE:-mealie-organizer}"
+SERVICE="${SERVICE:-cookdex}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-false}"
 NO_BUILD="${NO_BUILD:-false}"
 PRUNE="${PRUNE:-false}"
@@ -18,7 +18,7 @@ Usage: $(basename "$0") [options]
 Options:
   --repo-root <path>   Repo root path (default: script-derived repo root)
   --branch <name>      Git branch to update from (default: main)
-  --service <name>     Docker Compose service name (default: mealie-organizer)
+  --service <name>     Docker Compose service name (default: cookdex)
   --source <ghcr|local> Deploy source (default: ghcr).
                        ghcr: pull image and restart without local build
                        local: use docker-compose.build.yml and build from source (deprecated)

@@ -1,17 +1,17 @@
-# Mealie Organizer
+# CookDex
 
-Mealie Organizer is a Web UI-first automation service for Mealie.
+CookDex is a Web UI-first automation service for Mealie.
 
-- Web UI base path: `/organizer`
+- Web UI base path: `/cookdex`
 - Default port: `4820`
 - Deployment standard: GHCR image
 
 ## Deploy (GHCR Standard)
 
 ```bash
-mkdir -p mealie-organizer && cd mealie-organizer
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/.env.example -o .env
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/compose.ghcr.yml -o compose.yaml
+mkdir -p cookdex && cd cookdex
+curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/.env.example -o .env
+curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/compose.ghcr.yml -o compose.yaml
 
 # edit .env at minimum:
 #   MEALIE_URL
@@ -19,11 +19,11 @@ curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/com
 #   WEB_BOOTSTRAP_PASSWORD
 #   MO_WEBUI_MASTER_KEY
 
-docker compose -f compose.yaml pull mealie-organizer
-docker compose -f compose.yaml up -d mealie-organizer
+docker compose -f compose.yaml pull cookdex
+docker compose -f compose.yaml up -d cookdex
 ```
 
-Open: `http://localhost:4820/organizer`
+Open: `http://localhost:4820/cookdex`
 
 ## Web UI Responsibilities
 
@@ -38,7 +38,7 @@ The Web UI is the standard control surface for:
 
 ## API (Internal/LAN)
 
-All API routes are under `/organizer/api/v1`.
+All API routes are under `/cookdex/api/v1`.
 
 - Auth: `/auth/login`, `/auth/logout`, `/auth/session`
 - Tasks/runs: `/tasks`, `/runs`, `/runs/{id}`, `/runs/{id}/log`

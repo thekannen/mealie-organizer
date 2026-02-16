@@ -93,7 +93,7 @@ def _build_categorize(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "provider"})
     env, dangerous = _common_env(options)
     provider = _str_option(options, "provider", "")
-    cmd = _py_module("mealie_organizer.recipe_categorizer")
+    cmd = _py_module("cookdex.recipe_categorizer")
     if provider:
         cmd.extend(["--provider", provider])
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
@@ -112,7 +112,7 @@ def _build_taxonomy_refresh(options: dict[str, Any]) -> TaskExecution:
     cleanup_delete_noisy = _bool_option(options, "cleanup_delete_noisy", True)
 
     cmd = _py_module(
-        "mealie_organizer.taxonomy_manager",
+        "cookdex.taxonomy_manager",
         "refresh",
         "--mode",
         mode,
@@ -135,13 +135,13 @@ def _build_taxonomy_refresh(options: dict[str, Any]) -> TaskExecution:
 def _build_taxonomy_audit(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    return TaskExecution(_py_module("mealie_organizer.audit_taxonomy"), env, dangerous_requested=dangerous)
+    return TaskExecution(_py_module("cookdex.audit_taxonomy"), env, dangerous_requested=dangerous)
 
 
 def _build_cookbook_sync(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    return TaskExecution(_py_module("mealie_organizer.cookbook_manager", "sync"), env, dangerous_requested=dangerous)
+    return TaskExecution(_py_module("cookdex.cookbook_manager", "sync"), env, dangerous_requested=dangerous)
 
 
 def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
@@ -162,7 +162,7 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
         },
     )
     env, dangerous = _common_env(options)
-    cmd = _py_module("mealie_organizer.ingredient_parser")
+    cmd = _py_module("cookdex.ingredient_parser")
     confidence = _float_option(options, "confidence_threshold")
     max_recipes = _int_option(options, "max_recipes")
     after_slug = _str_option(options, "after_slug", "")
@@ -202,7 +202,7 @@ def _build_foods_cleanup(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "apply"})
     env, dangerous = _common_env(options)
     apply = _bool_option(options, "apply", False)
-    cmd = _py_module("mealie_organizer.foods_manager", "cleanup")
+    cmd = _py_module("cookdex.foods_manager", "cleanup")
     if apply:
         cmd.append("--apply")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
@@ -212,7 +212,7 @@ def _build_units_cleanup(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "apply"})
     env, dangerous = _common_env(options)
     apply = _bool_option(options, "apply", False)
-    cmd = _py_module("mealie_organizer.units_manager", "cleanup")
+    cmd = _py_module("cookdex.units_manager", "cleanup")
     if apply:
         cmd.append("--apply")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
@@ -222,7 +222,7 @@ def _build_labels_sync(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "apply"})
     env, dangerous = _common_env(options)
     apply = _bool_option(options, "apply", False)
-    cmd = _py_module("mealie_organizer.labels_manager")
+    cmd = _py_module("cookdex.labels_manager")
     if apply:
         cmd.append("--apply")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
@@ -232,7 +232,7 @@ def _build_tools_sync(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "apply"})
     env, dangerous = _common_env(options)
     apply = _bool_option(options, "apply", False)
-    cmd = _py_module("mealie_organizer.tools_manager")
+    cmd = _py_module("cookdex.tools_manager")
     if apply:
         cmd.append("--apply")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
@@ -241,7 +241,7 @@ def _build_tools_sync(options: dict[str, Any]) -> TaskExecution:
 def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "stages", "continue_on_error", "apply_cleanups"})
     env, dangerous = _common_env(options)
-    cmd = _py_module("mealie_organizer.data_maintenance")
+    cmd = _py_module("cookdex.data_maintenance")
     stages = options.get("stages")
     continue_on_error = _bool_option(options, "continue_on_error", False)
     apply_cleanups = _bool_option(options, "apply_cleanups", False)

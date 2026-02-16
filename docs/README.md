@@ -8,4 +8,4 @@
 - [Parser Migration Notes](PARSER_MIGRATION.md)
 - [GHCR Deployment](docker-ghcr.md)
 
-Mealie Organizer is Web UI-first. GHCR deployment is the standard path.
+CookDex is Web UI-first. GHCR deployment is the standard path.

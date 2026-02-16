@@ -1,4 +1,4 @@
-from mealie_organizer.categorizer_core import MealieCategorizer, parse_json_response
+from cookdex.categorizer_core import MealieCategorizer, parse_json_response
 
 
 def test_parse_json_response_handles_json_fence():
@@ -24,7 +24,7 @@ def test_update_recipe_metadata_dry_run_does_not_patch(monkeypatch, tmp_path, ca
     def _should_not_patch(*_args, **_kwargs):
         raise AssertionError("requests.patch should not run in dry-run mode")
 
-    monkeypatch.setattr("mealie_organizer.categorizer_core.requests.patch", _should_not_patch)
+    monkeypatch.setattr("cookdex.categorizer_core.requests.patch", _should_not_patch)
 
     categorizer = MealieCategorizer(
         mealie_url="http://example/api",
@@ -266,7 +266,7 @@ def test_update_recipe_metadata_cache_write_permission_error_does_not_crash(monk
         status_code = 200
         text = ""
 
-    monkeypatch.setattr("mealie_organizer.categorizer_core.requests.patch", lambda *_args, **_kwargs: _PatchResponse())
+    monkeypatch.setattr("cookdex.categorizer_core.requests.patch", lambda *_args, **_kwargs: _PatchResponse())
 
     categorizer = MealieCategorizer(
         mealie_url="http://example/api",

@@ -47,7 +47,7 @@ const CONFIG_LABELS = {
 };
 
 function inferBasePath() {
-  const known = "/organizer";
+  const known = "/cookdex";
   if (window.location.pathname.startsWith(known)) {
     return known;
   }
@@ -1325,7 +1325,7 @@ export default function App() {
     return (
       <main className="shell auth-shell">
         <section className="panel auth-panel">
-          <h1>Set Up Mealie Organizer</h1>
+          <h1>Set Up CookDex</h1>
           <p>Create the first admin account to unlock the rest of the app.</p>
           <form onSubmit={registerFirstUser}>
             <label className="field">
@@ -1355,7 +1355,7 @@ export default function App() {
     return (
       <main className="shell auth-shell">
         <section className="panel auth-panel">
-          <h1>Mealie Organizer</h1>
+          <h1>CookDex</h1>
           <p>Sign in to manage runs, schedules, and settings.</p>
           <form onSubmit={doLogin}>
             <label className="field">
@@ -1382,7 +1382,7 @@ export default function App() {
     <main className="shell app-shell">
       <aside className="panel sidebar">
         <div className="sidebar-brand">
-          <h1>Mealie Organizer</h1>
+          <h1>CookDex</h1>
           <p className="muted-text">Web UI-first automation control center.</p>
         </div>
         <nav className="navbar">

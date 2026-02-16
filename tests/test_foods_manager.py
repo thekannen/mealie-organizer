@@ -1,4 +1,4 @@
-from mealie_organizer.foods_manager import FoodMergeAction, FoodsCleanupManager
+from cookdex.foods_manager import FoodMergeAction, FoodsCleanupManager
 
 
 class FakeFoodsClient:

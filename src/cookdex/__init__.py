@@ -11,7 +11,7 @@ def _version_from_file() -> str:
 
 
 try:
-    __version__ = version("mealie-organizer")
+    __version__ = version("cookdex")
 except PackageNotFoundError:
     __version__ = _version_from_file()
 

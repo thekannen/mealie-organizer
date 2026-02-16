@@ -1,4 +1,4 @@
-from mealie_organizer.webui_server.tasks import TaskRegistry
+from cookdex.webui_server.tasks import TaskRegistry
 
 
 def test_registry_defaults_to_dry_run_for_parser():

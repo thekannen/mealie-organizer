@@ -1,6 +1,6 @@
 import pytest
 
-from mealie_organizer.taxonomy_manager import (
+from cookdex.taxonomy_manager import (
     MealieTaxonomyManager,
     normalize_payload_items,
     resolve_refresh_replace_flags,

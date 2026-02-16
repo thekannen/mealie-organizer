@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-REPO_URL="https://github.com/thekannen/mealie-organizer.git"
+REPO_URL="https://github.com/thekannen/cookdex.git"
 REPO_BRANCH="main"
-TARGET_DIR="$HOME/mealie-organizer"
+TARGET_DIR="$HOME/cookdex"
 USE_CURRENT_REPO=false
 UPDATE_ONLY=false
 PROVIDER=""
@@ -219,20 +219,20 @@ setup_cron_jobs() {
     fi
 
     add_or_replace_cron_line \
-      "MEALIE_CATEGORIZER" \
-      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m mealie_organizer.recipe_categorizer${provider_arg} >> logs/cron_categorizer.log 2>&1' # MEALIE_CATEGORIZER"
-    remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
-    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
+      "COOKDEX_CATEGORIZER" \
+      "$CRON_SCHEDULE /bin/bash -lc 'cd \"$REPO_ROOT\" && . .venv/bin/activate && python -m cookdex.recipe_categorizer${provider_arg} >> logs/cron_categorizer.log 2>&1' # COOKDEX_CATEGORIZER"
+    remove_cron_line "COOKDEX_OLLAMA_CATEGORIZER"
+    remove_cron_line "COOKDEX_CHATGPT_CATEGORIZER"
     echo "[ok] Cron job set for categorizer (provider=$provider_note): $CRON_SCHEDULE"
   else
-    remove_cron_line "MEALIE_CATEGORIZER"
-    remove_cron_line "MEALIE_OLLAMA_CATEGORIZER"
-    remove_cron_line "MEALIE_CHATGPT_CATEGORIZER"
+    remove_cron_line "COOKDEX_CATEGORIZER"
+    remove_cron_line "COOKDEX_OLLAMA_CATEGORIZER"
+    remove_cron_line "COOKDEX_CHATGPT_CATEGORIZER"
     echo "[ok] Cron schedule empty; removed categorizer cron jobs."
   fi
 
   echo "[ok] Current crontab entries:"
-  crontab -l | grep -E 'MEALIE(_.*)?_CATEGORIZER' || true
+  crontab -l | grep -E 'COOKDEX(_.*)?_CATEGORIZER' || true
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -257,6 +257,6 @@ echo "Next:"
 echo "  1) Set secrets in $REPO_ROOT/.env"
 echo "  2) Set user settings in $REPO_ROOT/.env (especially MEALIE_URL and CATEGORIZER_PROVIDER)"
 echo "  3) Run categorizer:"
-echo "     cd \"$REPO_ROOT\" && . .venv/bin/activate && mealie-categorizer"
+echo "     cd \"$REPO_ROOT\" && . .venv/bin/activate && cookdex-categorizer"
 echo "     # or without activating venv:"
-echo "     $REPO_ROOT/.venv/bin/mealie-categorizer"
+echo "     $REPO_ROOT/.venv/bin/cookdex-categorizer"

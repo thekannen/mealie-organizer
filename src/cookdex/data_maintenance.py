@@ -32,31 +32,31 @@ def parse_stage_list(raw: str) -> list[str]:
 def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
     python_cmd = [sys.executable, "-m"]
     if stage == "parse":
-        return python_cmd + ["mealie_organizer.ingredient_parser"]
+        return python_cmd + ["cookdex.ingredient_parser"]
     if stage == "foods":
-        cmd = python_cmd + ["mealie_organizer.foods_manager", "cleanup"]
+        cmd = python_cmd + ["cookdex.foods_manager", "cleanup"]
         if apply_cleanups:
             cmd.append("--apply")
         return cmd
     if stage == "units":
-        cmd = python_cmd + ["mealie_organizer.units_manager", "cleanup"]
+        cmd = python_cmd + ["cookdex.units_manager", "cleanup"]
         if apply_cleanups:
             cmd.append("--apply")
         return cmd
     if stage == "labels":
-        cmd = python_cmd + ["mealie_organizer.labels_manager"]
+        cmd = python_cmd + ["cookdex.labels_manager"]
         if apply_cleanups:
             cmd.append("--apply")
         return cmd
     if stage == "tools":
-        cmd = python_cmd + ["mealie_organizer.tools_manager"]
+        cmd = python_cmd + ["cookdex.tools_manager"]
         if apply_cleanups:
             cmd.append("--apply")
         return cmd
     if stage == "taxonomy":
         taxonomy_mode = str(env_or_config("TAXONOMY_REFRESH_MODE", "taxonomy.refresh.mode", "merge"))
         cmd = python_cmd + [
-            "mealie_organizer.taxonomy_manager",
+            "cookdex.taxonomy_manager",
             "refresh",
             "--mode",
             taxonomy_mode,
@@ -72,11 +72,11 @@ def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
             cmd.append("--cleanup-apply")
         return cmd
     if stage == "categorize":
-        return python_cmd + ["mealie_organizer.recipe_categorizer"]
+        return python_cmd + ["cookdex.recipe_categorizer"]
     if stage == "cookbooks":
-        return python_cmd + ["mealie_organizer.cookbook_manager", "sync"]
+        return python_cmd + ["cookdex.cookbook_manager", "sync"]
     if stage == "audit":
-        return python_cmd + ["mealie_organizer.audit_taxonomy"]
+        return python_cmd + ["cookdex.audit_taxonomy"]
     raise ValueError(f"Unsupported stage: {stage}")
 
 
@@ -108,7 +108,7 @@ def run_pipeline(stages: Sequence[str], *, continue_on_error: bool, apply_cleanu
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run Mealie organizer data maintenance pipeline.")
+    parser = argparse.ArgumentParser(description="Run CookDex data maintenance pipeline.")
     parser.add_argument(
         "--stages",
         default=default_stage_string(),

@@ -90,7 +90,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         key="WEB_BASE_PATH",
         label="Web UI Path",
         group="Web UI",
-        default="/organizer",
+        default="/cookdex",
         secret=False,
         description="Web UI route prefix.",
     ),

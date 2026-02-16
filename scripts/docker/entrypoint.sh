@@ -27,68 +27,68 @@ run_task() {
   case "$TASK" in
     categorize)
       if [ -n "$PROVIDER" ]; then
-        python -m mealie_organizer.recipe_categorizer --provider "$PROVIDER"
+        python -m cookdex.recipe_categorizer --provider "$PROVIDER"
       else
-        python -m mealie_organizer.recipe_categorizer
+        python -m cookdex.recipe_categorizer
       fi
       ;;
     taxonomy-refresh)
       TAXONOMY_REFRESH_MODE="${TAXONOMY_REFRESH_MODE:-merge}"
-      python -m mealie_organizer.taxonomy_manager refresh \
+      python -m cookdex.taxonomy_manager refresh \
         --mode "$TAXONOMY_REFRESH_MODE" \
         --categories-file configs/taxonomy/categories.json \
         --tags-file configs/taxonomy/tags.json \
         --cleanup --cleanup-only-unused --cleanup-delete-noisy
       ;;
     taxonomy-audit)
-      python -m mealie_organizer.audit_taxonomy
+      python -m cookdex.audit_taxonomy
       ;;
     cookbook-sync)
-      python -m mealie_organizer.cookbook_manager sync
+      python -m cookdex.cookbook_manager sync
       ;;
     ingredient-parse)
-      python -m mealie_organizer.ingredient_parser
+      python -m cookdex.ingredient_parser
       ;;
     webui-server)
-      python -m mealie_organizer.webui_server.main
+      python -m cookdex.webui_server.main
       ;;
     plugin-server)
       echo "[warn] TASK=plugin-server is deprecated; forwarding to TASK=webui-server."
-      python -m mealie_organizer.webui_server.main
+      python -m cookdex.webui_server.main
       ;;
     foods-cleanup)
       if is_true "$CLEANUP_APPLY"; then
-        python -m mealie_organizer.foods_manager cleanup --apply
+        python -m cookdex.foods_manager cleanup --apply
       else
-        python -m mealie_organizer.foods_manager cleanup
+        python -m cookdex.foods_manager cleanup
       fi
       ;;
     units-cleanup)
       if is_true "$CLEANUP_APPLY"; then
-        python -m mealie_organizer.units_manager cleanup --apply
+        python -m cookdex.units_manager cleanup --apply
       else
-        python -m mealie_organizer.units_manager cleanup
+        python -m cookdex.units_manager cleanup
       fi
       ;;
     labels-sync)
       if is_true "$CLEANUP_APPLY"; then
-        python -m mealie_organizer.labels_manager --apply
+        python -m cookdex.labels_manager --apply
       else
-        python -m mealie_organizer.labels_manager
+        python -m cookdex.labels_manager
       fi
       ;;
     tools-sync)
       if is_true "$CLEANUP_APPLY"; then
-        python -m mealie_organizer.tools_manager --apply
+        python -m cookdex.tools_manager --apply
       else
-        python -m mealie_organizer.tools_manager
+        python -m cookdex.tools_manager
       fi
       ;;
     data-maintenance)
       if is_true "$MAINTENANCE_APPLY_CLEANUPS"; then
-        python -m mealie_organizer.data_maintenance --apply-cleanups
+        python -m cookdex.data_maintenance --apply-cleanups
       else
-        python -m mealie_organizer.data_maintenance
+        python -m cookdex.data_maintenance
       fi
       ;;
     *)

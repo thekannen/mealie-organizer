@@ -296,7 +296,7 @@ def create_app() -> FastAPI:
             services.scheduler.shutdown()
             services.runner.stop()
 
-    app = FastAPI(title="Mealie Organizer Web UI", version="1.0", lifespan=lifespan)
+    app = FastAPI(title="CookDex Web UI", version="1.0", lifespan=lifespan)
     api_prefix = f"{settings.base_path}/api/v1"
 
     @app.get("/")

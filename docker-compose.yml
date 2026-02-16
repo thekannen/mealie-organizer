@@ -1,7 +1,7 @@
 services:
-  mealie-organizer:
-    image: ${MEALIE_ORGANIZER_IMAGE:-ghcr.io/thekannen/mealie-organizer}:${MEALIE_ORGANIZER_TAG:-latest}
-    container_name: mealie-organizer
+  cookdex:
+    image: ${COOKDEX_IMAGE:-ghcr.io/thekannen/cookdex}:${COOKDEX_TAG:-latest}
+    container_name: cookdex
     restart: unless-stopped
     env_file:
       - .env

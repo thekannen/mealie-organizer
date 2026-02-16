@@ -1,7 +1,7 @@
 import requests
 
-from mealie_organizer.labels_manager import LabelsSyncManager, load_label_names
-from mealie_organizer.tools_manager import ToolsSyncManager, load_tool_names
+from cookdex.labels_manager import LabelsSyncManager, load_label_names
+from cookdex.tools_manager import ToolsSyncManager, load_tool_names
 
 
 class FakeLabelsClient:

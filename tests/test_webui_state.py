@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mealie_organizer.webui_server.state import StateStore
+from cookdex.webui_server.state import StateStore
 
 
 def test_state_initializes_task_policies(tmp_path: Path):

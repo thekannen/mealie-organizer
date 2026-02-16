@@ -1,8 +1,8 @@
-# Mealie Organizer Brand Color System
+# CookDex Brand Color System
 
 ## Brand Personality
 
-Mealie Organizer should feel:
+CookDex should feel:
 
 - warm
 - confident

@@ -12,12 +12,12 @@ Copy `.env.example` to `.env` and set:
 ## 2) Launch service
 
 ```bash
-docker compose -f compose.ghcr.yml up -d mealie-organizer
+docker compose -f compose.ghcr.yml up -d cookdex
 ```
 
 ## 3) Open Web UI
 
-`http://localhost:4820/organizer`
+`http://localhost:4820/cookdex`
 
 ## 4) First login
 
@@ -27,7 +27,7 @@ docker compose -f compose.ghcr.yml up -d mealie-organizer
 ## 5) Verify health
 
 ```bash
-curl http://localhost:4820/organizer/api/v1/health
+curl http://localhost:4820/cookdex/api/v1/health
 ```
 
 ## 6) Configure runtime variables in UI

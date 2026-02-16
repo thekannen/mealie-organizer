@@ -3,9 +3,9 @@
 ## Standard Deployment (GHCR)
 
 ```bash
-mkdir -p mealie-organizer && cd mealie-organizer
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/.env.example -o .env
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/compose.ghcr.yml -o compose.yaml
+mkdir -p cookdex && cd cookdex
+curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/.env.example -o .env
+curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/compose.ghcr.yml -o compose.yaml
 ```
 
 Edit `.env`:
@@ -18,13 +18,13 @@ Edit `.env`:
 Start:
 
 ```bash
-docker compose -f compose.yaml pull mealie-organizer
-docker compose -f compose.yaml up -d mealie-organizer
+docker compose -f compose.yaml pull cookdex
+docker compose -f compose.yaml up -d cookdex
 ```
 
 Open:
 
-`http://localhost:4820/organizer`
+`http://localhost:4820/cookdex`
 
 ## Required volumes
 

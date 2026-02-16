@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 
 from ..config import REPO_ROOT
 
-DEFAULT_BASE_PATH = "/organizer"
+DEFAULT_BASE_PATH = "/cookdex"
 DEFAULT_DB_PATH = "cache/webui/state.db"
 DEFAULT_BIND_HOST = "0.0.0.0"
 DEFAULT_BIND_PORT = 4820

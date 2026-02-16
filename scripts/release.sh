@@ -80,7 +80,7 @@ echo "$NEW_VERSION" > "$VERSION_FILE"
 
 echo "[ok] Version bumped: $CURRENT -> $NEW_VERSION"
 echo "[next] Commit and push changes:"
-echo "       git add VERSION pyproject.toml src/mealie_organizer/__init__.py"
+echo "       git add VERSION pyproject.toml src/cookdex/__init__.py"
 echo "       git commit -m 'chore(release): v$NEW_VERSION'"
 
 if [ "$CREATE_TAG" = true ]; then

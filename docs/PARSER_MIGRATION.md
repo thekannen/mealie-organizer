@@ -1,11 +1,11 @@
 # Parser Migration
 
-`mealie-parser` behavior is now part of the Web UI workflow.
+`cookdex-parser` behavior is now part of the Web UI workflow.
 
 ## Mapping
 
 - Old: standalone parser command/container
-- New: queue task `ingredient-parse` from `/organizer`
+- New: queue task `ingredient-parse` from `/cookdex`
 
 ## Runtime credentials
 
@@ -30,7 +30,7 @@ Tune parser behavior through Web UI environment variable settings:
 ## Recommended migration path
 
 1. Configure credentials in startup `.env`
-2. Open `/organizer`
+2. Open `/cookdex`
 3. Run `ingredient-parse` with `dry_run=true`
 4. Review logs/reports
 5. Enable policy bypass only when applying write changes

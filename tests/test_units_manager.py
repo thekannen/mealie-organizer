@@ -1,6 +1,6 @@
 import pytest
 
-from mealie_organizer.units_manager import UnitsCleanupManager
+from cookdex.units_manager import UnitsCleanupManager
 
 
 class FakeUnitsClient:

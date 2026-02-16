@@ -8,7 +8,7 @@ def _looks_like_repo_root(path: Path) -> bool:
 
 
 def _discover_repo_root() -> Path:
-    env_root = os.environ.get("MEALIE_ORGANIZER_ROOT", "").strip()
+    env_root = os.environ.get("COOKDEX_ROOT", "").strip()
     if env_root:
         candidate = Path(env_root).expanduser().resolve()
         if candidate.exists():

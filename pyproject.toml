@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mealie-organizer"
+name = "cookdex"
 dynamic = ["version"]
 description = "Automation tools for Mealie taxonomy and categorization"
 readme = "README.md"
@@ -23,18 +23,18 @@ dev = [
 ]
 
 [project.scripts]
-mealie-categorizer = "mealie_organizer.recipe_categorizer:main"
-mealie-taxonomy = "mealie_organizer.taxonomy_manager:main"
-mealie-taxonomy-audit = "mealie_organizer.audit_taxonomy:main"
-mealie-cookbooks = "mealie_organizer.cookbook_manager:main"
-mealie-data-maintenance = "mealie_organizer.data_maintenance:main"
-mealie-ingredient-parser = "mealie_organizer.ingredient_parser:main"
-mealie-foods = "mealie_organizer.foods_manager:main"
-mealie-units = "mealie_organizer.units_manager:main"
-mealie-labels = "mealie_organizer.labels_manager:main"
-mealie-tools = "mealie_organizer.tools_manager:main"
-mealie-webui-server = "mealie_organizer.webui_server.main:main"
-mealie-plugin-server = "mealie_organizer.plugin_server:main"
+cookdex-categorizer = "cookdex.recipe_categorizer:main"
+cookdex-taxonomy = "cookdex.taxonomy_manager:main"
+cookdex-taxonomy-audit = "cookdex.audit_taxonomy:main"
+cookdex-cookbooks = "cookdex.cookbook_manager:main"
+cookdex-data-maintenance = "cookdex.data_maintenance:main"
+cookdex-ingredient-parser = "cookdex.ingredient_parser:main"
+cookdex-foods = "cookdex.foods_manager:main"
+cookdex-units = "cookdex.units_manager:main"
+cookdex-labels = "cookdex.labels_manager:main"
+cookdex-tools = "cookdex.tools_manager:main"
+cookdex-webui-server = "cookdex.webui_server.main:main"
+cookdex-plugin-server = "cookdex.plugin_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

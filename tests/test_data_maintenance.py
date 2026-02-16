@@ -1,7 +1,7 @@
 import pytest
 
-from mealie_organizer import data_maintenance
-from mealie_organizer.data_maintenance import StageResult
+from cookdex import data_maintenance
+from cookdex.data_maintenance import StageResult
 
 
 def test_parse_stage_list_valid():
