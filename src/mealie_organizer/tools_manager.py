@@ -214,13 +214,30 @@ class ToolsSyncManager:
         return report
 
 
+def require_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return int(text)
+    raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Mealie tools catalog sync and cleanup.")
     parser.add_argument("--apply", action="store_true", help="Apply creates/merges.")
     parser.add_argument(
         "--max-actions",
         type=int,
-        default=int(env_or_config("MAX_ACTIONS_PER_STAGE", "maintenance.max_actions_per_stage", 250, int)),
+        default=require_int(
+            env_or_config("MAX_ACTIONS_PER_STAGE", "maintenance.max_actions_per_stage", 250, int),
+            "maintenance.max_actions_per_stage",
+        ),
     )
     parser.add_argument(
         "--file",
@@ -249,7 +266,7 @@ def main() -> None:
         ),
         dry_run=dry_run,
         apply=bool(args.apply),
-        max_actions=int(args.max_actions),
+        max_actions=require_int(args.max_actions, "--max-actions"),
         file_path=resolve_repo_path(args.file),
         checkpoint_dir=resolve_repo_path(args.checkpoint_dir),
     )

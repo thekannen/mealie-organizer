@@ -85,6 +85,32 @@ def _int_or_none(value: object) -> int | None:
     return int(text)
 
 
+def _require_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return int(text)
+    raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
+def _require_float(value: object, field: str) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return float(text)
+    raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
+
+
 def _parse_parser_strategies(raw: str, force_parser: str | None) -> tuple[str, ...]:
     if force_parser:
         return (force_parser,)
@@ -104,15 +130,28 @@ def parser_run_config() -> ParserRunConfig:
     )
 
     return ParserRunConfig(
-        confidence_threshold=float(env_or_config("CONFIDENCE_THRESHOLD", "parser.confidence_threshold", 0.80, float)),
+        confidence_threshold=_require_float(
+            env_or_config("CONFIDENCE_THRESHOLD", "parser.confidence_threshold", 0.80, float),
+            "parser.confidence_threshold",
+        ),
         parser_strategies=parser_strategies,
         force_parser=force_parser,
-        page_size=int(env_or_config("PAGE_SIZE", "parser.page_size", 200, int)),
-        delay_seconds=float(env_or_config("DELAY_SECONDS", "parser.delay_seconds", 0.10, float)),
-        timeout_seconds=int(env_or_config("REQUEST_TIMEOUT_SECONDS", "parser.request_timeout_seconds", 30, int)),
-        request_retries=int(env_or_config("REQUEST_RETRIES", "parser.request_retries", 3, int)),
-        request_backoff_seconds=float(
-            env_or_config("REQUEST_BACKOFF_SECONDS", "parser.request_backoff_seconds", 0.4, float)
+        page_size=_require_int(env_or_config("PAGE_SIZE", "parser.page_size", 200, int), "parser.page_size"),
+        delay_seconds=_require_float(
+            env_or_config("DELAY_SECONDS", "parser.delay_seconds", 0.10, float),
+            "parser.delay_seconds",
+        ),
+        timeout_seconds=_require_int(
+            env_or_config("REQUEST_TIMEOUT_SECONDS", "parser.request_timeout_seconds", 30, int),
+            "parser.request_timeout_seconds",
+        ),
+        request_retries=_require_int(
+            env_or_config("REQUEST_RETRIES", "parser.request_retries", 3, int),
+            "parser.request_retries",
+        ),
+        request_backoff_seconds=_require_float(
+            env_or_config("REQUEST_BACKOFF_SECONDS", "parser.request_backoff_seconds", 0.4, float),
+            "parser.request_backoff_seconds",
         ),
         max_recipes=_int_or_none(env_or_config("MAX_RECIPES", "parser.max_recipes_per_run", None)),
         after_slug=_str_or_none(env_or_config("AFTER_SLUG", "parser.after_slug", None)),

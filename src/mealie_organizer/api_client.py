@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
-from requests.adapters import HTTPAdapter, Retry
+from requests.adapters import HTTPAdapter
 
 
 def _short_text(value: str, max_len: int = 240) -> str:
@@ -36,19 +36,35 @@ class MealieApiClient:
                 "Content-Type": "application/json",
             }
         )
-        retry = Retry(
-            total=max(self.retries, 0),
-            connect=max(self.retries, 0),
-            read=max(self.retries, 0),
-            backoff_factor=max(self.backoff_seconds, 0.0),
-            status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"}),
-            raise_on_status=False,
-        )
-        adapter = HTTPAdapter(max_retries=retry)
+        adapter = HTTPAdapter(max_retries=self._build_retry_policy())
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+    def _build_retry_policy(self) -> object:
+        retry_count = max(self.retries, 0)
+        if retry_count == 0:
+            return 0
+
+        # Import lazily to avoid hard IDE/type-checker dependency on urllib3 symbols.
+        try:
+            retry_mod = __import__("urllib3.util.retry", fromlist=["Retry"])
+            retry_cls = getattr(retry_mod, "Retry", None)
+            if retry_cls is not None:
+                return retry_cls(
+                    total=retry_count,
+                    connect=retry_count,
+                    read=retry_count,
+                    backoff_factor=max(self.backoff_seconds, 0.0),
+                    status_forcelist=(429, 500, 502, 503, 504),
+                    allowed_methods=frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"}),
+                    raise_on_status=False,
+                )
+        except Exception:
+            pass
+
+        # Fallback to requests' integer retry handling if urllib3 Retry class is unavailable.
+        return retry_count
 
     @staticmethod
     def _resolve_next_url(current_url: str, next_link: Any) -> str | None:
