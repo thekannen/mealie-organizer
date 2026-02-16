@@ -2,6 +2,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -26,20 +27,54 @@ class MealieTaxonomyManager:
             }
         )
 
+    @staticmethod
+    def _resolve_next_url(current_url, next_link):
+        if not isinstance(next_link, str) or not next_link:
+            return None
+        if next_link.lower().startswith(("http://", "https://")):
+            return next_link
+
+        if next_link.startswith("/"):
+            base = urlsplit(current_url)
+            rel = urlsplit(next_link)
+            path = rel.path
+            # Mealie can return '/recipes?...' even when requests are sent to '/api/recipes?...'.
+            if base.path.startswith("/api/") and not path.startswith("/api/"):
+                path = f"/api{path}"
+            return urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+
+        return urljoin(current_url, next_link)
+
+    def _get_paginated(self, url):
+        items = []
+        next_url = url
+
+        while next_url:
+            response = self.session.get(next_url, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+
+            if isinstance(data, list):
+                return data if not items else items + data
+            if not isinstance(data, dict):
+                return data
+
+            page_items = data.get("items")
+            if page_items is None:
+                return data
+            if not isinstance(page_items, list):
+                return page_items
+
+            items.extend(page_items)
+            next_url = self._resolve_next_url(next_url, data.get("next"))
+
+        return items
+
     def get_items(self, endpoint):
-        response = self.session.get(
-            f"{self.base_url}/organizers/{endpoint}?perPage=1000",
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data.get("items", data)
+        return self._get_paginated(f"{self.base_url}/organizers/{endpoint}?perPage=1000")
 
     def get_recipes(self):
-        response = self.session.get(f"{self.base_url}/recipes?perPage=999", timeout=self.timeout)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("items", data)
+        return self._get_paginated(f"{self.base_url}/recipes?perPage=1000")
 
     def existing_lookup(self, endpoint):
         items = self.get_items(endpoint)

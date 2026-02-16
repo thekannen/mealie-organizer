@@ -1,5 +1,4 @@
 [
-  {"name": "American"},
   {"name": "Italian"},
   {"name": "Mexican"},
   {"name": "Mediterranean"},
@@ -29,7 +28,15 @@
   {"name": "Roasted"},
   {"name": "Baked"},
   {"name": "Baking"},
+  {"name": "Casserole"},
   {"name": "No-Cook"},
+  {"name": "Chicken"},
+  {"name": "Beef"},
+  {"name": "Pork"},
+  {"name": "Seafood"},
+  {"name": "Tofu"},
+  {"name": "Noodles"},
+  {"name": "Pasta"},
   {"name": "Cocktail"},
   {"name": "Non-Alcoholic"},
   {"name": "Condiment"},
@@ -49,5 +56,6 @@
   {"name": "Fresh"},
   {"name": "Citrus"},
   {"name": "Chocolate"},
-  {"name": "Sweet"}
+  {"name": "Sweet"},
+  {"name": "BBQ"}
 ]
