@@ -1,7 +1,6 @@
 import argparse
 import json
 import re
-from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
@@ -15,7 +14,7 @@ DEFAULT_TAGS_FILE = env_or_config("TAXONOMY_TAGS_FILE", "taxonomy.tags_file", "c
 
 
 class MealieTaxonomyManager:
-    def __init__(self, base_url, api_key, timeout=60, dry_run=False):
+    def __init__(self, base_url: str, api_key: str, timeout: int = 60, dry_run: bool = False):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.dry_run = dry_run
@@ -357,7 +356,7 @@ def main():
     if not mealie_api_key:
         raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
 
-    dry_run = env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool)
+    dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
     if dry_run:
         print("[start] runtime.dry_run=true (no write operations will be sent to Mealie).")
 

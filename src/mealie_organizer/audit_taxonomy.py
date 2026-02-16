@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
-from .config import REPO_ROOT, env_or_config, require_mealie_url, secret, resolve_repo_path
+from .config import env_or_config, require_mealie_url, resolve_repo_path, secret
 
 
 
