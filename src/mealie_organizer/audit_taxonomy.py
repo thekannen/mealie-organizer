@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
-from .config import env_or_config, require_mealie_url, resolve_repo_path, secret
+from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path
 
 
 
@@ -110,10 +110,8 @@ def find_similar_tags(tags):
 def main():
     args = parse_args()
 
-    mealie_url = require_mealie_url(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"))
-    mealie_api_key = secret("MEALIE_API_KEY")
-    if not mealie_api_key:
-        raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
+    mealie_url = resolve_mealie_url()
+    mealie_api_key = resolve_mealie_api_key(required=True)
 
     session = requests.Session()
     session.headers.update(

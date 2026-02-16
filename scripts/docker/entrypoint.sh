@@ -5,6 +5,15 @@ TASK="${TASK:-categorize}"
 RUN_MODE="${RUN_MODE:-once}"
 RUN_INTERVAL_SECONDS="${RUN_INTERVAL_SECONDS:-21600}"
 PROVIDER="${PROVIDER:-}"
+CLEANUP_APPLY="${CLEANUP_APPLY:-false}"
+MAINTENANCE_APPLY_CLEANUPS="${MAINTENANCE_APPLY_CLEANUPS:-false}"
+
+is_true() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 run_task() {
   case "$TASK" in
@@ -29,8 +38,46 @@ run_task() {
     cookbook-sync)
       python -m mealie_organizer.cookbook_manager sync
       ;;
+    ingredient-parse)
+      python -m mealie_organizer.ingredient_parser
+      ;;
+    foods-cleanup)
+      if is_true "$CLEANUP_APPLY"; then
+        python -m mealie_organizer.foods_manager cleanup --apply
+      else
+        python -m mealie_organizer.foods_manager cleanup
+      fi
+      ;;
+    units-cleanup)
+      if is_true "$CLEANUP_APPLY"; then
+        python -m mealie_organizer.units_manager cleanup --apply
+      else
+        python -m mealie_organizer.units_manager cleanup
+      fi
+      ;;
+    labels-sync)
+      if is_true "$CLEANUP_APPLY"; then
+        python -m mealie_organizer.labels_manager --apply
+      else
+        python -m mealie_organizer.labels_manager
+      fi
+      ;;
+    tools-sync)
+      if is_true "$CLEANUP_APPLY"; then
+        python -m mealie_organizer.tools_manager --apply
+      else
+        python -m mealie_organizer.tools_manager
+      fi
+      ;;
+    data-maintenance)
+      if is_true "$MAINTENANCE_APPLY_CLEANUPS"; then
+        python -m mealie_organizer.data_maintenance --apply-cleanups
+      else
+        python -m mealie_organizer.data_maintenance
+      fi
+      ;;
     *)
-      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, or cookbook-sync."
+      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, cookbook-sync, ingredient-parse, foods-cleanup, units-cleanup, labels-sync, tools-sync, or data-maintenance."
       exit 1
       ;;
   esac

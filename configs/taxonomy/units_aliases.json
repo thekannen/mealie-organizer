@@ -1,0 +1,42 @@
+[
+  {
+    "canonical": "Teaspoon",
+    "aliases": ["t", "t.", "teaspoons", "tsp", "tsp."]
+  },
+  {
+    "canonical": "Tablespoon",
+    "aliases": ["T", "T.", "tablespoons", "tbsp", "tbsp."]
+  },
+  {
+    "canonical": "Cup",
+    "aliases": ["cups", "c", "c."]
+  },
+  {
+    "canonical": "Ounce",
+    "aliases": ["ounces", "oz", "oz."]
+  },
+  {
+    "canonical": "Pound",
+    "aliases": ["pounds", "lb", "lb.", "lbs", "lbs."]
+  },
+  {
+    "canonical": "Gram",
+    "aliases": ["grams", "g", "g."]
+  },
+  {
+    "canonical": "Kilogram",
+    "aliases": ["kilograms", "kg", "kg."]
+  },
+  {
+    "canonical": "Milliliter",
+    "aliases": ["milliliters", "ml", "ml."]
+  },
+  {
+    "canonical": "Liter",
+    "aliases": ["liters", "l", "l."]
+  },
+  {
+    "canonical": "Pinch",
+    "aliases": ["pinches"]
+  }
+]

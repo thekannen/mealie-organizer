@@ -1,6 +1,12 @@
 import pytest
 
-from mealie_organizer.config import env_or_config, require_mealie_url, to_bool
+from mealie_organizer.config import (
+    env_or_config,
+    require_mealie_url,
+    resolve_mealie_api_key,
+    resolve_mealie_url,
+    to_bool,
+)
 
 
 @pytest.mark.parametrize(
@@ -52,3 +58,27 @@ def test_require_mealie_url_rejects_placeholder():
 def test_require_mealie_url_rejects_non_string():
     with pytest.raises(RuntimeError):
         require_mealie_url({"url": "http://localhost:9000/api"})
+
+
+def test_resolve_mealie_url_prefers_primary(monkeypatch):
+    monkeypatch.setenv("MEALIE_URL", "http://primary.local:9000/api")
+    monkeypatch.setenv("MEALIE_BASE_URL", "http://legacy.local:9000/api")
+    assert resolve_mealie_url() == "http://primary.local:9000/api"
+
+
+def test_resolve_mealie_url_uses_legacy_alias(monkeypatch):
+    monkeypatch.delenv("MEALIE_URL", raising=False)
+    monkeypatch.setenv("MEALIE_BASE_URL", "http://legacy.local:9000/api")
+    assert resolve_mealie_url() == "http://legacy.local:9000/api"
+
+
+def test_resolve_mealie_api_key_prefers_primary(monkeypatch):
+    monkeypatch.setenv("MEALIE_API_KEY", "primary-token")
+    monkeypatch.setenv("MEALIE_API_TOKEN", "legacy-token")
+    assert resolve_mealie_api_key(required=True) == "primary-token"
+
+
+def test_resolve_mealie_api_key_uses_legacy_alias(monkeypatch):
+    monkeypatch.delenv("MEALIE_API_KEY", raising=False)
+    monkeypatch.setenv("MEALIE_API_TOKEN", "legacy-token")
+    assert resolve_mealie_api_key(required=True) == "legacy-token"
