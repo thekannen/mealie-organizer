@@ -9,7 +9,7 @@ from typing import Callable
 import requests
 
 from .categorizer_core import MealieCategorizer
-from .config import env_or_config, require_mealie_url, secret, to_bool
+from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, secret, to_bool
 
 
 def require_str(value: object, field: str) -> str:
@@ -40,7 +40,6 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-MEALIE_URL: str = require_str(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"), "mealie.url")
 BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 2, int), "categorizer.batch_size")
 MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int), "categorizer.max_workers")
 TAG_MAX_NAME_LENGTH: int = require_int(
@@ -295,12 +294,9 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
 def main(forced_provider: str | None = None) -> None:
     args = parse_args(forced_provider=forced_provider)
 
-    mealie_api_key = secret("MEALIE_API_KEY")
-    if not mealie_api_key:
-        raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
-
     dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
-    mealie_url = require_mealie_url(MEALIE_URL)
+    mealie_url = resolve_mealie_url()
+    mealie_api_key = resolve_mealie_api_key(required=True)
 
     provider = resolve_provider(getattr(args, "provider", None), forced_provider=forced_provider)
     query_text, provider_name = build_provider_query(provider)

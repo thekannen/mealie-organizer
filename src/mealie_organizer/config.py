@@ -113,3 +113,28 @@ def resolve_repo_path(path_value):
     if path.is_absolute():
         return path
     return REPO_ROOT / path
+
+
+def resolve_mealie_url():
+    primary = os.environ.get("MEALIE_URL")
+    legacy = os.environ.get("MEALIE_BASE_URL")
+    if primary and primary.strip():
+        return require_mealie_url(primary)
+    if legacy and legacy.strip():
+        print("[warn] MEALIE_BASE_URL is deprecated; prefer MEALIE_URL.", flush=True)
+        return require_mealie_url(legacy)
+    fallback = config_value("mealie.url", MEALIE_URL_PLACEHOLDER)
+    return require_mealie_url(fallback)
+
+
+def resolve_mealie_api_key(required=True):
+    primary = os.environ.get("MEALIE_API_KEY", "").strip()
+    if primary:
+        return primary
+    legacy = os.environ.get("MEALIE_API_TOKEN", "").strip()
+    if legacy:
+        print("[warn] MEALIE_API_TOKEN is deprecated; prefer MEALIE_API_KEY.", flush=True)
+        return legacy
+    if required:
+        raise RuntimeError("MEALIE_API_KEY is empty. Set MEALIE_API_KEY (or legacy MEALIE_API_TOKEN).")
+    return ""

@@ -7,7 +7,7 @@ import json
 import re
 import requests
 
-from .config import REPO_ROOT, env_or_config, require_mealie_url, resolve_repo_path, secret, to_bool
+from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 
 DEFAULT_COOKBOOKS_FILE = env_or_config("COOKBOOKS_FILE", "taxonomy.cookbooks_file", "configs/taxonomy/cookbooks.json")
 
@@ -384,10 +384,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    mealie_url = require_mealie_url(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"))
-    mealie_api_key = secret("MEALIE_API_KEY")
-    if not mealie_api_key:
-        raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
+    mealie_url = resolve_mealie_url()
+    mealie_api_key = resolve_mealie_api_key(required=True)
 
     dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
     if dry_run:

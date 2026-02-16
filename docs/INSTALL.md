@@ -116,6 +116,7 @@ cp .env.example .env
 ```bash
 source .venv/bin/activate
 mealie-categorizer
+mealie-data-maintenance
 ```
 
 Optional helper for Ubuntu bootstrap:

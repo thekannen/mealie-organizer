@@ -17,6 +17,35 @@
       }
     }
   },
+  "maintenance": {
+    "max_actions_per_stage": 250,
+    "checkpoint_dir": "cache/maintenance",
+    "default_stages": [
+      "parse",
+      "foods",
+      "units",
+      "taxonomy",
+      "categorize",
+      "cookbooks",
+      "audit"
+    ]
+  },
+  "parser": {
+    "confidence_threshold": 0.8,
+    "max_recipes_per_run": 500,
+    "strategies": [
+      "nlp",
+      "openai"
+    ],
+    "page_size": 200,
+    "delay_seconds": 0.1,
+    "request_timeout_seconds": 30,
+    "request_retries": 3,
+    "request_backoff_seconds": 0.4,
+    "output_dir": "reports",
+    "low_confidence_file": "review_low_confidence.json",
+    "success_file": "parsed_success.log"
+  },
   "categorizer": {
     "batch_size": 2,
     "max_workers": 3,
@@ -28,6 +57,20 @@
       "chatgpt": "cache/results_chatgpt.json",
       "ollama": "cache/results_ollama.json"
     }
+  },
+  "foods": {
+    "report_file": "reports/foods_cleanup_report.json",
+    "allow_fuzzy": false
+  },
+  "units": {
+    "alias_file": "configs/taxonomy/units_aliases.json",
+    "report_file": "reports/units_cleanup_report.json"
+  },
+  "labels": {
+    "file": "configs/taxonomy/labels.json"
+  },
+  "tools": {
+    "file": "configs/taxonomy/tools.json"
   },
   "taxonomy": {
     "categories_file": "configs/taxonomy/categories.json",

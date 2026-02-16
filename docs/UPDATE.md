@@ -45,6 +45,12 @@ Common flags:
 1. Set previous tag in `.env` (`MEALIE_ORGANIZER_TAG=...`)
 2. Run pull + up again
 
+### Run the expanded maintenance pipeline after update
+
+```bash
+docker compose -f compose.yaml run --rm -e TASK=data-maintenance -e RUN_MODE=once mealie-organizer
+```
+
 ---
 
 ## 2) Your Own Custom Image

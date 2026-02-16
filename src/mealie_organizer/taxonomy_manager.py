@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
-from .config import REPO_ROOT, env_or_config, require_mealie_url, secret, resolve_repo_path, to_bool
+from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 
 DEFAULT_CATEGORIES_FILE = env_or_config(
     "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
@@ -351,10 +351,8 @@ def resolve_refresh_replace_flags(mode, replace_categories, replace_tags):
 def main():
     args = build_parser().parse_args()
 
-    mealie_url = require_mealie_url(env_or_config("MEALIE_URL", "mealie.url", "http://your.server.ip.address:9000/api"))
-    mealie_api_key = secret("MEALIE_API_KEY")
-    if not mealie_api_key:
-        raise RuntimeError("MEALIE_API_KEY is empty. Set it in .env or the environment.")
+    mealie_url = resolve_mealie_url()
+    mealie_api_key = resolve_mealie_api_key(required=True)
 
     dry_run = bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool))
     if dry_run:
