@@ -10,6 +10,20 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1)
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=8)
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=8)
+
+
+class UserPasswordResetRequest(BaseModel):
+    password: str = Field(min_length=8)
+
+
 class RunCreateRequest(BaseModel):
     task_id: str = Field(min_length=1)
     options: dict[str, Any] = Field(default_factory=dict)

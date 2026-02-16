@@ -144,6 +144,36 @@ class StateStore:
             row = conn.execute("SELECT 1 FROM users LIMIT 1;").fetchone()
             return row is not None
 
+    def count_users(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS value FROM users;").fetchone()
+            return int(row["value"]) if row is not None else 0
+
+    def list_users(self) -> list[dict[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT username, created_at FROM users ORDER BY username ASC;"
+            ).fetchall()
+        return [{"username": str(row["username"]), "created_at": str(row["created_at"])} for row in rows]
+
+    def user_exists(self, username: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT 1 FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
+            return row is not None
+
+    def create_user(self, username: str, password_hash: str) -> bool:
+        now = utc_now_iso()
+        with self._write_lock:
+            with self._connect() as conn:
+                row = conn.execute("SELECT 1 FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
+                if row is not None:
+                    return False
+                conn.execute(
+                    "INSERT INTO users(username, password_hash, created_at) VALUES(?, ?, ?);",
+                    (username, password_hash, now),
+                )
+        return True
+
     def upsert_user(self, username: str, password_hash: str) -> None:
         now = utc_now_iso()
         with self._write_lock:
@@ -158,12 +188,28 @@ class StateStore:
                     (username, password_hash, now),
                 )
 
+    def update_password(self, username: str, password_hash: str) -> bool:
+        with self._write_lock:
+            with self._connect() as conn:
+                result = conn.execute(
+                    "UPDATE users SET password_hash = ? WHERE username = ?;",
+                    (password_hash, username),
+                )
+                return int(result.rowcount or 0) > 0
+
     def get_password_hash(self, username: str) -> str | None:
         with self._connect() as conn:
             row = conn.execute("SELECT password_hash FROM users WHERE username = ?;", (username,)).fetchone()
             if row is None:
                 return None
             return str(row["password_hash"])
+
+    def delete_user(self, username: str) -> bool:
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
+                result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
+                return int(result.rowcount or 0) > 0
 
     def create_session(self, token: str, username: str, expires_at: str) -> None:
         now = utc_now_iso()

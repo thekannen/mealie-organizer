@@ -19,11 +19,14 @@ from .scheduler import SchedulePayload, SchedulerService
 from .schemas import (
     ConfigWriteRequest,
     LoginRequest,
+    RegisterRequest,
     PoliciesUpdateRequest,
     RunCreateRequest,
     ScheduleCreateRequest,
     ScheduleUpdateRequest,
     SettingsUpdateRequest,
+    UserCreateRequest,
+    UserPasswordResetRequest,
 )
 from .security import SecretCipher, hash_password, new_session_token, verify_password
 from .settings import WebUISettings, load_webui_settings
@@ -31,6 +34,7 @@ from .state import StateStore, utc_now_iso
 from .tasks import TaskRegistry
 
 _ENV_KEY_RE = re.compile(r"^[A-Z0-9_]+$")
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,64}$")
 
 
 @dataclass(frozen=True)
@@ -73,7 +77,11 @@ def _render_index(ui_root: Path, base_path: str) -> str:
     if not index_path.exists():
         return "<html><body><h1>Organizer UI build missing.</h1></body></html>"
     html = index_path.read_text(encoding="utf-8")
-    return html.replace("__BASE_PATH__", base_path)
+    if "__BASE_PATH__" in html:
+        return html.replace("__BASE_PATH__", base_path)
+    if "<base " not in html and "<head>" in html:
+        html = html.replace("<head>", f"<head>\n    <base href=\"{base_path}/\" />", 1)
+    return html
 
 
 def _build_runtime_env(state: StateStore, cipher: SecretCipher) -> dict[str, str]:
@@ -126,6 +134,8 @@ def _env_payload(state: StateStore, cipher: SecretCipher) -> dict[str, Any]:
         value, source, has_value = _value_from_runtime(spec, settings, secrets, cipher)
         payload[spec.key] = {
             "key": spec.key,
+            "label": spec.label,
+            "group": spec.group,
             "value": value,
             "source": source,
             "secret": spec.secret,
@@ -134,6 +144,16 @@ def _env_payload(state: StateStore, cipher: SecretCipher) -> dict[str, Any]:
             "description": spec.description,
         }
     return payload
+
+
+def _normalize_username(raw: str) -> str:
+    username = raw.strip()
+    if not _USERNAME_RE.match(username):
+        raise HTTPException(
+            status_code=422,
+            detail="Username must be 3-64 characters and use letters, numbers, underscore, dot, or dash.",
+        )
+    return username
 
 
 def _require_services(request: Request) -> Services:
@@ -229,12 +249,11 @@ def create_app() -> FastAPI:
     cipher = SecretCipher(settings.fernet_key)
 
     if not state.has_users():
-        if not settings.bootstrap_password:
-            raise RuntimeError(
-                "No web user exists. Set WEB_BOOTSTRAP_PASSWORD for first-time startup."
-            )
-        state.upsert_user(settings.bootstrap_user, hash_password(settings.bootstrap_password))
-        print(f"[webui] bootstrapped login user '{settings.bootstrap_user}'", flush=True)
+        if settings.bootstrap_password:
+            state.upsert_user(settings.bootstrap_user, hash_password(settings.bootstrap_password))
+            print(f"[webui] bootstrapped login user '{settings.bootstrap_user}'", flush=True)
+        else:
+            print("[webui] no users found. First-time setup is required.", flush=True)
 
     config_files = ConfigFilesManager(settings.config_root)
     runner = RunQueueManager(
@@ -288,12 +307,46 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, Any]:
         return {"ok": True, "base_path": settings.base_path}
 
+    @app.get(f"{api_prefix}/auth/bootstrap-status")
+    async def bootstrap_status(services: Services = Depends(_require_services)) -> dict[str, Any]:
+        return {"setup_required": not services.state.has_users()}
+
     @app.post(f"{api_prefix}/auth/login")
     async def login(payload: LoginRequest, response: Response, services: Services = Depends(_require_services)) -> dict[str, Any]:
-        username = payload.username.strip()
+        if not services.state.has_users():
+            raise HTTPException(status_code=409, detail="No users found. Complete first-time setup.")
+        username = _normalize_username(payload.username)
         password_hash = services.state.get_password_hash(username)
         if password_hash is None or not verify_password(payload.password, password_hash):
             raise HTTPException(status_code=401, detail="Invalid username or password.")
+        token = new_session_token()
+        expires_at = (datetime.now(UTC) + timedelta(seconds=services.settings.session_ttl_seconds)).isoformat().replace(
+            "+00:00", "Z"
+        )
+        services.state.create_session(token=token, username=username, expires_at=expires_at)
+        response.set_cookie(
+            key=services.settings.cookie_name,
+            value=token,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            path=services.settings.base_path,
+        )
+        return {"ok": True, "username": username, "expires_at": expires_at}
+
+    @app.post(f"{api_prefix}/auth/register")
+    async def register_first_user(
+        payload: RegisterRequest,
+        response: Response,
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        if services.state.has_users():
+            raise HTTPException(status_code=409, detail="Setup already completed.")
+        username = _normalize_username(payload.username)
+        created = services.state.create_user(username, hash_password(payload.password))
+        if not created:
+            raise HTTPException(status_code=409, detail="Username already exists.")
+
         token = new_session_token()
         expires_at = (datetime.now(UTC) + timedelta(seconds=services.settings.session_ttl_seconds)).isoformat().replace(
             "+00:00", "Z"
@@ -325,6 +378,55 @@ def create_app() -> FastAPI:
     @app.get(f"{api_prefix}/auth/session")
     async def session_status(session: dict[str, Any] = Depends(_require_session)) -> dict[str, Any]:
         return {"authenticated": True, "username": session["username"], "expires_at": session["expires_at"]}
+
+    @app.get(f"{api_prefix}/users")
+    async def list_users(
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        return {"items": services.state.list_users()}
+
+    @app.post(f"{api_prefix}/users", status_code=201)
+    async def create_user(
+        payload: UserCreateRequest,
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        username = _normalize_username(payload.username)
+        created = services.state.create_user(username, hash_password(payload.password))
+        if not created:
+            raise HTTPException(status_code=409, detail="Username already exists.")
+        return {"ok": True, "username": username}
+
+    @app.post(f"{api_prefix}/users/{{username}}/reset-password")
+    async def reset_user_password(
+        username: str,
+        payload: UserPasswordResetRequest,
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        normalized = _normalize_username(username)
+        updated = services.state.update_password(normalized, hash_password(payload.password))
+        if not updated:
+            raise HTTPException(status_code=404, detail="User not found.")
+        return {"ok": True}
+
+    @app.delete(f"{api_prefix}/users/{{username}}")
+    async def delete_user(
+        username: str,
+        session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        normalized = _normalize_username(username)
+        current_username = str(session["username"])
+        if normalized == current_username:
+            raise HTTPException(status_code=409, detail="You cannot delete the active account.")
+        if services.state.count_users() <= 1:
+            raise HTTPException(status_code=409, detail="At least one account must remain.")
+        deleted = services.state.delete_user(normalized)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="User not found.")
+        return {"ok": True}
 
     @app.get(f"{api_prefix}/tasks")
     async def list_tasks(

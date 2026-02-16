@@ -52,11 +52,46 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         health = client.get("/organizer/api/v1/health")
         assert health.status_code == 200
 
+        bootstrap_status = client.get("/organizer/api/v1/auth/bootstrap-status")
+        assert bootstrap_status.status_code == 200
+        assert bootstrap_status.json()["setup_required"] is False
+
+        organizer_page = client.get("/organizer")
+        assert organizer_page.status_code == 200
+        assert '<base href="/organizer/" />' in organizer_page.text
+
         _login(client)
 
         session = client.get("/organizer/api/v1/auth/session")
         assert session.status_code == 200
         assert session.json()["authenticated"] is True
+
+        users_initial = client.get("/organizer/api/v1/users")
+        assert users_initial.status_code == 200
+        assert any(item["username"] == "admin" for item in users_initial.json()["items"])
+
+        create_user = client.post(
+            "/organizer/api/v1/users",
+            json={"username": "kitchen-tablet", "password": "tablet-pass-01"},
+        )
+        assert create_user.status_code == 201
+        assert create_user.json()["username"] == "kitchen-tablet"
+
+        users_after_create = client.get("/organizer/api/v1/users")
+        assert users_after_create.status_code == 200
+        assert any(item["username"] == "kitchen-tablet" for item in users_after_create.json()["items"])
+
+        reset_password = client.post(
+            "/organizer/api/v1/users/kitchen-tablet/reset-password",
+            json={"password": "tablet-pass-02"},
+        )
+        assert reset_password.status_code == 200
+
+        delete_active_user = client.delete("/organizer/api/v1/users/admin")
+        assert delete_active_user.status_code == 409
+
+        delete_user = client.delete("/organizer/api/v1/users/kitchen-tablet")
+        assert delete_user.status_code == 200
 
         tasks = client.get("/organizer/api/v1/tasks")
         assert tasks.status_code == 200
@@ -135,3 +170,41 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         assert config_put.status_code == 200
         config_get_updated = client.get("/organizer/api/v1/config/files/categories")
         assert config_get_updated.json()["content"][0]["name"] == "Breakfast"
+
+
+def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.delenv("WEB_BOOTSTRAP_PASSWORD", raising=False)
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/organizer")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+
+    app_module = importlib.import_module("mealie_organizer.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        bootstrap_status = client.get("/organizer/api/v1/auth/bootstrap-status")
+        assert bootstrap_status.status_code == 200
+        assert bootstrap_status.json()["setup_required"] is True
+
+        blocked_login = client.post(
+            "/organizer/api/v1/auth/login",
+            json={"username": "admin", "password": "secret-pass"},
+        )
+        assert blocked_login.status_code == 409
+
+        register = client.post(
+            "/organizer/api/v1/auth/register",
+            json={"username": "admin", "password": "secret-pass"},
+        )
+        assert register.status_code == 200
+        assert register.json()["username"] == "admin"
+
+        users = client.get("/organizer/api/v1/users")
+        assert users.status_code == 200
+        assert any(item["username"] == "admin" for item in users.json()["items"])
