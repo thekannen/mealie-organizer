@@ -1,0 +1,5 @@
+services:
+  mealie-organizer:
+    build:
+      context: .
+    image: ${MEALIE_ORGANIZER_LOCAL_IMAGE:-mealie-organizer:local}
