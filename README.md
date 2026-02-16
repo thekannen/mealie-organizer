@@ -12,7 +12,7 @@ It can:
 - Seed and sync labels/tools catalogs
 - Refresh categories and tags from templates
 - Sync cookbook templates
-- Categorize/tag recipes using Ollama or ChatGPT-compatible APIs
+- Categorize/tag/tool recipes using Ollama or ChatGPT-compatible APIs
 - Audit taxonomy quality and usage
 - Run an end-to-end data maintenance pipeline
 - Run once or on a schedule in Docker

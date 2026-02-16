@@ -27,6 +27,8 @@ def test_cache_file_for_provider_uses_config():
 
 
 def test_derive_target_mode():
-    assert derive_target_mode(types.SimpleNamespace(missing_tags=True, missing_categories=False)) == "missing-tags"
-    assert derive_target_mode(types.SimpleNamespace(missing_tags=False, missing_categories=True)) == "missing-categories"
-    assert derive_target_mode(types.SimpleNamespace(missing_tags=False, missing_categories=False)) == "missing-either"
+    assert derive_target_mode(types.SimpleNamespace(missing_tags=True, missing_categories=False, missing_tools=False)) == "missing-tags"
+    assert derive_target_mode(types.SimpleNamespace(missing_tags=False, missing_categories=True, missing_tools=False)) == "missing-categories"
+    assert derive_target_mode(types.SimpleNamespace(missing_tags=False, missing_categories=False, missing_tools=True)) == "missing-tools"
+    assert derive_target_mode(types.SimpleNamespace(missing_tags=True, missing_categories=False, missing_tools=True)) == "missing-either"
+    assert derive_target_mode(types.SimpleNamespace(missing_tags=False, missing_categories=False, missing_tools=False)) == "missing-either"

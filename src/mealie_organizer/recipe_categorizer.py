@@ -64,16 +64,24 @@ def parse_args(forced_provider: str | None = None) -> argparse.Namespace:
         action="store_true",
         help="Only process recipes missing categories.",
     )
+    parser.add_argument("--missing-tools", action="store_true", help="Only process recipes missing tools.")
     return parser.parse_args()
 
 
 def derive_target_mode(args: argparse.Namespace) -> str:
-    if args.missing_tags and args.missing_categories:
+    selected = [
+        bool(getattr(args, "missing_tags", False)),
+        bool(getattr(args, "missing_categories", False)),
+        bool(getattr(args, "missing_tools", False)),
+    ]
+    if sum(selected) > 1:
         return "missing-either"
-    if args.missing_tags:
+    if getattr(args, "missing_tags", False):
         return "missing-tags"
-    if args.missing_categories:
+    if getattr(args, "missing_categories", False):
         return "missing-categories"
+    if getattr(args, "missing_tools", False):
+        return "missing-tools"
     return "missing-either"
 
 

@@ -120,6 +120,7 @@ class MealieCategorizer:
             "update_failures": 0,
             "categories_added": 0,
             "tags_added": 0,
+            "tools_added": 0,
         }
         self.cache = self.load_cache()
 
@@ -267,7 +268,7 @@ class MealieCategorizer:
         )
         self.log(
             "[summary] "
-            f"categories_added={stats['categories_added']} tags_added={stats['tags_added']} "
+            f"categories_added={stats['categories_added']} tags_added={stats['tags_added']} tools_added={stats['tools_added']} "
             f"update_failures={stats['update_failures']} "
             f"unknown_slugs={stats['unknown_slug_count']} model_missing_entries={stats['model_missing_entry_count']} "
             f"excluded_tag_candidates={stats['excluded_tag_candidates']}"
@@ -284,19 +285,21 @@ class MealieCategorizer:
         return self._get_paginated(f"{self.mealie_url}/organizers/tags?perPage=1000", timeout=60)
 
     @staticmethod
-    def make_prompt(recipes, category_names, tag_names):
+    def make_prompt(recipes, category_names, tag_names, tool_names):
         categories_text = "\n".join(f"- {name}" for name in category_names)
         tags_text = "\n".join(f"- {name}" for name in tag_names)
+        tools_text = "\n".join(f"- {name}" for name in tool_names)
         prompt = f"""
 You are a food recipe classifier.
 
 For each recipe below:
 1) Select one or more matching categories FROM THIS LIST ONLY.
 2) Select one or more relevant tags FROM THIS LIST ONLY. Use an empty array ONLY if nothing fits.
+3) Select one or more relevant kitchen tools FROM THIS LIST ONLY. Use an empty array ONLY if nothing fits.
 
 Return results ONLY as valid JSON array like:
 [
-  {{"slug": "recipe-slug", "categories": ["Dinner"], "tags": ["Quick"]}}
+  {{"slug": "recipe-slug", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Cast Iron Skillet"]}}
 ]
 
 If nothing matches, use empty arrays. Do not invent new names. No extra commentary.
@@ -306,6 +309,9 @@ Categories:
 
 Tags:
 {tags_text}
+
+Tools:
+{tools_text}
 
 Recipes:
 """
@@ -365,6 +371,40 @@ Recipes:
                 f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
             )
         return prompt.strip()
+
+    @staticmethod
+    def make_tool_prompt(recipes, tool_names):
+        tools_text = "\n".join(f"- {name}" for name in tool_names)
+        prompt = f"""
+You are a food recipe kitchen tool selector.
+
+Select at least one applicable tool for each recipe from THIS LIST ONLY:
+{tools_text}
+
+Return ONLY valid JSON array like:
+[
+  {{"slug": "recipe-slug", "tools": ["Dutch Oven", "Immersion Blender"]}}
+]
+
+If absolutely no tools match, use an empty array. No commentary.
+
+Recipes:
+"""
+        for recipe in recipes:
+            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
+            prompt += (
+                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
+            )
+        return prompt.strip()
+
+    def get_all_tools(self):
+        try:
+            return self._get_paginated(f"{self.mealie_url}/organizers/tools?perPage=1000", timeout=60)
+        except requests.HTTPError as exc:
+            response = getattr(exc, "response", None)
+            if response is None or response.status_code != 404:
+                raise
+        return self._get_paginated(f"{self.mealie_url}/tools?perPage=1000", timeout=60)
 
     def safe_query_with_retry(self, prompt_text, retries=None):
         attempts = retries if retries is not None else self.query_retries
@@ -426,10 +466,12 @@ Recipes:
             return [r for r in all_recipes if not (r.get("recipeCategory") or [])]
         if self.target_mode == "missing-tags":
             return [r for r in all_recipes if not (r.get("tags") or [])]
+        if self.target_mode == "missing-tools":
+            return [r for r in all_recipes if not (r.get("tools") or r.get("recipeTool") or [])]
         return [
             r
             for r in all_recipes
-            if not (r.get("recipeCategory") or []) or not (r.get("tags") or [])
+            if not (r.get("recipeCategory") or []) or not (r.get("tags") or []) or not (r.get("tools") or r.get("recipeTool") or [])
         ]
 
     def ensure_tags_for_entries(self, entries, recipes_by_slug, tag_names):
@@ -465,15 +507,70 @@ Recipes:
             if slug in tag_map and not (entry.get("tags") or []):
                 entry["tags"] = tag_map[slug]
 
-    def update_recipe_metadata(self, recipe, category_names, tag_names, categories_by_name, tags_by_name):
+    def ensure_tools_for_entries(self, entries, recipes_by_slug, tool_names):
+        missing_slugs = []
+        for entry in entries:
+            slug = (entry.get("slug") or "").strip()
+            if slug and slug in recipes_by_slug and not entry.get("tools"):
+                missing_slugs.append(slug)
+
+        if not missing_slugs:
+            return
+
+        deduped = []
+        seen = set()
+        for slug in missing_slugs:
+            if slug not in seen:
+                seen.add(slug)
+                deduped.append(recipes_by_slug[slug])
+
+        tool_results = self.safe_query_with_retry(self.make_tool_prompt(deduped, tool_names))
+        if not isinstance(tool_results, list):
+            return
+
+        tool_map = {}
+        for item in tool_results:
+            slug = (item.get("slug") or "").strip()
+            tools = item.get("tools") or item.get("tool") or []
+            if slug and isinstance(tools, list):
+                tool_map[slug] = tools
+
+        for entry in entries:
+            slug = (entry.get("slug") or "").strip()
+            if slug in tool_map and not (entry.get("tools") or []):
+                entry["tools"] = tool_map[slug]
+
+    @staticmethod
+    def _existing_tools(recipe):
+        return list(recipe.get("tools") or recipe.get("recipeTool") or [])
+
+    @staticmethod
+    def _tool_payload_key(recipe):
+        if "recipeTool" in recipe and "tools" not in recipe:
+            return "recipeTool"
+        return "tools"
+
+    def update_recipe_metadata(
+        self,
+        recipe,
+        category_names,
+        tag_names,
+        tool_names,
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+    ):
         recipe_slug = recipe["slug"]
         existing_categories = [] if self.replace_existing else list(recipe.get("recipeCategory") or [])
         existing_tags = [] if self.replace_existing else list(recipe.get("tags") or [])
+        existing_tools = [] if self.replace_existing else self._existing_tools(recipe)
 
         cat_slugs = {c.get("slug") for c in existing_categories}
         tag_slugs = {t.get("slug") for t in existing_tags}
+        tool_slugs = {t.get("slug") for t in existing_tools}
         updated_categories = list(existing_categories)
         updated_tags = list(existing_tags)
+        updated_tools = list(existing_tools)
 
         def append_matches(names, lookup, existing_set, target_list):
             changed = False
@@ -501,8 +598,9 @@ Recipes:
 
         cats_changed, cats_added = append_matches(category_names, categories_by_name, cat_slugs, updated_categories)
         tags_changed, tags_added = append_matches(tag_names, tags_by_name, tag_slugs, updated_tags)
+        tools_changed, tools_added = append_matches(tool_names, tools_by_name, tool_slugs, updated_tools)
 
-        if not cats_changed and not tags_changed:
+        if not cats_changed and not tags_changed and not tools_changed:
             self.increment_stat("recipes_no_change")
             return False
 
@@ -511,18 +609,23 @@ Recipes:
             payload["recipeCategory"] = updated_categories
         if tags_changed:
             payload["tags"] = updated_tags
+        if tools_changed:
+            payload[self._tool_payload_key(recipe)] = updated_tools
 
         summary_bits = []
         if cats_changed:
             summary_bits.append(f"cats={', '.join(cats_added or [c.get('name') for c in updated_categories])}")
         if tags_changed:
             summary_bits.append(f"tags={', '.join(tags_added or [t.get('name') for t in updated_tags])}")
+        if tools_changed:
+            summary_bits.append(f"tools={', '.join(tools_added or [t.get('name') for t in updated_tools])}")
 
         if self.dry_run:
             self.log(f"[plan] {recipe_slug} -> {'; '.join(summary_bits)}")
             self.increment_stat("recipes_planned")
             self.increment_stat("categories_added", len(cats_added))
             self.increment_stat("tags_added", len(tags_added))
+            self.increment_stat("tools_added", len(tools_added))
             return True
 
         response = requests.patch(
@@ -540,11 +643,13 @@ Recipes:
         self.increment_stat("recipes_updated")
         self.increment_stat("categories_added", len(cats_added))
         self.increment_stat("tags_added", len(tags_added))
+        self.increment_stat("tools_added", len(tools_added))
 
         with self.cache_lock:
             self.cache[recipe_slug] = {
                 "categories": [c.get("name") for c in updated_categories],
                 "tags": [t.get("name") for t in updated_tags],
+                "tools": [t.get("name") for t in updated_tools],
             }
             self.save_cache()
         return True
@@ -583,12 +688,26 @@ Recipes:
         if tags_field is None:
             tags_field = entry.get("tag") or entry.get("labels")
         tags = self.normalize_name_list(tags_field)
-        return categories, tags
+        tools_field = entry.get("tools")
+        if tools_field is None:
+            tools_field = entry.get("tool")
+        tools = self.normalize_name_list(tools_field)
+        return categories, tags, tools
 
-    def apply_parsed_entries_to_batch(self, batch, parsed, tag_names, categories_by_name, tags_by_name):
+    def apply_parsed_entries_to_batch(
+        self,
+        batch,
+        parsed,
+        tag_names,
+        tool_names,
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+    ):
         recipes_by_slug = {r.get("slug"): r for r in batch if r.get("slug")}
         processed = set()
         self.ensure_tags_for_entries(parsed, recipes_by_slug, tag_names)
+        self.ensure_tools_for_entries(parsed, recipes_by_slug, tool_names)
 
         for entry in parsed:
             if not isinstance(entry, dict):
@@ -603,8 +722,8 @@ Recipes:
                 self.increment_stat("unknown_slug_count")
                 continue
 
-            categories, tags = self.parse_entry_labels(entry)
-            self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
+            categories, tags, tools = self.parse_entry_labels(entry)
+            self.update_recipe_metadata(recipe, categories, tags, tools, categories_by_name, tags_by_name, tools_by_name)
             processed.add(slug)
 
         missing = sorted(set(recipes_by_slug) - processed)
@@ -614,18 +733,18 @@ Recipes:
 
         return len(recipes_by_slug)
 
-    def classify_single_recipe_with_fallback(self, recipe, category_names, tag_names):
+    def classify_single_recipe_with_fallback(self, recipe, category_names, tag_names, tool_names):
         slug = (recipe.get("slug") or "").strip()
         if not slug:
             return None
 
-        parsed = self.safe_query_with_retry(self.make_prompt([recipe], category_names, tag_names))
+        parsed = self.safe_query_with_retry(self.make_prompt([recipe], category_names, tag_names, tool_names))
         entry = self.extract_entry_for_slug(parsed, slug)
         if entry:
-            categories, tags = self.parse_entry_labels(entry)
-            return {"slug": slug, "categories": categories, "tags": tags}
+            categories, tags, tools = self.parse_entry_labels(entry)
+            return {"slug": slug, "categories": categories, "tags": tags, "tools": tools}
 
-        self.log(f"[warn] Per-recipe classify failed for {slug}; trying split category/tag prompts.")
+        self.log(f"[warn] Per-recipe classify failed for {slug}; trying split category/tag/tool prompts.")
 
         categories = []
         category_results = self.safe_query_with_retry(self.make_category_prompt([recipe], category_names))
@@ -642,18 +761,36 @@ Recipes:
                 tags_field = tag_entry.get("tag") or tag_entry.get("labels")
             tags = self.normalize_name_list(tags_field)
 
-        if not categories and not tags:
+        tools = []
+        tool_results = self.safe_query_with_retry(self.make_tool_prompt([recipe], tool_names))
+        tool_entry = self.extract_entry_for_slug(tool_results, slug)
+        if tool_entry:
+            tools_field = tool_entry.get("tools")
+            if tools_field is None:
+                tools_field = tool_entry.get("tool")
+            tools = self.normalize_name_list(tools_field)
+
+        if not categories and not tags and not tools:
             return None
 
-        return {"slug": slug, "categories": categories, "tags": tags}
+        return {"slug": slug, "categories": categories, "tags": tags, "tools": tools}
 
-    def process_batch_with_fallback(self, batch, category_names, tag_names, categories_by_name, tags_by_name):
+    def process_batch_with_fallback(
+        self,
+        batch,
+        category_names,
+        tag_names,
+        tool_names,
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+    ):
         self.log("[warn] Falling back to per-recipe classification for this batch.")
         self.increment_stat("fallback_batches")
         for recipe in batch:
             slug = (recipe.get("slug") or "").strip() or "(missing slug)"
             self.increment_stat("per_recipe_fallback_attempts")
-            entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names)
+            entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names, tool_names)
             if not entry:
                 self.log(f"[warn] No classification returned for {slug} after fallback attempts.")
                 self.increment_stat("per_recipe_no_classification")
@@ -662,10 +799,19 @@ Recipes:
 
             categories = self.normalize_name_list(entry.get("categories"))
             tags = self.normalize_name_list(entry.get("tags"))
-            self.update_recipe_metadata(recipe, categories, tags, categories_by_name, tags_by_name)
+            tools = self.normalize_name_list(entry.get("tools"))
+            self.update_recipe_metadata(
+                recipe,
+                categories,
+                tags,
+                tools,
+                categories_by_name,
+                tags_by_name,
+                tools_by_name,
+            )
             self.advance_progress(1)
 
-    def process_batch(self, batch, category_names, tag_names, categories_by_name, tags_by_name):
+    def process_batch(self, batch, category_names, tag_names, tool_names, categories_by_name, tags_by_name, tools_by_name):
         if not batch:
             return
 
@@ -673,7 +819,10 @@ Recipes:
             cached_slugs = [
                 r["slug"]
                 for r in batch
-                if r.get("slug") in self.cache and (r.get("recipeCategory") or []) and (r.get("tags") or [])
+                if r.get("slug") in self.cache
+                and (r.get("recipeCategory") or [])
+                and (r.get("tags") or [])
+                and self._existing_tools(r)
             ]
             if cached_slugs:
                 self.advance_progress(len(cached_slugs))
@@ -682,25 +831,38 @@ Recipes:
                 r
                 for r in batch
                 if not (
-                    r.get("slug") in self.cache and (r.get("recipeCategory") or []) and (r.get("tags") or [])
+                    r.get("slug") in self.cache
+                    and (r.get("recipeCategory") or [])
+                    and (r.get("tags") or [])
+                    and self._existing_tools(r)
                 )
             ]
             if not batch:
                 return
 
-        parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names))
+        parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names, tool_names))
         if not isinstance(parsed, list):
             self.log("[warn] Batch failed parsing after retries.")
             self.increment_stat("batch_parse_failures")
-            self.process_batch_with_fallback(batch, category_names, tag_names, categories_by_name, tags_by_name)
+            self.process_batch_with_fallback(
+                batch,
+                category_names,
+                tag_names,
+                tool_names,
+                categories_by_name,
+                tags_by_name,
+                tools_by_name,
+            )
             return
 
         processed_count = self.apply_parsed_entries_to_batch(
             batch,
             parsed,
             tag_names,
+            tool_names,
             categories_by_name,
             tags_by_name,
+            tools_by_name,
         )
         self.advance_progress(processed_count)
 
@@ -712,8 +874,9 @@ Recipes:
             else {
                 "missing-categories": "Categorize Missing Categories",
                 "missing-tags": "Tag Missing Tags",
-                "missing-either": "Categorize/Tag Missing Categories Or Tags",
-            }.get(self.target_mode, "Categorize/Tag Missing Categories Or Tags")
+                "missing-tools": "Assign Missing Tools",
+                "missing-either": "Categorize/Tag/Tool Missing Categories Or Tags Or Tools",
+            }.get(self.target_mode, "Categorize/Tag/Tool Missing Categories Or Tags Or Tools")
         )
         self.log(f"[start] Mode: {mode}")
         self.log(f"[start] Provider: {self.provider_name}")
@@ -722,11 +885,14 @@ Recipes:
         all_recipes = self.get_all_recipes()
         categories = self.get_all_categories()
         tags = self.get_all_tags()
+        tools = self.get_all_tools()
 
         categories_by_name = {c.get("name", "").strip().lower(): c for c in categories if c.get("name")}
         tags_by_name = {t.get("name", "").strip().lower(): t for t in tags if t.get("name")}
+        tools_by_name = {t.get("name", "").strip().lower(): t for t in tools if t.get("name")}
         category_names = sorted(name for name in {c.get("name", "").strip() for c in categories} if name)
         tag_names = self.filter_tag_candidates(tags, all_recipes)
+        tool_names = sorted(name for name in {t.get("name", "").strip() for t in tools} if name)
         if not tag_names:
             tag_names = sorted(name for name in {t.get("name", "").strip() for t in tags} if name)
             self.log("[warn] Tag candidate filtering removed everything; using full tag list.")
@@ -751,8 +917,10 @@ Recipes:
                     batch,
                     category_names,
                     tag_names,
+                    tool_names,
                     categories_by_name,
                     tags_by_name,
+                    tools_by_name,
                 )
                 for batch in batches
             ]

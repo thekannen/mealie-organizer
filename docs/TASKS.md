@@ -28,7 +28,7 @@ For advanced CLI flags not exposed by `TASK`, run the Python module directly wit
 
 | `TASK` value | Purpose | Entrypoint command | Default write behavior |
 | --- | --- | --- | --- |
-| `categorize` | Add categories/tags to recipes missing metadata | `python -m mealie_organizer.recipe_categorizer` | Writes changes unless `DRY_RUN=true` |
+| `categorize` | Add categories/tags/tools to recipes missing metadata | `python -m mealie_organizer.recipe_categorizer` | Writes changes unless `DRY_RUN=true` |
 | `taxonomy-refresh` | Import categories/tags from JSON templates and run cleanup scan | `python -m mealie_organizer.taxonomy_manager refresh --mode ... --cleanup --cleanup-only-unused --cleanup-delete-noisy` | Imports write unless `DRY_RUN=true`; cleanup delete is plan-only by default |
 | `taxonomy-audit` | Build taxonomy quality/usage report | `python -m mealie_organizer.audit_taxonomy` | Read-only (writes local report file) |
 | `cookbook-sync` | Upsert cookbook definitions from JSON | `python -m mealie_organizer.cookbook_manager sync` | Writes changes unless `DRY_RUN=true` |
@@ -99,8 +99,8 @@ docker compose run --rm -e TASK=data-maintenance -e RUN_MODE=once mealie-organiz
 
 Default behavior:
 
-- Processes recipes missing categories or missing tags (`missing-either`)
-- Keeps existing metadata and only appends new matched category/tag values
+- Processes recipes missing categories, tags, or tools (`missing-either`)
+- Keeps existing metadata and only appends new matched category/tag/tool values
 
 Special switches:
 
@@ -109,6 +109,7 @@ Special switches:
 - `--recat` reprocesses all recipes and rebuilds metadata for each recipe from model output
 - `--missing-tags` only targets recipes with no tags
 - `--missing-categories` only targets recipes with no categories
+- `--missing-tools` only targets recipes with no tools
 - `TAG_MAX_NAME_LENGTH` excludes long tags from prompt candidate list
 - `TAG_MIN_USAGE` excludes rare tags from prompt candidate list
 - `BATCH_SIZE` and `MAX_WORKERS` tune throughput/concurrency
@@ -126,6 +127,9 @@ docker compose run --rm --entrypoint python mealie-organizer -m mealie_organizer
 
 # Only fill missing tags
 docker compose run --rm --entrypoint python mealie-organizer -m mealie_organizer.recipe_categorizer --missing-tags
+
+# Only fill missing tools
+docker compose run --rm --entrypoint python mealie-organizer -m mealie_organizer.recipe_categorizer --missing-tools
 
 # Force provider for this command
 docker compose run --rm --entrypoint python mealie-organizer -m mealie_organizer.recipe_categorizer --provider chatgpt

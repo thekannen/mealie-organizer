@@ -38,11 +38,20 @@ def test_update_recipe_metadata_dry_run_does_not_patch(monkeypatch, tmp_path, ca
         dry_run=True,
     )
 
-    recipe = {"slug": "test-recipe", "recipeCategory": [], "tags": []}
+    recipe = {"slug": "test-recipe", "recipeCategory": [], "tags": [], "tools": []}
     categories_by_name = {"dinner": {"id": "1", "name": "Dinner", "slug": "dinner", "groupId": None}}
     tags_by_name = {"quick": {"id": "2", "name": "Quick", "slug": "quick", "groupId": None}}
+    tools_by_name = {"blender": {"id": "3", "name": "Blender", "slug": "blender", "groupId": None}}
 
-    updated = categorizer.update_recipe_metadata(recipe, ["Dinner"], ["Quick"], categories_by_name, tags_by_name)
+    updated = categorizer.update_recipe_metadata(
+        recipe,
+        ["Dinner"],
+        ["Quick"],
+        ["Blender"],
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+    )
     out = capsys.readouterr().out
 
     assert updated is True
@@ -61,7 +70,7 @@ def test_process_batch_dry_run_does_not_skip_cached_recipe(monkeypatch, tmp_path
         provider_name="test",
         dry_run=True,
     )
-    categorizer.cache = {"cached-recipe": {"categories": ["Dinner"], "tags": ["Quick"]}}
+    categorizer.cache = {"cached-recipe": {"categories": ["Dinner"], "tags": ["Quick"], "tools": ["Blender"]}}
 
     recipe = {
         "slug": "cached-recipe",
@@ -69,18 +78,19 @@ def test_process_batch_dry_run_does_not_skip_cached_recipe(monkeypatch, tmp_path
         "ingredients": [],
         "recipeCategory": [],
         "tags": [],
+        "tools": [],
     }
 
     prompts: list[str] = []
 
     def fake_safe_query_with_retry(prompt_text, retries=None):
         prompts.append(prompt_text)
-        return [{"slug": "cached-recipe", "categories": ["Dinner"], "tags": ["Quick"]}]
+        return [{"slug": "cached-recipe", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Blender"]}]
 
     updates = []
 
-    def fake_update(recipe_data, categories, tags, categories_lookup, tags_lookup):
-        updates.append((recipe_data["slug"], categories, tags))
+    def fake_update(recipe_data, categories, tags, tools, categories_lookup, tags_lookup, tools_lookup):
+        updates.append((recipe_data["slug"], categories, tags, tools))
         return True
 
     monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
@@ -90,12 +100,14 @@ def test_process_batch_dry_run_does_not_skip_cached_recipe(monkeypatch, tmp_path
         [recipe],
         ["Dinner"],
         ["Quick"],
+        ["Blender"],
         {"dinner": {"name": "Dinner"}},
         {"quick": {"name": "Quick"}},
+        {"blender": {"name": "Blender"}},
     )
 
     assert prompts
-    assert updates == [("cached-recipe", ["Dinner"], ["Quick"])]
+    assert updates == [("cached-recipe", ["Dinner"], ["Quick"], ["Blender"])]
 
 
 def test_process_batch_falls_back_to_per_recipe_when_batch_parse_fails(monkeypatch, tmp_path):
@@ -112,23 +124,23 @@ def test_process_batch_falls_back_to_per_recipe_when_batch_parse_fails(monkeypat
     )
 
     recipes = [
-        {"slug": "recipe-one", "name": "One", "ingredients": [], "recipeCategory": [], "tags": []},
-        {"slug": "recipe-two", "name": "Two", "ingredients": [], "recipeCategory": [], "tags": []},
+        {"slug": "recipe-one", "name": "One", "ingredients": [], "recipeCategory": [], "tags": [], "tools": []},
+        {"slug": "recipe-two", "name": "Two", "ingredients": [], "recipeCategory": [], "tags": [], "tools": []},
     ]
 
     def fake_safe_query_with_retry(prompt_text, retries=None):
         if "slug=recipe-one" in prompt_text and "slug=recipe-two" in prompt_text:
             return None
         if "slug=recipe-one" in prompt_text and "food recipe classifier" in prompt_text:
-            return [{"slug": "recipe-one", "categories": ["Dinner"], "tags": ["Quick"]}]
+            return [{"slug": "recipe-one", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Blender"]}]
         if "slug=recipe-two" in prompt_text and "food recipe classifier" in prompt_text:
-            return [{"slug": "recipe-two", "categories": ["Dinner"], "tags": ["Comfort Food"]}]
+            return [{"slug": "recipe-two", "categories": ["Dinner"], "tags": ["Comfort Food"], "tools": ["Dutch Oven"]}]
         return None
 
     updates = []
 
-    def fake_update(recipe_data, categories, tags, categories_lookup, tags_lookup):
-        updates.append((recipe_data["slug"], categories, tags))
+    def fake_update(recipe_data, categories, tags, tools, categories_lookup, tags_lookup, tools_lookup):
+        updates.append((recipe_data["slug"], categories, tags, tools))
         return True
 
     monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
@@ -138,16 +150,18 @@ def test_process_batch_falls_back_to_per_recipe_when_batch_parse_fails(monkeypat
         recipes,
         ["Dinner"],
         ["Quick", "Comfort Food"],
+        ["Blender", "Dutch Oven"],
         {"dinner": {"name": "Dinner"}},
         {
             "quick": {"name": "Quick"},
             "comfort food": {"name": "Comfort Food"},
         },
+        {"blender": {"name": "Blender"}, "dutch oven": {"name": "Dutch Oven"}},
     )
 
     assert updates == [
-        ("recipe-one", ["Dinner"], ["Quick"]),
-        ("recipe-two", ["Dinner"], ["Comfort Food"]),
+        ("recipe-one", ["Dinner"], ["Quick"], ["Blender"]),
+        ("recipe-two", ["Dinner"], ["Comfort Food"], ["Dutch Oven"]),
     ]
 
 
@@ -164,7 +178,7 @@ def test_process_batch_fallback_uses_split_category_and_tag_prompts(monkeypatch,
         dry_run=True,
     )
 
-    recipe = {"slug": "split-recipe", "name": "Split", "ingredients": [], "recipeCategory": [], "tags": []}
+    recipe = {"slug": "split-recipe", "name": "Split", "ingredients": [], "recipeCategory": [], "tags": [], "tools": []}
 
     def fake_safe_query_with_retry(prompt_text, retries=None):
         if "food recipe classifier" in prompt_text:
@@ -173,12 +187,14 @@ def test_process_batch_fallback_uses_split_category_and_tag_prompts(monkeypatch,
             return [{"slug": "split-recipe", "categories": ["Dinner"]}]
         if "food recipe tagging assistant" in prompt_text:
             return [{"slug": "split-recipe", "tags": ["Quick"]}]
+        if "food recipe kitchen tool selector" in prompt_text:
+            return [{"slug": "split-recipe", "tools": ["Blender"]}]
         return None
 
     updates = []
 
-    def fake_update(recipe_data, categories, tags, categories_lookup, tags_lookup):
-        updates.append((recipe_data["slug"], categories, tags))
+    def fake_update(recipe_data, categories, tags, tools, categories_lookup, tags_lookup, tools_lookup):
+        updates.append((recipe_data["slug"], categories, tags, tools))
         return True
 
     monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
@@ -188,11 +204,13 @@ def test_process_batch_fallback_uses_split_category_and_tag_prompts(monkeypatch,
         [recipe],
         ["Dinner"],
         ["Quick"],
+        ["Blender"],
         {"dinner": {"name": "Dinner"}},
         {"quick": {"name": "Quick"}},
+        {"blender": {"name": "Blender"}},
     )
 
-    assert updates == [("split-recipe", ["Dinner"], ["Quick"])]
+    assert updates == [("split-recipe", ["Dinner"], ["Quick"], ["Blender"])]
 
 
 def test_process_batch_does_not_skip_cached_when_tags_missing(monkeypatch, tmp_path):
@@ -215,15 +233,16 @@ def test_process_batch_does_not_skip_cached_when_tags_missing(monkeypatch, tmp_p
         "ingredients": [],
         "recipeCategory": [{"name": "Sauce", "slug": "sauce"}],
         "tags": [],
+        "tools": [{"name": "Blender", "slug": "blender"}],
     }
 
     def fake_safe_query_with_retry(prompt_text, retries=None):
-        return [{"slug": "needs-tags", "categories": ["Sauce"], "tags": ["Quick"]}]
+        return [{"slug": "needs-tags", "categories": ["Sauce"], "tags": ["Quick"], "tools": ["Blender"]}]
 
     updates = []
 
-    def fake_update(recipe_data, categories, tags, categories_lookup, tags_lookup):
-        updates.append((recipe_data["slug"], categories, tags))
+    def fake_update(recipe_data, categories, tags, tools, categories_lookup, tags_lookup, tools_lookup):
+        updates.append((recipe_data["slug"], categories, tags, tools))
         return True
 
     monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
@@ -233,11 +252,13 @@ def test_process_batch_does_not_skip_cached_when_tags_missing(monkeypatch, tmp_p
         [recipe],
         ["Sauce"],
         ["Quick"],
+        ["Blender"],
         {"sauce": {"name": "Sauce"}},
         {"quick": {"name": "Quick"}},
+        {"blender": {"name": "Blender"}},
     )
 
-    assert updates == [("needs-tags", ["Sauce"], ["Quick"])]
+    assert updates == [("needs-tags", ["Sauce"], ["Quick"], ["Blender"])]
 
 
 def test_update_recipe_metadata_cache_write_permission_error_does_not_crash(monkeypatch, tmp_path, capsys):
@@ -269,11 +290,20 @@ def test_update_recipe_metadata_cache_write_permission_error_does_not_crash(monk
 
     monkeypatch.setattr("pathlib.Path.open", fake_open)
 
-    recipe = {"slug": "perm-denied-recipe", "recipeCategory": [], "tags": []}
+    recipe = {"slug": "perm-denied-recipe", "recipeCategory": [], "tags": [], "tools": []}
     categories_by_name = {"dinner": {"id": "1", "name": "Dinner", "slug": "dinner", "groupId": None}}
     tags_by_name = {"quick": {"id": "2", "name": "Quick", "slug": "quick", "groupId": None}}
+    tools_by_name = {"blender": {"id": "3", "name": "Blender", "slug": "blender", "groupId": None}}
 
-    updated = categorizer.update_recipe_metadata(recipe, ["Dinner"], ["Quick"], categories_by_name, tags_by_name)
+    updated = categorizer.update_recipe_metadata(
+        recipe,
+        ["Dinner"],
+        ["Quick"],
+        ["Blender"],
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+    )
     out = capsys.readouterr().out
 
     assert updated is True
