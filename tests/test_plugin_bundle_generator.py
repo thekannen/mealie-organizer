@@ -56,3 +56,25 @@ def test_discover_public_port_prefers_explicit_value(tmp_path):
     discovered = mod.discover_public_port(tmp_path, 7777)
     assert discovered.port == 7777
     assert discovered.source == "--public-port"
+
+
+def test_choose_primary_compose_file_prefers_docker_compose_yml(tmp_path):
+    mod = _load_generator_module()
+    compose_a = tmp_path / "compose.yaml"
+    compose_b = tmp_path / "docker-compose.yml"
+    compose_a.write_text("services: {}", encoding="utf-8")
+    compose_b.write_text("services: {}", encoding="utf-8")
+
+    chosen = mod.choose_primary_compose_file(tmp_path, [compose_a, compose_b])
+    assert chosen == compose_b
+
+
+def test_choose_primary_compose_file_returns_first_when_no_priority_match(tmp_path):
+    mod = _load_generator_module()
+    compose_a = tmp_path / "custom-stack.yml"
+    compose_b = tmp_path / "other-stack.yml"
+    compose_a.write_text("services: {}", encoding="utf-8")
+    compose_b.write_text("services: {}", encoding="utf-8")
+
+    chosen = mod.choose_primary_compose_file(tmp_path, [compose_a, compose_b])
+    assert chosen == compose_a

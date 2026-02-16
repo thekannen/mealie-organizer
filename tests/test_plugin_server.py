@@ -1,6 +1,9 @@
+import requests
 import pytest
 
 from mealie_organizer.plugin_server import (
+    INJECTOR_JS_TEMPLATE,
+    classify_auth_failure,
     ensure_api_base_url,
     token_from_auth_header,
     token_from_cookie_header,
@@ -39,3 +42,24 @@ def test_token_from_cookie_header_fallback_cookie_name():
     token = token_from_cookie_header(cookie_header, ("mealie.access_token", "access_token"))
     assert token == "xyz"
 
+
+def test_classify_auth_failure_maps_401_to_invalid_token():
+    response = requests.Response()
+    response.status_code = 401
+    exc = requests.HTTPError("unauthorized", response=response)
+    status_code, error_code = classify_auth_failure(exc)
+    assert status_code == 401
+    assert error_code == "invalid_token"
+
+
+def test_classify_auth_failure_maps_500_to_upstream_error():
+    response = requests.Response()
+    response.status_code = 500
+    exc = requests.HTTPError("server error", response=response)
+    status_code, error_code = classify_auth_failure(exc)
+    assert status_code == 502
+    assert error_code == "mealie_auth_failed"
+
+
+def test_injector_template_checks_auth_context():
+    assert "/api/v1/auth/context" in INJECTOR_JS_TEMPLATE

@@ -22,6 +22,7 @@ INJECTOR_JS_TEMPLATE = """(() => {
   const BASE_PATH = "__BASE_PATH__";
   const BUTTON_ID = "mo-plugin-nav-btn";
   const STYLE_ID = "mo-plugin-nav-style";
+  let canAccess = null;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) {
@@ -70,6 +71,13 @@ INJECTOR_JS_TEMPLATE = """(() => {
   }
 
   function ensureButton() {
+    if (canAccess !== true) {
+      const existing = document.getElementById(BUTTON_ID);
+      if (existing) {
+        existing.remove();
+      }
+      return;
+    }
     if (document.getElementById(BUTTON_ID)) {
       return;
     }
@@ -86,11 +94,34 @@ INJECTOR_JS_TEMPLATE = """(() => {
     toolbar.appendChild(link);
   }
 
-  function boot() {
+  async function refreshAuthContext() {
+    try {
+      const response = await fetch(`${BASE_PATH}/api/v1/auth/context`, {
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        canAccess = false;
+        return;
+      }
+      const payload = await response.json();
+      canAccess = payload.authenticated === true && payload.admin === true;
+    } catch (_error) {
+      canAccess = false;
+    }
+  }
+
+  async function boot() {
+    await refreshAuthContext();
     ensureButton();
     const observer = new MutationObserver(() => ensureButton());
     observer.observe(document.body, { childList: true, subtree: true });
-    setInterval(ensureButton, 2500);
+    setInterval(() => {
+      ensureButton();
+    }, 2500);
+    setInterval(async () => {
+      await refreshAuthContext();
+      ensureButton();
+    }, 15000);
   }
 
   if (document.readyState === "loading") {
@@ -495,6 +526,21 @@ def fetch_mealie_user_profile(token: str, mealie_url: str, timeout_seconds: int)
     return data
 
 
+def _http_status_code(exc: Exception) -> int | None:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    return None
+
+
+def classify_auth_failure(exc: Exception) -> tuple[int, str]:
+    status_code = _http_status_code(exc)
+    if status_code in {401, 403}:
+        return 401, "invalid_token"
+    return 502, "mealie_auth_failed"
+
+
 @dataclass(frozen=True)
 class PluginServerConfig:
     host: str
@@ -556,6 +602,11 @@ class PluginRequestHandler(BaseHTTPRequestHandler):
 
         if path == f"{config.api_prefix}/health":
             self._write_json(200, {"ok": True})
+            return
+
+        if path == f"{config.api_prefix}/auth/context":
+            context = self._auth_context()
+            self._write_json(200, context)
             return
 
         if path == f"{config.api_prefix}/parser/status":
@@ -627,7 +678,7 @@ class PluginRequestHandler(BaseHTTPRequestHandler):
             self.server.run_controller.complete_failure(_short_text(str(exc)))
             print(f"[plugin-server] run {run_id} failed: {_short_text(str(exc))}", flush=True)
 
-    def _require_admin(self) -> bool:
+    def _auth_context(self) -> dict[str, Any]:
         token = token_from_auth_header(self.headers.get("Authorization"))
         if not token:
             token = token_from_cookie_header(
@@ -635,14 +686,13 @@ class PluginRequestHandler(BaseHTTPRequestHandler):
                 self.server.config.token_cookie_names,
             )
         if not token:
-            self._write_json(
-                401,
-                {
-                    "error": "missing_token",
-                    "detail": "Provide a bearer token or valid session cookie.",
-                },
-            )
-            return False
+            return {
+                "authenticated": False,
+                "admin": False,
+                "username": None,
+                "full_name": None,
+                "auth_error": "missing_token",
+            }
 
         try:
             user = fetch_mealie_user_profile(
@@ -651,16 +701,47 @@ class PluginRequestHandler(BaseHTTPRequestHandler):
                 timeout_seconds=self.server.config.auth_timeout_seconds,
             )
         except Exception as exc:
+            status_code, error_code = classify_auth_failure(exc)
+            return {
+                "authenticated": False,
+                "admin": False,
+                "username": None,
+                "full_name": None,
+                "auth_error": error_code,
+                "auth_status_code": status_code,
+                "auth_detail": _short_text(str(exc)),
+            }
+
+        username = str(user.get("username") or "").strip() or None
+        full_name = str(user.get("fullName") or "").strip() or None
+        return {
+            "authenticated": True,
+            "admin": bool(user.get("admin")),
+            "username": username,
+            "full_name": full_name,
+            "auth_error": None,
+        }
+
+    def _require_admin(self) -> bool:
+        context = self._auth_context()
+        if context.get("authenticated") is not True:
+            error_code = str(context.get("auth_error") or "missing_token")
+            if error_code in {"missing_token", "invalid_token"}:
+                detail = "Provide a valid Mealie bearer token or session cookie."
+                if error_code == "missing_token":
+                    detail = "Provide a bearer token or valid session cookie."
+                self._write_json(401, {"error": error_code, "detail": detail})
+                return False
             self._write_json(
                 502,
                 {
                     "error": "mealie_auth_failed",
-                    "detail": _short_text(str(exc)),
+                    "detail": str(context.get("auth_detail") or "Failed to validate Mealie session."),
                 },
             )
             return False
 
-        if not bool(user.get("admin")):
+        if context.get("admin") is not True:
             self._write_json(
                 403,
                 {"error": "admin_required", "detail": "This plugin endpoint requires an admin user."},
@@ -715,4 +796,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

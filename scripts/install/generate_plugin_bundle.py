@@ -75,6 +75,21 @@ def discover_compose_files(project_root: Path) -> list[Path]:
     return sorted(files)
 
 
+def choose_primary_compose_file(project_root: Path, compose_files: list[Path]) -> Path | None:
+    if not compose_files:
+        return None
+    priority = [
+        project_root / "docker-compose.yml",
+        project_root / "docker-compose.yaml",
+        project_root / "compose.yaml",
+        project_root / "compose.yml",
+    ]
+    for candidate in priority:
+        if candidate in compose_files:
+            return candidate
+    return compose_files[0]
+
+
 def discover_port_from_compose(path: Path) -> DiscoveredPort | None:
     lines = path.read_text(encoding="utf-8").splitlines()
     for idx, line in enumerate(lines, start=1):
@@ -180,12 +195,33 @@ def render_gateway_compose(relative_plugin_dir: str, public_port: int) -> str:
 
 def render_readme(
     *,
+    project_root: Path,
     public_port: int,
     port_source: str,
     config_path: Path,
     compose_path: Path,
     nginx_path: Path,
+    primary_compose_file: Path | None,
+    compose_files: list[Path],
 ) -> str:
+    compose_hint = "(none detected)"
+    compose_cmd = f"docker compose -f {compose_path} up -d mealie-plugin-gateway"
+    if primary_compose_file is not None:
+        try:
+            primary_rel = primary_compose_file.relative_to(project_root)
+        except ValueError:
+            primary_rel = primary_compose_file
+        compose_hint = str(primary_rel)
+        compose_cmd = f"docker compose -f {primary_rel} -f {compose_path} up -d mealie-plugin-gateway"
+
+    detected = []
+    for path in compose_files:
+        try:
+            detected.append(str(path.relative_to(project_root)))
+        except ValueError:
+            detected.append(str(path))
+    detected_text = ", ".join(detected) if detected else "(none detected)"
+
     return f"""# Mealie Plugin Gateway Bundle
 
 Generated at {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}.
@@ -199,6 +235,13 @@ Generated at {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}.
 ## Discovery Summary
 
 - Public Mealie port: `{public_port}` (source: `{port_source}`)
+- Primary compose file: `{compose_hint}`
+- Compose files detected: `{detected_text}`
+
+## What "Stack Directory" Means
+
+For this bundle, "stack directory" means the directory that contains the active Mealie compose file
+(for example `docker-compose.yml` or `compose.yaml`) and often the related `.env`.
 
 ## Next Steps
 
@@ -208,7 +251,7 @@ Generated at {datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}.
 4. Start gateway with your stack:
 
 ```bash
-docker compose -f docker-compose.yml -f {compose_path} up -d mealie-plugin-gateway
+{compose_cmd}
 ```
 
 5. Ensure organizer plugin server is running and reachable from the gateway on `/mo-plugin/*`.
@@ -233,6 +276,8 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     discovered_port = discover_public_port(project_root, args.public_port)
+    compose_files = discover_compose_files(project_root)
+    primary_compose_file = choose_primary_compose_file(project_root, compose_files)
     base_path = normalize_base_path(str(args.plugin_base_path))
     mealie_upstream = args.mealie_upstream.strip() or os.environ.get(
         "MEALIE_PLUGIN_MEALIE_UPSTREAM", DEFAULT_MEALIE_UPSTREAM
@@ -248,6 +293,15 @@ def main() -> int:
         "plugin_base_path": base_path,
         "mealie_upstream": mealie_upstream,
         "organizer_upstream": organizer_upstream,
+        "compose_files_detected": [
+            str(path.relative_to(project_root)) if path.is_relative_to(project_root) else str(path)
+            for path in compose_files
+        ],
+        "primary_compose_file": (
+            str(primary_compose_file.relative_to(project_root))
+            if primary_compose_file is not None and primary_compose_file.is_relative_to(project_root)
+            else (str(primary_compose_file) if primary_compose_file is not None else None)
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     config_path.write_text(json.dumps(config_payload, indent=2), encoding="utf-8")
@@ -275,11 +329,14 @@ def main() -> int:
     readme_path = output_dir / "README.generated.md"
     readme_path.write_text(
         render_readme(
+            project_root=project_root,
             public_port=discovered_port.port,
             port_source=discovered_port.source,
             config_path=config_path,
             compose_path=compose_path,
             nginx_path=nginx_path,
+            primary_compose_file=primary_compose_file,
+            compose_files=compose_files,
         ),
         encoding="utf-8",
     )

@@ -13,6 +13,7 @@ It uses:
 ## What It Does
 
 - Adds an `Organizer` button to Mealie's top bar
+- Uses `/mo-plugin/api/v1/auth/context` so the top-bar button only renders for admins
 - Serves a styled parser companion page that matches Mealie-like colors/spacing
 - Allows a single active parser run at a time
 - Runs parser in **dry-run only** mode from the companion page
@@ -30,11 +31,25 @@ For long-running deployment, add a dedicated compose service with `TASK=plugin-s
 
 ## 2) Generate Gateway + Injection Files
 
-On the Mealie host, run:
+If `mealie-organizer` is not present on the Mealie host, use curl to download and run the bootstrap script directly from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/bootstrap_mealie_plugin.sh -o /tmp/bootstrap_mealie_plugin.sh
+bash /tmp/bootstrap_mealie_plugin.sh --project-root auto
+```
+
+This path does not require a pre-existing local clone. If `git` is unavailable, the bootstrap script falls back to a GitHub source archive download.
+
+Or if you already have this repo locally on that host:
 
 ```bash
 bash scripts/install/bootstrap_mealie_plugin.sh --project-root /path/to/mealie-stack
 ```
+
+`--project-root auto` tries to discover the right directory. Override with `--project-root <path>` when needed.
+
+For this workflow, "stack directory" means the directory containing your active Mealie compose file
+(`docker-compose.yml`, `docker-compose.yaml`, `compose.yaml`, or `compose.yml`) and typically its `.env`.
 
 Generated output:
 
@@ -67,4 +82,3 @@ Important:
 - Plugin endpoints validate user session token against Mealie `/api/users/self`
 - Admin role is enforced server-side
 - Non-admin or missing token requests are denied
-
