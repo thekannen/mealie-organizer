@@ -182,7 +182,26 @@ a {
 .sidebar.collapsed .brand-mark {
   width: 56px;
   height: 56px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
+  margin: 0 auto;
+}
+
+.sidebar.collapsed .sidebar-top {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sidebar.collapsed .icon-btn {
+  order: -1;
+}
+
+.sidebar.collapsed .brand-wrap {
+  width: 100%;
+  justify-items: center;
 }
 
 .sidebar-nav {
@@ -204,6 +223,7 @@ a {
   color: var(--text);
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.5rem;
   padding: 0.55rem 0.62rem;
   font-weight: 600;
@@ -255,6 +275,12 @@ a {
   gap: 0.5rem;
 }
 
+.sidebar.collapsed .user-chip {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-inline: 0.4rem;
+}
+
 .avatar {
   width: 1.78rem;
   height: 1.78rem;
@@ -270,6 +296,14 @@ a {
 .sidebar-actions {
   display: grid;
   gap: 0.35rem;
+}
+
+.sidebar-actions button {
+  width: 100%;
+}
+
+.sidebar:not(.collapsed) .sidebar-actions button {
+  justify-content: flex-start;
 }
 
 .icon-btn {
