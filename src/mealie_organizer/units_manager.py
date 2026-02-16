@@ -283,6 +283,20 @@ class UnitsCleanupManager:
         return report
 
 
+def require_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return int(text)
+    raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Mealie units standardization manager.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -291,7 +305,10 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument(
         "--max-actions",
         type=int,
-        default=int(env_or_config("MAX_ACTIONS_PER_STAGE", "maintenance.max_actions_per_stage", 250, int)),
+        default=require_int(
+            env_or_config("MAX_ACTIONS_PER_STAGE", "maintenance.max_actions_per_stage", 250, int),
+            "maintenance.max_actions_per_stage",
+        ),
     )
     cleanup.add_argument(
         "--alias-file",
@@ -328,7 +345,7 @@ def main() -> None:
         client,
         dry_run=dry_run,
         apply=bool(args.apply),
-        max_actions=int(args.max_actions),
+        max_actions=require_int(args.max_actions, "--max-actions"),
         alias_file=resolve_repo_path(args.alias_file),
         report_file=resolve_repo_path(args.report_file),
         checkpoint_dir=resolve_repo_path(args.checkpoint_dir),
