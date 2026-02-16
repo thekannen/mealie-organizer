@@ -32,7 +32,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-q --basetemp=.tmp/pytest"
+addopts = "-q --basetemp=.pytest_tmp"
 
 [tool.setuptools.dynamic]
 version = {file = "VERSION"}

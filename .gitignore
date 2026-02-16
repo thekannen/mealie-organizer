@@ -21,6 +21,7 @@ pip-wheel-metadata/
 
 # Test, coverage, and static analysis caches
 .pytest_cache/
+.pytest_tmp/
 .coverage
 .coverage.*
 htmlcov/
