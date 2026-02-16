@@ -238,3 +238,44 @@ def test_process_batch_does_not_skip_cached_when_tags_missing(monkeypatch, tmp_p
     )
 
     assert updates == [("needs-tags", ["Sauce"], ["Quick"])]
+
+
+def test_update_recipe_metadata_cache_write_permission_error_does_not_crash(monkeypatch, tmp_path, capsys):
+    class _PatchResponse:
+        status_code = 200
+        text = ""
+
+    monkeypatch.setattr("mealie_organizer.categorizer_core.requests.patch", lambda *_args, **_kwargs: _PatchResponse())
+
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=False,
+    )
+
+    original_open = type(categorizer.cache_file).open
+
+    def fake_open(path_obj, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if path_obj == categorizer.cache_file and "w" in mode:
+            raise PermissionError("permission denied")
+        return original_open(path_obj, *args, **kwargs)
+
+    monkeypatch.setattr("pathlib.Path.open", fake_open)
+
+    recipe = {"slug": "perm-denied-recipe", "recipeCategory": [], "tags": []}
+    categories_by_name = {"dinner": {"id": "1", "name": "Dinner", "slug": "dinner", "groupId": None}}
+    tags_by_name = {"quick": {"id": "2", "name": "Quick", "slug": "quick", "groupId": None}}
+
+    updated = categorizer.update_recipe_metadata(recipe, ["Dinner"], ["Quick"], categories_by_name, tags_by_name)
+    out = capsys.readouterr().out
+
+    assert updated is True
+    assert categorizer.cache_enabled is False
+    assert "Cache disabled: cannot write" in out

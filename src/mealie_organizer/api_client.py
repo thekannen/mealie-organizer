@@ -251,17 +251,43 @@ class MealieApiClient:
     def delete_label(self, label_id: str) -> None:
         self._request_raw("DELETE", f"/groups/labels/{label_id}", timeout=60)
 
+    @staticmethod
+    def _is_http_404(exc: Exception) -> bool:
+        if not isinstance(exc, requests.HTTPError):
+            return False
+        response = getattr(exc, "response", None)
+        return bool(response is not None and response.status_code == 404)
+
     def list_tools(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
-        return self.get_paginated("/tools", per_page=per_page, timeout=60)
+        try:
+            return self.get_paginated("/tools", per_page=per_page, timeout=60)
+        except requests.HTTPError as exc:
+            if not self._is_http_404(exc):
+                raise
+        return self.get_paginated("/organizers/tools", per_page=per_page, timeout=60)
 
     def create_tool(self, name: str) -> dict[str, Any]:
-        data = self.request_json("POST", "/tools", json={"name": name}, timeout=60)
-        if isinstance(data, dict):
-            return data
-        return {}
+        try:
+            data = self.request_json("POST", "/tools", json={"name": name}, timeout=60)
+            if isinstance(data, dict):
+                return data
+            return {}
+        except requests.HTTPError as exc:
+            if not self._is_http_404(exc):
+                raise
+        return self.create_organizer_item("tools", {"name": name})
 
     def merge_tool(self, source_id: str, target_id: str) -> dict[str, Any]:
-        return self._merge_entity("/tools/merge", source_id, target_id)
+        try:
+            return self._merge_entity("/tools/merge", source_id, target_id)
+        except requests.HTTPError as exc:
+            if not self._is_http_404(exc):
+                raise
+        # Older Mealie versions expose tools under organizers without a merge route.
+        raise requests.HTTPError(
+            "Tool merge endpoint is unavailable on this Mealie server/version. "
+            "Tools can be seeded, but duplicate merges are not supported."
+        )
 
     def _merge_entity(self, route: str, source_id: str, target_id: str) -> dict[str, Any]:
         payload_candidates = [

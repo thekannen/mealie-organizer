@@ -102,6 +102,7 @@ class MealieCategorizer:
         self.cache_lock = threading.Lock()
         self.print_lock = threading.Lock()
         self.stats_lock = threading.Lock()
+        self.cache_enabled = True
         self.stats = {
             "query_retry_warnings": 0,
             "query_failures": 0,
@@ -167,17 +168,28 @@ class MealieCategorizer:
 
     def load_cache(self):
         if self.cache_file.exists():
-            with self.cache_file.open("r", encoding="utf-8") as f:
-                try:
-                    return json.load(f)
-                except Exception:
-                    return {}
+            try:
+                with self.cache_file.open("r", encoding="utf-8") as f:
+                    try:
+                        return json.load(f)
+                    except Exception:
+                        return {}
+            except OSError as exc:
+                self.cache_enabled = False
+                self.log(f"[warn] Cache disabled: cannot read '{self.cache_file}': {exc}")
+                return {}
         return {}
 
     def save_cache(self):
-        self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with self.cache_file.open("w", encoding="utf-8") as f:
-            json.dump(self.cache, f, indent=2)
+        if not self.cache_enabled:
+            return
+        try:
+            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.cache_file.open("w", encoding="utf-8") as f:
+                json.dump(self.cache, f, indent=2)
+        except OSError as exc:
+            self.cache_enabled = False
+            self.log(f"[warn] Cache disabled: cannot write '{self.cache_file}': {exc}")
 
     def set_progress_total(self, total):
         with self.progress_lock:
