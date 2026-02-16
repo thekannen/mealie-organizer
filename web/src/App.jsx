@@ -237,11 +237,60 @@ function buildDefaultOptionValues(taskDefinition) {
   return values;
 }
 
-function parseLineEditorContent(content) {
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseAliasInput(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeCookbookEntries(content) {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content
+    .filter((item) => isPlainObject(item) && typeof item.name === "string")
+    .map((item, index) => {
+      const parsedPosition = Number.parseInt(String(item.position ?? index + 1), 10);
+      return {
+        name: String(item.name || "").trim(),
+        description: String(item.description || "").trim(),
+        queryFilterString: String(item.queryFilterString || "").trim(),
+        public: Boolean(item.public),
+        position: Number.isFinite(parsedPosition) && parsedPosition > 0 ? parsedPosition : index + 1,
+      };
+    })
+    .filter((item) => item.name);
+}
+
+function normalizeUnitAliasEntries(content) {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content
+    .filter((item) => isPlainObject(item) && typeof item.canonical === "string")
+    .map((item) => {
+      const aliases = Array.isArray(item.aliases)
+        ? item.aliases.map((alias) => String(alias).trim()).filter(Boolean)
+        : parseAliasInput(item.aliases);
+      return {
+        canonical: String(item.canonical || "").trim(),
+        aliases,
+      };
+    })
+    .filter((item) => item.canonical);
+}
+
+function parseLineEditorContent(content, configName = "") {
   if (!Array.isArray(content)) {
     return { mode: "json", listKind: "", items: [] };
   }
 
+  const normalizedConfigName = String(configName || "").trim();
   const allStrings = content.every((item) => typeof item === "string");
   if (allStrings) {
     return {
@@ -268,7 +317,220 @@ function parseLineEditorContent(content) {
     };
   }
 
+  const allCookbookObjects = content.every((item) => isPlainObject(item) && typeof item.name === "string");
+  const hasCookbookShape = content.some(
+    (item) =>
+      isPlainObject(item) &&
+      (Object.prototype.hasOwnProperty.call(item, "queryFilterString") ||
+        Object.prototype.hasOwnProperty.call(item, "description") ||
+        Object.prototype.hasOwnProperty.call(item, "public") ||
+        Object.prototype.hasOwnProperty.call(item, "position"))
+  );
+  if (allCookbookObjects && (hasCookbookShape || normalizedConfigName === "cookbooks")) {
+    return {
+      mode: "cookbook-cards",
+      listKind: "cookbook_object",
+      items: normalizeCookbookEntries(content),
+    };
+  }
+
+  const allUnitAliasObjects = content.every((item) => isPlainObject(item) && typeof item.canonical === "string");
+  const hasUnitAliasShape = content.some(
+    (item) => isPlainObject(item) && Object.prototype.hasOwnProperty.call(item, "aliases")
+  );
+  if (allUnitAliasObjects && (hasUnitAliasShape || normalizedConfigName === "units_aliases")) {
+    return {
+      mode: "unit-aliases",
+      listKind: "unit_alias_object",
+      items: normalizeUnitAliasEntries(content),
+    };
+  }
+
   return { mode: "json", listKind: "", items: [] };
+}
+
+function renderInlineMarkdown(text, keyPrefix) {
+  const source = String(text || "");
+  if (!source) {
+    return "";
+  }
+
+  const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let matchIndex = 0;
+  let match = tokenPattern.exec(source);
+
+  while (match) {
+    const token = String(match[0] || "");
+    if (match.index > lastIndex) {
+      nodes.push(source.slice(lastIndex, match.index));
+    }
+
+    if (token.startsWith("`") && token.endsWith("`")) {
+      nodes.push(
+        <code key={`${keyPrefix}-code-${matchIndex}`} className="md-inline-code">
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else if (token.startsWith("**") && token.endsWith("**")) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${matchIndex}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("*") && token.endsWith("*")) {
+      nodes.push(<em key={`${keyPrefix}-em-${matchIndex}`}>{token.slice(1, -1)}</em>);
+    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
+      const splitIndex = token.indexOf("](");
+      const label = token.slice(1, splitIndex);
+      const href = token.slice(splitIndex + 2, -1);
+      nodes.push(
+        <a
+          key={`${keyPrefix}-link-${matchIndex}`}
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="md-link"
+        >
+          {label}
+        </a>
+      );
+    } else {
+      nodes.push(token);
+    }
+
+    lastIndex = match.index + token.length;
+    matchIndex += 1;
+    match = tokenPattern.exec(source);
+  }
+
+  if (lastIndex < source.length) {
+    nodes.push(source.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function parseMarkdownBlocks(markdown) {
+  const lines = String(markdown || "")
+    .replace(/\uFEFF/g, "")
+    .replace(/\r/g, "")
+    .split("\n");
+  const blocks = [];
+  let index = 0;
+
+  const isListItem = (line) => /^\s*[-*]\s+/.test(line);
+  const isOrderedItem = (line) => /^\s*\d+\.\s+/.test(line);
+  const isHeading = (line) => /^\s*#{1,6}\s+/.test(line);
+  const isFence = (line) => /^\s*```/.test(line);
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (isFence(line)) {
+      const language = line.replace(/^\s*```/, "").trim();
+      index += 1;
+      const codeLines = [];
+      while (index < lines.length && !isFence(lines[index])) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length && isFence(lines[index])) {
+        index += 1;
+      }
+      blocks.push({ type: "code", language, text: codeLines.join("\n") });
+      continue;
+    }
+
+    if (isHeading(line)) {
+      const match = line.match(/^(\s*#{1,6})\s+(.+)$/);
+      const rawLevel = match ? match[1].replace(/\s/g, "").length : 2;
+      const level = Math.min(4, Math.max(2, rawLevel));
+      blocks.push({ type: "heading", level, text: String(match ? match[2] : line).trim() });
+      index += 1;
+      continue;
+    }
+
+    if (isListItem(line)) {
+      const items = [];
+      while (index < lines.length && isListItem(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*]\s+/, "").trim());
+        index += 1;
+      }
+      blocks.push({ type: "ul", items });
+      continue;
+    }
+
+    if (isOrderedItem(line)) {
+      const items = [];
+      while (index < lines.length && isOrderedItem(lines[index])) {
+        items.push(lines[index].replace(/^\s*\d+\.\s+/, "").trim());
+        index += 1;
+      }
+      blocks.push({ type: "ol", items });
+      continue;
+    }
+
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const paragraph = [line.trim()];
+    index += 1;
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !isFence(lines[index]) &&
+      !isHeading(lines[index]) &&
+      !isListItem(lines[index]) &&
+      !isOrderedItem(lines[index])
+    ) {
+      paragraph.push(lines[index].trim());
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+  }
+
+  return blocks;
+}
+
+function renderMarkdownDocument(markdown) {
+  const blocks = parseMarkdownBlocks(markdown);
+  if (blocks.length === 0) {
+    return <p className="muted tiny">No content available.</p>;
+  }
+  return blocks.map((block, index) => {
+    if (block.type === "heading") {
+      if (block.level <= 2) {
+        return <h4 key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</h4>;
+      }
+      return <h5 key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</h5>;
+    }
+    if (block.type === "code") {
+      return (
+        <pre key={`md-${index}`} className="doc-code">
+          <code>{block.text}</code>
+        </pre>
+      );
+    }
+    if (block.type === "ul") {
+      return (
+        <ul key={`md-${index}`}>
+          {block.items.map((item, itemIndex) => (
+            <li key={`md-${index}-${itemIndex}`}>{renderInlineMarkdown(item, `md-${index}-${itemIndex}`)}</li>
+          ))}
+        </ul>
+      );
+    }
+    if (block.type === "ol") {
+      return (
+        <ol key={`md-${index}`}>
+          {block.items.map((item, itemIndex) => (
+            <li key={`md-${index}-${itemIndex}`}>{renderInlineMarkdown(item, `md-${index}-${itemIndex}`)}</li>
+          ))}
+        </ol>
+      );
+    }
+    return <p key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</p>;
+  });
 }
 
 function moveArrayItem(items, fromIndex, toIndex) {
@@ -553,7 +815,18 @@ export default function App() {
   const [activeConfigMode, setActiveConfigMode] = useState("line-pills");
   const [activeConfigListKind, setActiveConfigListKind] = useState("name_object");
   const [activeConfigItems, setActiveConfigItems] = useState([]);
+  const [activeCookbookItems, setActiveCookbookItems] = useState([]);
+  const [activeUnitAliasItems, setActiveUnitAliasItems] = useState([]);
   const [configDraftItem, setConfigDraftItem] = useState("");
+  const [cookbookDraft, setCookbookDraft] = useState({
+    name: "",
+    description: "",
+    queryFilterString: "",
+    public: false,
+    position: 1,
+  });
+  const [unitDraftCanonical, setUnitDraftCanonical] = useState("");
+  const [unitDraftAliases, setUnitDraftAliases] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
 
   const [importTarget, setImportTarget] = useState("categories");
@@ -820,12 +1093,23 @@ export default function App() {
     setError(normalizeErrorMessage(exc?.message || exc));
   }
 
-  function setConfigEditorState(content) {
-    const editor = parseLineEditorContent(content);
+  function setConfigEditorState(content, configName = activeConfig) {
+    const editor = parseLineEditorContent(content, configName);
     setActiveConfigMode(editor.mode);
     setActiveConfigListKind(editor.listKind);
-    setActiveConfigItems(editor.items);
+    setActiveConfigItems(editor.mode === "line-pills" ? editor.items : []);
+    setActiveCookbookItems(editor.mode === "cookbook-cards" ? editor.items : []);
+    setActiveUnitAliasItems(editor.mode === "unit-aliases" ? editor.items : []);
     setConfigDraftItem("");
+    setCookbookDraft({
+      name: "",
+      description: "",
+      queryFilterString: "",
+      public: false,
+      position: Math.max(1, (editor.mode === "cookbook-cards" ? editor.items.length : 0) + 1),
+    });
+    setUnitDraftCanonical("");
+    setUnitDraftAliases("");
     setDragIndex(null);
     setActiveConfigBody(`${JSON.stringify(content, null, 2)}\n`);
   }
@@ -857,10 +1141,10 @@ export default function App() {
     setTaxonomyItemsByFile(next);
 
     if (activeConfig && next[activeConfig]) {
-      setConfigEditorState(next[activeConfig]);
+      setConfigEditorState(next[activeConfig], activeConfig);
     } else if (!activeConfig && next.categories) {
       setActiveConfig("categories");
-      setConfigEditorState(next.categories);
+      setConfigEditorState(next.categories, "categories");
     }
   }
 
@@ -1157,12 +1441,85 @@ export default function App() {
     setActiveConfigItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
   }
 
+  function updateCookbookEntry(index, key, value) {
+    setActiveCookbookItems((prev) =>
+      prev.map((item, rowIndex) => (rowIndex === index ? { ...item, [key]: value } : item))
+    );
+  }
+
+  function addCookbookEntry() {
+    const name = String(cookbookDraft.name || "").trim();
+    if (!name) {
+      return;
+    }
+    const parsedPosition = Number.parseInt(String(cookbookDraft.position || ""), 10);
+    const nextPosition = Number.isFinite(parsedPosition) && parsedPosition > 0 ? parsedPosition + 1 : 1;
+    setActiveCookbookItems((prev) => [
+      ...prev,
+      {
+        name,
+        description: String(cookbookDraft.description || "").trim(),
+        queryFilterString: String(cookbookDraft.queryFilterString || "").trim(),
+        public: Boolean(cookbookDraft.public),
+        position: Number.isFinite(parsedPosition) && parsedPosition > 0 ? parsedPosition : prev.length + 1,
+      },
+    ]);
+    setCookbookDraft((prev) => ({
+      ...prev,
+      name: "",
+      description: "",
+      queryFilterString: "",
+      public: false,
+      position: nextPosition,
+    }));
+  }
+
+  function removeCookbookEntry(index) {
+    setActiveCookbookItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+  }
+
+  function moveCookbookEntry(fromIndex, toIndex) {
+    setActiveCookbookItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
+  }
+
+  function updateUnitAliasEntry(index, key, value) {
+    if (key === "aliases") {
+      const aliases = Array.isArray(value) ? value : parseAliasInput(value);
+      setActiveUnitAliasItems((prev) =>
+        prev.map((item, rowIndex) => (rowIndex === index ? { ...item, aliases } : item))
+      );
+      return;
+    }
+    setActiveUnitAliasItems((prev) =>
+      prev.map((item, rowIndex) => (rowIndex === index ? { ...item, [key]: value } : item))
+    );
+  }
+
+  function addUnitAliasEntry() {
+    const canonical = String(unitDraftCanonical || "").trim();
+    if (!canonical) {
+      return;
+    }
+    const aliases = parseAliasInput(unitDraftAliases);
+    setActiveUnitAliasItems((prev) => [...prev, { canonical, aliases }]);
+    setUnitDraftCanonical("");
+    setUnitDraftAliases("");
+  }
+
+  function removeUnitAliasEntry(index) {
+    setActiveUnitAliasItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+  }
+
+  function moveUnitAliasEntry(fromIndex, toIndex) {
+    setActiveUnitAliasItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
+  }
+
   async function openConfig(name) {
     try {
       clearBanners();
       const payload = await api(`/config/files/${name}`);
       setActiveConfig(name);
-      setConfigEditorState(payload.content);
+      setConfigEditorState(payload.content, name);
     } catch (exc) {
       handleError(exc);
     }
@@ -1186,6 +1543,10 @@ export default function App() {
         } else {
           content = cleanItems;
         }
+      } else if (activeConfigMode === "cookbook-cards") {
+        content = normalizeCookbookEntries(activeCookbookItems);
+      } else if (activeConfigMode === "unit-aliases") {
+        content = normalizeUnitAliasEntries(activeUnitAliasItems);
       } else {
         const parsed = JSON.parse(activeConfigBody);
         content = parsed;
@@ -1200,7 +1561,7 @@ export default function App() {
         setTaxonomyItemsByFile((prev) => ({ ...prev, [activeConfig]: content }));
       }
 
-      setConfigEditorState(content);
+      setConfigEditorState(content, activeConfig);
       await loadData();
       setNotice(`${CONFIG_LABELS[activeConfig] || activeConfig} saved.`);
     } catch (exc) {
@@ -1225,7 +1586,7 @@ export default function App() {
 
       setImportJsonText("");
       if (activeConfig === target) {
-        setConfigEditorState(payload);
+        setConfigEditorState(payload, target);
       }
       await loadData();
       setNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
@@ -1559,7 +1920,7 @@ export default function App() {
           </div>
 
           <div className="table-wrap">
-            <table>
+            <table className="runs-table">
               <thead>
                 <tr>
                   <th>Task</th>
@@ -1598,9 +1959,9 @@ export default function App() {
               <h4>Selected Run Output</h4>
               <span className="muted tiny">
                 {selectedRun
-                  ? `${taskTitleById.get(selectedRun.task_id) || selectedRun.task_id} • ${runTypeLabel(
+                  ? `${taskTitleById.get(selectedRun.task_id) || selectedRun.task_id} | ${runTypeLabel(
                       selectedRun
-                    )} • ${formatRunTime(selectedRun)}`
+                    )} | ${formatRunTime(selectedRun)}`
                   : "Select any row above to inspect its full formatted output."}
               </span>
             </div>
@@ -1719,7 +2080,7 @@ export default function App() {
             </div>
 
           <div className="table-wrap">
-            <table>
+            <table className="users-table">
               <thead>
                 <tr>
                   <th>Task</th>
@@ -1758,7 +2119,7 @@ export default function App() {
               <h4>Latest log preview</h4>
               <span className="muted tiny">
                 {selectedScheduleRun
-                  ? `${taskTitleById.get(selectedScheduleRun.task_id) || selectedScheduleRun.task_id} • ${formatRunTime(
+                  ? `${taskTitleById.get(selectedScheduleRun.task_id) || selectedScheduleRun.task_id} | ${formatRunTime(
                       selectedScheduleRun
                     )}`
                   : "Select a scheduled run to preview output."}
@@ -1914,9 +2275,16 @@ export default function App() {
   }
 
   function renderRecipeOrganizationPage() {
-    const activeContentCount = Array.isArray(taxonomyItemsByFile[activeConfig])
-      ? taxonomyItemsByFile[activeConfig].length
-      : activeConfigItems.length;
+    const activeContentCount =
+      activeConfigMode === "cookbook-cards"
+        ? activeCookbookItems.length
+        : activeConfigMode === "unit-aliases"
+        ? activeUnitAliasItems.length
+        : activeConfigMode === "line-pills"
+        ? activeConfigItems.length
+        : Array.isArray(taxonomyItemsByFile[activeConfig])
+        ? taxonomyItemsByFile[activeConfig].length
+        : 0;
 
     return (
       <section className="page-grid settings-grid">
@@ -2001,6 +2369,197 @@ export default function App() {
                 ))}
               </ul>
               <p className="muted tiny">Drag items to reorder. Use advanced mode only if needed.</p>
+            </section>
+          ) : activeConfigMode === "cookbook-cards" ? (
+            <section className="structured-editor">
+              <div className="structured-toolbar cookbook-toolbar">
+                <label className="field">
+                  <span>Name</span>
+                  <input
+                    value={cookbookDraft.name}
+                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, name: event.target.value }))}
+                    placeholder="Weeknight Dinner"
+                  />
+                </label>
+                <label className="field">
+                  <span>Description</span>
+                  <input
+                    value={cookbookDraft.description}
+                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, description: event.target.value }))}
+                    placeholder="Quick and reliable evening meals."
+                  />
+                </label>
+                <label className="field">
+                  <span>Query Filter</span>
+                  <input
+                    value={cookbookDraft.queryFilterString}
+                    onChange={(event) =>
+                      setCookbookDraft((prev) => ({ ...prev, queryFilterString: event.target.value }))
+                    }
+                    placeholder='tags.name IN ["Weeknight"]'
+                  />
+                </label>
+                <label className="field">
+                  <span>Position</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={cookbookDraft.position}
+                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, position: event.target.value }))}
+                  />
+                </label>
+                <label className="field field-inline">
+                  <span>Public</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(cookbookDraft.public)}
+                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, public: event.target.checked }))}
+                  />
+                </label>
+                <button className="ghost" type="button" onClick={addCookbookEntry}>
+                  Add Cookbook
+                </button>
+              </div>
+
+              <ul className="structured-list">
+                {activeCookbookItems.map((item, index) => (
+                  <li key={`${activeConfig}-${index}`} className="structured-item">
+                    <div className="structured-item-grid cookbook-fields">
+                      <label className="field">
+                        <span>Name</span>
+                        <input
+                          value={item.name}
+                          onChange={(event) => updateCookbookEntry(index, "name", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Description</span>
+                        <input
+                          value={item.description}
+                          onChange={(event) => updateCookbookEntry(index, "description", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Query Filter</span>
+                        <input
+                          value={item.queryFilterString}
+                          onChange={(event) => updateCookbookEntry(index, "queryFilterString", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Position</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.position}
+                          onChange={(event) => updateCookbookEntry(index, "position", event.target.value)}
+                        />
+                      </label>
+                      <label className="field field-inline">
+                        <span>Public</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(item.public)}
+                          onChange={(event) => updateCookbookEntry(index, "public", event.target.checked)}
+                        />
+                      </label>
+                    </div>
+                    <div className="line-actions">
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveCookbookEntry(index, Math.max(index - 1, 0))}
+                        disabled={index === 0}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveCookbookEntry(index, Math.min(index + 1, activeCookbookItems.length - 1))}
+                        disabled={index === activeCookbookItems.length - 1}
+                      >
+                        Down
+                      </button>
+                      <button type="button" className="ghost small" onClick={() => removeCookbookEntry(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted tiny">
+                Cookbook rows stay structured with filters, descriptions, visibility, and ordering.
+              </p>
+            </section>
+          ) : activeConfigMode === "unit-aliases" ? (
+            <section className="structured-editor">
+              <div className="structured-toolbar">
+                <label className="field">
+                  <span>Canonical Unit</span>
+                  <input
+                    value={unitDraftCanonical}
+                    onChange={(event) => setUnitDraftCanonical(event.target.value)}
+                    placeholder="Teaspoon"
+                  />
+                </label>
+                <label className="field">
+                  <span>Aliases (comma separated)</span>
+                  <input
+                    value={unitDraftAliases}
+                    onChange={(event) => setUnitDraftAliases(event.target.value)}
+                    placeholder="t, tsp, tsp."
+                  />
+                </label>
+                <button className="ghost" type="button" onClick={addUnitAliasEntry}>
+                  Add Unit
+                </button>
+              </div>
+
+              <ul className="structured-list">
+                {activeUnitAliasItems.map((item, index) => (
+                  <li key={`${activeConfig}-${index}`} className="structured-item">
+                    <div className="structured-item-grid">
+                      <label className="field">
+                        <span>Canonical Unit</span>
+                        <input
+                          value={item.canonical}
+                          onChange={(event) => updateUnitAliasEntry(index, "canonical", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Aliases (comma separated)</span>
+                        <input
+                          value={item.aliases.join(", ")}
+                          onChange={(event) => updateUnitAliasEntry(index, "aliases", event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="line-actions">
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveUnitAliasEntry(index, Math.max(index - 1, 0))}
+                        disabled={index === 0}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveUnitAliasEntry(index, Math.min(index + 1, activeUnitAliasItems.length - 1))}
+                        disabled={index === activeUnitAliasItems.length - 1}
+                      >
+                        Down
+                      </button>
+                      <button type="button" className="ghost small" onClick={() => removeUnitAliasEntry(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted tiny">Maintain canonical units and aliases without switching to raw JSON.</p>
             </section>
           ) : (
             <section>
@@ -2172,14 +2731,18 @@ export default function App() {
                       <td>
                         <strong>{item.username}</strong>
                       </td>
-                      <td>{userRoleLabel(item.username, session?.username)}</td>
+                      <td>
+                        <span className="nowrap">{userRoleLabel(item.username, session?.username)}</span>
+                      </td>
                       <td>
                         <span className="status-pill success">
                           {session?.username === item.username ? "Active Session" : "Active"}
                         </span>
                       </td>
-                      <td>{formatDateTime(item.created_at)}</td>
                       <td>
+                        <span className="nowrap">{formatDateTime(item.created_at)}</span>
+                      </td>
+                      <td className="users-actions-cell">
                         <div className="user-actions">
                           <input
                             type="password"
@@ -2209,7 +2772,7 @@ export default function App() {
           </div>
 
           <p className="muted tiny">
-            {users.length} users total • {users.length} active • 0 disabled
+            {users.length} users total | {users.length} active | 0 disabled
           </p>
         </article>
       </section>
@@ -2220,43 +2783,43 @@ export default function App() {
     return (
       <section className="page-grid settings-grid help-grid">
         <article className="card">
-          <h3>Setup FAQ</h3>
-          <p className="muted">Quick answers for first-time setup and common safe workflows.</p>
+          <h3>Setup and Troubleshooting</h3>
+          <p className="muted">Embedded markdown from the repository docs for in-app guidance.</p>
 
-          <div className="accordion-stack">
-            {HELP_FAQ.map((item, index) => (
-              <details className="accordion" key={item.question} open={index === 0}>
-                <summary>
-                  <Icon name="help" />
-                  <span>{item.question}</span>
-                  <Icon name="chevron" />
-                </summary>
-                <p>{item.answer}</p>
-              </details>
-            ))}
+          <div className="accordion-stack compact">
+            {helpDocs.length === 0 ? (
+              <p className="muted tiny">No embedded docs were found in this deployment.</p>
+            ) : (
+              helpDocs.map((doc) => (
+                <details className="accordion" key={doc.id}>
+                  <summary>
+                    <Icon name="info" />
+                    <span>{doc.title}</span>
+                    <Icon name="chevron" />
+                  </summary>
+                  <div className="doc-preview markdown-preview">{renderMarkdownDocument(doc.content)}</div>
+                </details>
+              ))
+            )}
           </div>
         </article>
 
         <aside className="stacked-cards">
           <article className="card">
-            <h3>Setup and Troubleshooting</h3>
-            <p className="muted">Embedded markdown from the repository docs for in-app guidance.</p>
+            <h3>Setup FAQ</h3>
+            <p className="muted">Quick answers for first-time setup and common safe workflows.</p>
 
-            <div className="accordion-stack compact">
-              {helpDocs.length === 0 ? (
-                <p className="muted tiny">No embedded docs were found in this deployment.</p>
-              ) : (
-                helpDocs.map((doc) => (
-                  <details className="accordion" key={doc.id}>
-                    <summary>
-                      <Icon name="info" />
-                      <span>{doc.title}</span>
-                      <Icon name="chevron" />
-                    </summary>
-                    <pre className="doc-preview">{doc.content}</pre>
-                  </details>
-                ))
-              )}
+            <div className="accordion-stack">
+              {HELP_FAQ.map((item, index) => (
+                <details className="accordion" key={item.question} open={index === 0}>
+                  <summary>
+                    <Icon name="help" />
+                    <span>{item.question}</span>
+                    <Icon name="chevron" />
+                  </summary>
+                  <p>{item.answer}</p>
+                </details>
+              ))}
             </div>
           </article>
         </aside>
@@ -2323,8 +2886,8 @@ export default function App() {
           <h3>Automation Activity</h3>
           <p className="muted">
             Last run:{" "}
-            {latestRun ? `${formatDateTime(latestRun.finished_at || latestRun.started_at || latestRun.created_at)}` : "-"} •{" "}
-            {latestRun ? `${taskTitleById.get(latestRun.task_id) || latestRun.task_id}` : "No runs yet"} •{" "}
+            {latestRun ? `${formatDateTime(latestRun.finished_at || latestRun.started_at || latestRun.created_at)}` : "-"} |{" "}
+            {latestRun ? `${taskTitleById.get(latestRun.task_id) || latestRun.task_id}` : "No runs yet"} |{" "}
             {latestRun ? `${latestRun.status}` : "n/a"}
           </p>
           <div className="about-actions">

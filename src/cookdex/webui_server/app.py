@@ -566,6 +566,13 @@ def create_app() -> FastAPI:
     async def root_redirect() -> Response:
         return RedirectResponse(url=settings.base_path, status_code=307)
 
+    @app.get("/favicon.ico")
+    async def root_favicon(services: Services = Depends(_require_services)) -> Response:
+        resolved = _resolve_ui_file(services.ui_root, "favicon.ico")
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="Favicon not found.")
+        return FileResponse(resolved)
+
     @app.get(f"{api_prefix}/health")
     async def health() -> dict[str, Any]:
         return {"ok": True, "base_path": settings.base_path, "version": __version__}

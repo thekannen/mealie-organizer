@@ -110,6 +110,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip playwright npm install/browser installation step.",
     )
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run Playwright with a visible browser window to watch interactions in real time.",
+    )
+    parser.add_argument(
+        "--slow-mo-ms",
+        type=int,
+        default=0,
+        help="Optional Playwright per-action delay in milliseconds (use with --headed).",
+    )
     args = parser.parse_args(argv)
 
     env_file = Path(args.env_file).resolve()
@@ -187,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
                 "--expected-mealie-url",
                 expected_mealie_url,
             ]
+            if args.headed:
+                smoke_command.append("--headed")
+            if args.slow_mo_ms > 0:
+                smoke_command.extend(["--slow-mo-ms", str(args.slow_mo_ms)])
 
             code = run_command(smoke_command, env=server_env, check=False)
             if code == 0:
