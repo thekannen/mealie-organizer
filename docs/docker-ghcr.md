@@ -1,122 +1,34 @@
 # Docker Deployment with GHCR
 
-> For self-host install/update flows, use [INSTALL.md](INSTALL.md) and [UPDATE.md](UPDATE.md).
-> This document is focused on GHCR registry behavior and publishing details.
-
-This project now defaults to pulling prebuilt images from GitHub Container Registry (GHCR):
+This project is deployed from GitHub Container Registry:
 
 - `ghcr.io/thekannen/mealie-organizer:<tag>`
 
-The container runtime behavior is still controlled by your local `.env` file and mounted folders.
-
-## 1) GitHub CLI Setup (publisher side)
-
-Install and authenticate `gh` on the machine where you manage GitHub settings:
-
-```bash
-gh --version
-gh auth login
-gh auth status
-```
-
-Validate the target repository and Actions permissions:
-
-```bash
-gh repo view thekannen/mealie-organizer --json name,owner,defaultBranchRef,isPrivate,url
-gh api repos/thekannen/mealie-organizer/actions/permissions
-gh api repos/thekannen/mealie-organizer/actions/permissions/workflow
-```
-
-Notes:
-
-- The publish workflow uses `GITHUB_TOKEN` with `packages: write`.
-- The package is intended to be public for pull-without-login deployments.
-
-## 2) Publish Images to GHCR
-
-Publishing is automatic via `.github/workflows/publish-ghcr.yml` on:
-
-- push to `main`
-- push tags like `v1.2.3`
-- manual `workflow_dispatch`
-
-Generated tags include:
-
-- `latest` (default branch)
-- `v*` (tag pushes)
-- `sha-<shortsha>` (all publishes)
-
-## 3) Deploy from GHCR (default)
-
-For no-clone installs, use `compose.ghcr.yml` from the repository root:
+## Pull and run
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/compose.ghcr.yml -o compose.yaml
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/.env.example -o .env
+# edit required values in .env
+
+docker compose -f compose.yaml pull mealie-organizer
+docker compose -f compose.yaml up -d mealie-organizer
 ```
 
-Configure optional image/tag in `.env`:
+## Required env values
 
-```env
-MEALIE_ORGANIZER_IMAGE=ghcr.io/thekannen/mealie-organizer
-MEALIE_ORGANIZER_TAG=latest
-```
+- `MEALIE_URL`
+- `MEALIE_API_KEY`
+- `WEB_BOOTSTRAP_PASSWORD`
+- `MO_WEBUI_MASTER_KEY`
 
-Deploy:
+## Update
 
 ```bash
 docker compose -f compose.yaml pull mealie-organizer
-docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
+docker compose -f compose.yaml up -d --remove-orphans mealie-organizer
 ```
 
-## 4) Pin and Roll Back
+## Runtime control
 
-Pin to a release tag:
-
-```env
-MEALIE_ORGANIZER_TAG=v1.2.3
-```
-
-Then redeploy:
-
-```bash
-docker compose -f compose.yaml pull mealie-organizer
-docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
-```
-
-## 5) Local Build Override
-
-For local source builds, add `docker-compose.build.yml`:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build mealie-organizer
-```
-
-Optional local image name:
-
-```env
-MEALIE_ORGANIZER_LOCAL_IMAGE=mealie-organizer:local
-```
-
-## 6) Using the Update Script
-
-Use the helper script in GHCR mode (default):
-
-```bash
-./scripts/docker/update.sh --source ghcr
-```
-
-Use local source mode (deprecated; kept for compatibility):
-
-```bash
-./scripts/docker/update.sh --source local
-```
-
-## 7) User-Controlled Settings Remain Local
-
-All user/runtime settings remain editable on the deployment host:
-
-- `.env` for secrets and runtime flags
-- optional `./configs` mounted to `/app/configs`
-- `./cache`, `./logs`, `./reports` mounted for state/output
-
-Changing images does not remove this local control model.
+Use the Web UI at `/organizer` for runtime environment variables, scheduling, safety policies, and runs.

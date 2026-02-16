@@ -42,6 +42,17 @@ button:hover {
   border-color: var(--accent-strong);
 }
 
+button.secondary {
+  background: #ffffff;
+  color: var(--accent-strong);
+  border-color: var(--line);
+}
+
+button.secondary:hover {
+  background: #f1f6fa;
+  border-color: var(--accent);
+}
+
 .shell {
   max-width: 1400px;
   margin: 0 auto;
@@ -116,6 +127,15 @@ button:hover {
 .field span {
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.muted-text {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.muted-text.small {
+  font-size: 0.8rem;
 }
 
 input,
@@ -194,6 +214,38 @@ th {
   border-radius: 8px;
   padding: 0.45rem 0.6rem;
   font-size: 0.85rem;
+}
+
+.env-list {
+  display: grid;
+  gap: 0.7rem;
+  max-height: 31rem;
+  overflow: auto;
+  padding-right: 0.3rem;
+}
+
+.env-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.env-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: #f6f9fd;
 }
 
 .config-grid {

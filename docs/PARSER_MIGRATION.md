@@ -1,37 +1,22 @@
 # Parser Migration
 
-[Overview](../README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
+`mealie-parser` behavior is now part of the Web UI workflow.
 
-`mealie-parser` functionality is now integrated into `mealie-organizer` as `ingredient-parse` and `data-maintenance`.
+## Mapping
 
-## Old to New Mapping
+- Old: standalone parser command/container
+- New: queue task `ingredient-parse` from `/organizer`
 
-- Old repo command:
-  - `python -m mealie_parser`
-- New repo command:
-  - `python -m mealie_organizer.ingredient_parser`
+## Runtime credentials
 
-- Docker old:
-  - `TASK` not available (separate parser container)
-- Docker new:
-  - `TASK=ingredient-parse`
-  - or `TASK=data-maintenance`
-
-## Environment Variable Compatibility
-
-Primary variables:
+Use:
 
 - `MEALIE_URL`
 - `MEALIE_API_KEY`
 
-Legacy parser aliases are still accepted (with deprecation warning):
+## Parser tuning
 
-- `MEALIE_BASE_URL` -> `MEALIE_URL`
-- `MEALIE_API_TOKEN` -> `MEALIE_API_KEY`
-
-## Parser Options
-
-Most parser tuning flags remain available as env overrides:
+Tune parser behavior through Web UI environment variable settings:
 
 - `CONFIDENCE_THRESHOLD`
 - `PARSER_STRATEGIES`
@@ -42,9 +27,10 @@ Most parser tuning flags remain available as env overrides:
 - `REQUEST_RETRIES`
 - `REQUEST_BACKOFF_SECONDS`
 
-## Recommended Migration Path
+## Recommended migration path
 
-1. Switch credentials to `MEALIE_URL` and `MEALIE_API_KEY`.
-2. Run `TASK=ingredient-parse` in `DRY_RUN=true`.
-3. Move to `TASK=data-maintenance` for unified operations.
-4. Decommission standalone parser scheduling once validated.
+1. Configure credentials in startup `.env`
+2. Open `/organizer`
+3. Run `ingredient-parse` with `dry_run=true`
+4. Review logs/reports
+5. Enable policy bypass only when applying write changes

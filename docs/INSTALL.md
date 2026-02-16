@@ -1,6 +1,6 @@
 # Install
 
-## Option 1: GHCR image (recommended)
+## Standard Deployment (GHCR)
 
 ```bash
 mkdir -p mealie-organizer && cd mealie-organizer
@@ -26,27 +26,6 @@ Open:
 
 `http://localhost:4820/organizer`
 
-## Option 2: Repo clone
-
-```bash
-git clone https://github.com/thekannen/mealie-organizer.git
-cd mealie-organizer
-cp .env.example .env
-# edit .env values
-
-docker compose up -d mealie-organizer
-```
-
-## Option 3: Bootstrap installer script
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/bootstrap_webui.sh -o /tmp/bootstrap_webui.sh
-bash /tmp/bootstrap_webui.sh --output-dir ./mealie-organizer-webui --web-port 4820
-cd mealie-organizer-webui
-# edit .env
-docker compose up -d
-```
-
 ## Required volumes
 
 - `./configs` -> `/app/configs`
@@ -54,7 +33,8 @@ docker compose up -d
 - `./logs` -> `/app/logs`
 - `./reports` -> `/app/reports`
 
-## Required env at startup
+## Notes
 
-- `MO_WEBUI_MASTER_KEY` or `MO_WEBUI_MASTER_KEY_FILE`
-- If no user exists yet: `WEB_BOOTSTRAP_PASSWORD`
+- GHCR is the deployment baseline for this project.
+- Runtime variable management is available in the Web UI after login.
+- Secrets are encrypted at rest using `MO_WEBUI_MASTER_KEY`.

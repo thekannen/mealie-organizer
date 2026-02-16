@@ -103,14 +103,22 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         settings_put = client.put(
             "/organizer/api/v1/settings",
-            json={"settings": {"MEALIE_URL": "http://example/api"}, "secrets": {"MEALIE_API_KEY": "abc123"}},
+            json={"env": {"MEALIE_URL": "http://example/api", "MEALIE_API_KEY": "abc123"}},
         )
         assert settings_put.status_code == 200
         settings_get = client.get("/organizer/api/v1/settings")
         assert settings_get.status_code == 200
         payload = settings_get.json()
-        assert payload["settings"]["MEALIE_URL"] == "http://example/api"
+        assert payload["env"]["MEALIE_URL"]["value"] == "http://example/api"
+        assert payload["env"]["MEALIE_URL"]["source"] == "ui_setting"
         assert payload["secrets"]["MEALIE_API_KEY"] == "********"
+        assert payload["env"]["MEALIE_API_KEY"]["has_value"] is True
+
+        unsupported_env = client.put(
+            "/organizer/api/v1/settings",
+            json={"env": {"NOT_ALLOWED_ENV": "x"}},
+        )
+        assert unsupported_env.status_code == 422
 
         config_list = client.get("/organizer/api/v1/config/files")
         assert config_list.status_code == 200

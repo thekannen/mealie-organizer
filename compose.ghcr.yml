@@ -6,8 +6,6 @@ services:
     env_file:
       - .env
     environment:
-      TASK: ${TASK:-webui-server}
-      RUN_MODE: ${RUN_MODE:-once}
       TAXONOMY_REFRESH_MODE: ${TAXONOMY_REFRESH_MODE:-merge}
       WEB_BIND_PORT: ${WEB_BIND_PORT:-4820}
     volumes:

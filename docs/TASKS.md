@@ -1,29 +1,11 @@
 # Tasks and API
 
-## Runtime Mode
+## Web UI Route Model
 
-Primary service mode:
+- Web app: `/organizer`
+- API: `/organizer/api/v1`
 
-```bash
-TASK=webui-server
-RUN_MODE=once
-```
-
-Deprecated compatibility alias (one release):
-
-```bash
-TASK=plugin-server
-```
-
-## Web UI Routes
-
-All routes are under `/organizer`.
-
-- UI shell: `/organizer`
-- Login page: `/organizer/login`
-- API root: `/organizer/api/v1`
-
-## API Surface
+## API Endpoints
 
 - `GET /organizer/api/v1/health`
 - `POST /organizer/api/v1/auth/login`
@@ -47,9 +29,7 @@ All routes are under `/organizer`.
 - `GET /organizer/api/v1/config/files/{name}`
 - `PUT /organizer/api/v1/config/files/{name}`
 
-## Task IDs
-
-The queue runner supports:
+## Task IDs (Queue Runner)
 
 - `categorize`
 - `taxonomy-refresh`
@@ -62,44 +42,14 @@ The queue runner supports:
 - `tools-sync`
 - `data-maintenance`
 
+## Environment Variable Management
+
+`.env`-style runtime values are managed in the Web UI through `GET/PUT /organizer/api/v1/settings`.
+
+- Non-secret keys are stored in app settings.
+- Secret keys are encrypted at rest.
+- Task executions consume the effective runtime environment built from these values.
+
 ## Safety Policies
 
-Dangerous write options are blocked by default.
-
-Use `PUT /organizer/api/v1/policies` to allow dangerous options per task:
-
-```json
-{
-  "policies": {
-    "ingredient-parse": {
-      "allow_dangerous": true
-    }
-  }
-}
-```
-
-## Settings and Secrets
-
-- Non-secret values live in `app_settings` (SQLite)
-- Secrets live in `secrets` (encrypted with `MO_WEBUI_MASTER_KEY`)
-- Runtime env overlay uses uppercase keys from settings/secrets
-
-## Scheduling
-
-Schedules are created through `/organizer/api/v1/schedules`.
-
-Kinds:
-- `interval` (`seconds`)
-- `cron` (`cron` expression)
-
-Schedules enqueue runs into the same queue worker used by manual runs.
-
-## Legacy CLI Notes
-
-Legacy one-shot task switching is still available for migration windows:
-
-```bash
-docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
-```
-
-This is deprecated in docs and UI-first operation is the intended path.
+Dangerous options are blocked by default and unlocked per task via policy settings.

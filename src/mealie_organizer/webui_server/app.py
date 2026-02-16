@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from .config_files import ConfigFilesManager
+from .env_catalog import ENV_SPEC_BY_KEY, ENV_VAR_SPECS, EnvVarSpec
 from .runner import RunQueueManager
 from .scheduler import SchedulePayload, SchedulerService
 from .schemas import (
@@ -89,6 +91,49 @@ def _build_runtime_env(state: StateStore, cipher: SecretCipher) -> dict[str, str
         except Exception:
             continue
     return env
+
+
+def _value_from_runtime(spec: EnvVarSpec, settings: dict[str, Any], secrets: dict[str, str], cipher: SecretCipher) -> tuple[str, str, bool]:
+    if spec.secret:
+        if spec.key in secrets:
+            encrypted = secrets[spec.key]
+            try:
+                cipher.decrypt(encrypted)
+                return "********", "ui_secret", True
+            except Exception:
+                return "********", "ui_secret_invalid", True
+        if os.environ.get(spec.key, "").strip():
+            return "********", "environment", True
+        if spec.default:
+            return "********", "default", False
+        return "", "unset", False
+
+    if spec.key in settings:
+        return str(settings[spec.key]), "ui_setting", True
+    raw_env = os.environ.get(spec.key)
+    if raw_env is not None and raw_env != "":
+        return str(raw_env), "environment", True
+    if spec.default != "":
+        return spec.default, "default", False
+    return "", "unset", False
+
+
+def _env_payload(state: StateStore, cipher: SecretCipher) -> dict[str, Any]:
+    settings = state.list_settings()
+    secrets = state.list_encrypted_secrets()
+    payload: dict[str, Any] = {}
+    for spec in ENV_VAR_SPECS:
+        value, source, has_value = _value_from_runtime(spec, settings, secrets, cipher)
+        payload[spec.key] = {
+            "key": spec.key,
+            "value": value,
+            "source": source,
+            "secret": spec.secret,
+            "has_value": has_value,
+            "default": spec.default,
+            "description": spec.description,
+        }
+    return payload
 
 
 def _require_services(request: Request) -> Services:
@@ -425,6 +470,7 @@ def create_app() -> FastAPI:
         return {
             "settings": services.state.list_settings(),
             "secrets": {key: "********" for key in secret_keys},
+            "env": _env_payload(services.state, services.cipher),
         }
 
     @app.put(f"{api_prefix}/settings")
@@ -444,6 +490,24 @@ def create_app() -> FastAPI:
                 services.state.delete_secret(key_name)
                 continue
             services.state.set_secret(key_name, services.cipher.encrypt(str(value)))
+
+        for key, value in payload.env.items():
+            key_name = key.strip().upper()
+            if not key_name:
+                continue
+            spec = ENV_SPEC_BY_KEY.get(key_name)
+            if spec is None:
+                raise HTTPException(status_code=422, detail=f"Unsupported environment key: {key_name}")
+            if value is None or str(value).strip() == "":
+                if spec.secret:
+                    services.state.delete_secret(key_name)
+                else:
+                    services.state.delete_setting(key_name)
+                continue
+            if spec.secret:
+                services.state.set_secret(key_name, services.cipher.encrypt(str(value)))
+            else:
+                services.state.set_settings({key_name: str(value)})
 
         return await get_settings(_session, services)
 

@@ -489,6 +489,11 @@ class StateStore:
                         (key, json.dumps(value), now),
                     )
 
+    def delete_setting(self, key: str) -> None:
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM app_settings WHERE key = ?;", (key,))
+
     def list_encrypted_secrets(self) -> dict[str, str]:
         with self._connect() as conn:
             rows = conn.execute("SELECT key, encrypted_value FROM secrets ORDER BY key ASC;").fetchall()

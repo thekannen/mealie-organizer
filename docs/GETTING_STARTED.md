@@ -1,6 +1,6 @@
 # Getting Started
 
-## 1. Prepare environment
+## 1) Configure startup env
 
 Copy `.env.example` to `.env` and set:
 
@@ -9,43 +9,34 @@ Copy `.env.example` to `.env` and set:
 - `WEB_BOOTSTRAP_PASSWORD`
 - `MO_WEBUI_MASTER_KEY`
 
-## 2. Start service
+## 2) Launch service
 
 ```bash
-docker compose up -d mealie-organizer
+docker compose -f compose.ghcr.yml up -d mealie-organizer
 ```
 
-## 3. Open Web UI
+## 3) Open Web UI
 
 `http://localhost:4820/organizer`
 
-## 4. First login
+## 4) First login
 
 - Username: `WEB_BOOTSTRAP_USER` (default `admin`)
 - Password: `WEB_BOOTSTRAP_PASSWORD`
 
-## 5. Validate health
+## 5) Verify health
 
 ```bash
 curl http://localhost:4820/organizer/api/v1/health
 ```
 
-Expected:
+## 6) Configure runtime variables in UI
 
-```json
-{"ok":true,"base_path":"/organizer"}
-```
+Use **Environment Variables** in the UI to manage `.env`-style runtime keys and secrets.
 
-## 6. Run first dry task from UI
+## 7) Run a dry task
 
 - Open **Run Task**
-- Choose `ingredient-parse`
+- Pick `ingredient-parse`
 - Keep `dry_run=true`
-- Click **Queue Run**
-- Inspect run log in **Run History**
-
-## Notes
-
-- Write-capable options are blocked by default.
-- Enable dangerous task behavior with per-task policy toggles in the UI.
-- Scheduling and secrets are also managed in the UI.
+- Queue run and inspect logs

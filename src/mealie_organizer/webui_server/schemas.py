@@ -46,6 +46,7 @@ class ScheduleUpdateRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
     secrets: dict[str, str | None] = Field(default_factory=dict)
+    env: dict[str, str | None] = Field(default_factory=dict)
 
 
 class ConfigWriteRequest(BaseModel):

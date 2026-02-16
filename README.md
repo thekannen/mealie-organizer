@@ -1,15 +1,12 @@
 # Mealie Organizer
 
-[Overview](README.md) | [Install](docs/INSTALL.md) | [Getting Started](docs/GETTING_STARTED.md) | [Update](docs/UPDATE.md)
+Mealie Organizer is a Web UI-first automation service for Mealie.
 
-Mealie Organizer now runs as a standalone Web UI service.
-
-- URL base: `/organizer`
+- Web UI base path: `/organizer`
 - Default port: `4820`
-- Primary runtime mode: `TASK=webui-server`
-- Control plane: runs, schedules, policies, settings, secrets, and config-file editing are all Web UI first.
+- Deployment standard: GHCR image
 
-## Quick Start (Docker)
+## Deploy (GHCR Standard)
 
 ```bash
 mkdir -p mealie-organizer && cd mealie-organizer
@@ -28,47 +25,46 @@ docker compose -f compose.yaml up -d mealie-organizer
 
 Open: `http://localhost:4820/organizer`
 
-## Bootstrap Script (No Repo Clone Required)
+## Web UI Responsibilities
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/bootstrap_webui.sh -o /tmp/bootstrap_webui.sh
-bash /tmp/bootstrap_webui.sh --output-dir ./mealie-organizer-webui --web-port 4820
-```
+The Web UI is the standard control surface for:
 
-The generated folder includes `.env`, `docker-compose.yml`, and `README.generated.md`.
+- Task runs and run logs
+- Scheduling (interval and cron)
+- Safety policy bypasses per task
+- Runtime environment variables (managed in-app)
+- Secrets (encrypted at rest)
+- Config/taxonomy JSON file editing
 
-## Web UI API (Internal/LAN)
+## API (Internal/LAN)
 
 All API routes are under `/organizer/api/v1`.
 
 - Auth: `/auth/login`, `/auth/logout`, `/auth/session`
-- Tasks/Runs: `/tasks`, `/runs`, `/runs/{id}`, `/runs/{id}/log`
-- Schedules: `/schedules`
+- Tasks/runs: `/tasks`, `/runs`, `/runs/{id}`, `/runs/{id}/log`
+- Scheduling: `/schedules`
 - Policies: `/policies`
-- Settings/Secrets: `/settings`
-- Config file parity: `/config/files`, `/config/files/{name}`
+- Settings/env/secrets: `/settings`
+- Config files: `/config/files`, `/config/files/{name}`
 
-## Default Environment
+## Environment Bootstrap
 
-See `.env.example` for the full set.
+Required startup values:
 
-Required at minimum:
 - `MEALIE_URL`
 - `MEALIE_API_KEY`
 - `WEB_BOOTSTRAP_PASSWORD`
 - `MO_WEBUI_MASTER_KEY`
 
-Key defaults:
-- `WEB_BIND_PORT=4820`
-- `WEB_BASE_PATH=/organizer`
-- `WEB_STATE_DB_PATH=cache/webui/state.db`
+After first login, runtime `.env`-style variables are configurable from the Web UI.
 
-## Legacy CLI Compatibility
+## Docs
 
-Task-switch execution is retained as a compatibility path for one release.
-
-- New primary task: `TASK=webui-server`
-- Deprecated alias: `TASK=plugin-server` (forwards to `webui-server` with warning)
+- `docs/INSTALL.md`
+- `docs/GETTING_STARTED.md`
+- `docs/TASKS.md`
+- `docs/UPDATE.md`
+- `docs/docker-ghcr.md`
 
 ## Testing
 

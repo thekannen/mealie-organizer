@@ -117,8 +117,6 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [runs, setRuns] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [settings, setSettings] = useState({});
-  const [secrets, setSecrets] = useState({});
   const [selectedTask, setSelectedTask] = useState("");
   const [taskValues, setTaskValues] = useState({});
   const [runLog, setRunLog] = useState("");
@@ -134,10 +132,18 @@ export default function App() {
   const [configFiles, setConfigFiles] = useState([]);
   const [activeConfig, setActiveConfig] = useState("");
   const [activeConfigBody, setActiveConfigBody] = useState("{}\n");
+  const [envSpecs, setEnvSpecs] = useState({});
+  const [envDraft, setEnvDraft] = useState({});
+  const [envClear, setEnvClear] = useState({});
 
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
     [tasks, selectedTask]
+  );
+
+  const envList = useMemo(
+    () => Object.values(envSpecs || {}).sort((a, b) => String(a.key).localeCompare(String(b.key))),
+    [envSpecs]
   );
 
   async function refreshSession() {
@@ -164,9 +170,17 @@ export default function App() {
       setTasks(taskPayload.items || []);
       setRuns(runPayload.items || []);
       setSchedules(schedulePayload.items || []);
-      setSettings(settingsPayload.settings || {});
-      setSecrets(settingsPayload.secrets || {});
       setConfigFiles(configPayload.items || []);
+
+      const nextSpecs = settingsPayload.env || {};
+      setEnvSpecs(nextSpecs);
+      const nextDraft = {};
+      for (const [key, item] of Object.entries(nextSpecs)) {
+        nextDraft[key] = item.secret ? "" : String(item.value ?? "");
+      }
+      setEnvDraft(nextDraft);
+      setEnvClear({});
+
       if (!selectedTask && taskPayload.items?.length) {
         setSelectedTask(taskPayload.items[0].task_id);
       }
@@ -276,12 +290,40 @@ export default function App() {
     }
   }
 
-  async function saveSettings() {
+  async function saveEnvironment() {
     try {
+      const env = {};
+      for (const item of envList) {
+        const key = String(item.key);
+        const nextValue = String(envDraft[key] ?? "");
+
+        if (item.secret) {
+          if (envClear[key] === true) {
+            env[key] = null;
+            continue;
+          }
+          if (nextValue.trim() !== "") {
+            env[key] = nextValue;
+          }
+          continue;
+        }
+
+        const currentValue = String(item.value ?? "");
+        if (nextValue !== currentValue) {
+          env[key] = nextValue;
+        }
+      }
+
+      if (Object.keys(env).length === 0) {
+        setError("No environment changes to save.");
+        return;
+      }
+
       await api("/settings", {
         method: "PUT",
-        body: { settings, secrets },
+        body: { env },
       });
+      setError("");
       await loadData();
     } catch (exc) {
       setError(String(exc.message || exc));
@@ -345,7 +387,7 @@ export default function App() {
       <header className="topbar">
         <div>
           <h1>Mealie Organizer</h1>
-          <p>Web control plane for parser, taxonomy, sync, and maintenance automation.</p>
+          <p>Web UI-first control plane for parser, taxonomy, sync, and maintenance automation.</p>
         </div>
         <div className="topbar-actions">
           <button onClick={loadData}>Refresh</button>
@@ -504,36 +546,53 @@ export default function App() {
         </article>
 
         <article className="panel">
-          <h2>Settings & Secrets</h2>
-          <label className="field">
-            <span>Settings JSON</span>
-            <textarea
-              rows={10}
-              value={`${JSON.stringify(settings, null, 2)}`}
-              onChange={(event) => {
-                try {
-                  setSettings(JSON.parse(event.target.value));
-                } catch {
-                  // Keep editing state in place; parse on save path.
-                }
-              }}
-            />
-          </label>
-          <label className="field">
-            <span>Secrets JSON (plain values overwrite masked values)</span>
-            <textarea
-              rows={8}
-              value={`${JSON.stringify(secrets, null, 2)}`}
-              onChange={(event) => {
-                try {
-                  setSecrets(JSON.parse(event.target.value));
-                } catch {
-                  // Keep editing state in place; parse on save path.
-                }
-              }}
-            />
-          </label>
-          <button onClick={saveSettings}>Save Settings</button>
+          <h2>Environment Variables</h2>
+          <p className="muted-text">
+            Configure runtime values here instead of editing container env files directly.
+          </p>
+          <div className="env-list">
+            {envList.map((item) => {
+              const key = String(item.key);
+              const source = String(item.source || "unset");
+              const hasValue = Boolean(item.has_value);
+              return (
+                <div className="env-item" key={key}>
+                  <label className="field">
+                    <span>{key}</span>
+                    <input
+                      type={item.secret ? "password" : "text"}
+                      value={envDraft[key] ?? ""}
+                      placeholder={item.secret && hasValue ? "stored secret" : ""}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setEnvDraft((prev) => ({ ...prev, [key]: nextValue }));
+                        if (item.secret && envClear[key]) {
+                          setEnvClear((prev) => ({ ...prev, [key]: false }));
+                        }
+                      }}
+                    />
+                  </label>
+                  <div className="env-meta">
+                    <span className="badge">source: {source}</span>
+                    {item.secret ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setEnvDraft((prev) => ({ ...prev, [key]: "" }));
+                          setEnvClear((prev) => ({ ...prev, [key]: true }));
+                        }}
+                      >
+                        Clear Secret
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="muted-text small">{item.description}</p>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={saveEnvironment}>Save Environment</button>
         </article>
       </section>
 
