@@ -1,6 +1,6 @@
 # Mealie Organizer
 
-[Overview](README.md) | [Install](docs/INSTALL.md) | [Update](docs/UPDATE.md) | [Tasks](docs/TASKS.md)
+[Overview](README.md) | [Getting Started](docs/GETTING_STARTED.md) | [Install](docs/INSTALL.md) | [Update](docs/UPDATE.md) | [Tasks](docs/TASKS.md)
 
 Mealie Organizer keeps Mealie metadata clean and usable at scale.
 Operational guides now live under [`docs/`](docs/README.md).
@@ -61,6 +61,7 @@ docker compose run --rm -e TASK=data-maintenance -e RUN_MODE=once mealie-organiz
 ```
 
 Advanced task flags and task-specific workflows are documented in [docs/TASKS.md](docs/TASKS.md).
+First-time bootstrap walkthrough is documented in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
 
 Use helper update script:
 
@@ -107,6 +108,7 @@ User control remains local even with GHCR images:
 |-- configs/
 |-- docs/
 |   |-- README.md
+|   |-- GETTING_STARTED.md
 |   |-- INSTALL.md
 |   |-- UPDATE.md
 |   |-- TASKS.md

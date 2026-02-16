@@ -132,3 +132,9 @@ Optional helper for Ubuntu bootstrap:
 - `.env` (secrets + runtime behavior)
 - Optional `configs/` taxonomy and config templates (mounted when desired)
 - `cache/`, `logs/`, `reports/` output/state folders
+
+## Next Step
+
+After deployment is up, run the first-time taxonomy bootstrap guide:
+
+- [Getting Started (First Taxonomy Sync)](GETTING_STARTED.md)
