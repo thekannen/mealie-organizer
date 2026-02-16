@@ -5,8 +5,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter, Retry
 
 
 def _short_text(value: str, max_len: int = 240) -> str:
