@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TASK="${TASK:-categorize}"
+TASK="${TASK:-webui-server}"
 RUN_MODE="${RUN_MODE:-once}"
 RUN_INTERVAL_SECONDS="${RUN_INTERVAL_SECONDS:-21600}"
 PROVIDER="${PROVIDER:-}"
@@ -49,8 +49,12 @@ run_task() {
     ingredient-parse)
       python -m mealie_organizer.ingredient_parser
       ;;
+    webui-server)
+      python -m mealie_organizer.webui_server.main
+      ;;
     plugin-server)
-      python -m mealie_organizer.plugin_server
+      echo "[warn] TASK=plugin-server is deprecated; forwarding to TASK=webui-server."
+      python -m mealie_organizer.webui_server.main
       ;;
     foods-cleanup)
       if is_true "$CLEANUP_APPLY"; then
@@ -88,11 +92,16 @@ run_task() {
       fi
       ;;
     *)
-      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, cookbook-sync, ingredient-parse, plugin-server, foods-cleanup, units-cleanup, labels-sync, tools-sync, or data-maintenance."
+      echo "[error] Unknown TASK '$TASK'. Use webui-server, categorize, taxonomy-refresh, taxonomy-audit, cookbook-sync, ingredient-parse, plugin-server, foods-cleanup, units-cleanup, labels-sync, tools-sync, or data-maintenance."
       exit 1
       ;;
   esac
 }
+
+if [ "$TASK" = "webui-server" ] || [ "$TASK" = "plugin-server" ]; then
+  run_task
+  exit 0
+fi
 
 if [ "$RUN_MODE" = "loop" ]; then
   if ! [[ "$RUN_INTERVAL_SECONDS" =~ ^[0-9]+$ ]]; then

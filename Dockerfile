@@ -1,3 +1,10 @@
+FROM node:20-alpine AS web-build
+WORKDIR /web
+COPY web/package*.json ./
+RUN npm install --no-audit --no-fund
+COPY web ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -14,6 +21,8 @@ COPY requirements.txt pyproject.toml README.md ./
 COPY src ./src
 COPY scripts ./scripts
 COPY configs ./configs
+COPY web ./web
+COPY --from=web-build /web/dist ./web/dist
 
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
@@ -21,7 +30,7 @@ RUN python -m pip install --upgrade pip \
 
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
-    && mkdir -p /app/cache /app/logs /app/reports \
+    && mkdir -p /app/cache /app/logs /app/reports /app/web/dist \
     && chown -R app:app /app \
     && chmod +x /app/scripts/docker/entrypoint.sh
 

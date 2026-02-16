@@ -1,79 +1,51 @@
-# Getting Started: First Taxonomy Sync
+# Getting Started
 
-[Overview](../README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
+## 1. Prepare environment
 
-Use this runbook right after install to bootstrap your Mealie taxonomy from this repo's templates.
+Copy `.env.example` to `.env` and set:
 
-## What This Sync Covers
+- `MEALIE_URL`
+- `MEALIE_API_KEY`
+- `WEB_BOOTSTRAP_PASSWORD`
+- `MO_WEBUI_MASTER_KEY`
 
-- Categories and tags from `configs/taxonomy/categories.json` and `configs/taxonomy/tags.json`
-- Cookbooks from `configs/taxonomy/cookbooks.json`
-- Labels from `configs/taxonomy/labels.json`
-- Tools from `configs/taxonomy/tools.json`
-
-Optional after initial sync:
-
-- Units cleanup from `configs/taxonomy/units_aliases.json`
-- Taxonomy audit report generation
-
-## Before You Start
-
-1. Set `MEALIE_URL` and `MEALIE_API_KEY` in `.env`.
-2. Review and customize taxonomy files under `configs/taxonomy/`.
-3. Take a Mealie backup snapshot before your first apply run.
-
-## Command Prefix
-
-Use the command style that matches your deployment:
+## 2. Start service
 
 ```bash
-# GHCR no-clone layout
-docker compose -f compose.yaml ...
-
-# Repo-clone layout
-docker compose ...
+docker compose up -d mealie-organizer
 ```
 
-The examples below use repo-clone syntax. For GHCR no-clone, add `-f compose.yaml`.
+## 3. Open Web UI
 
-## Step 1: Dry-Run Review
+`http://localhost:4820/organizer`
+
+## 4. First login
+
+- Username: `WEB_BOOTSTRAP_USER` (default `admin`)
+- Password: `WEB_BOOTSTRAP_PASSWORD`
+
+## 5. Validate health
 
 ```bash
-docker compose run --rm -e TASK=taxonomy-refresh -e DRY_RUN=true -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=cookbook-sync -e DRY_RUN=true -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=labels-sync -e DRY_RUN=true -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=tools-sync -e DRY_RUN=true -e RUN_MODE=once mealie-organizer
+curl http://localhost:4820/organizer/api/v1/health
 ```
 
-Review logs for planned creates/updates/deletes before applying.
+Expected:
 
-## Step 2: Apply Bootstrap Sync
-
-```bash
-docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=labels-sync -e CLEANUP_APPLY=true -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=tools-sync -e CLEANUP_APPLY=true -e RUN_MODE=once mealie-organizer
+```json
+{"ok":true,"base_path":"/organizer"}
 ```
 
-Notes:
+## 6. Run first dry task from UI
 
-- `taxonomy-refresh` writes categories/tags when `DRY_RUN` is not set to `true`.
-- `labels-sync` and `tools-sync` require `CLEANUP_APPLY=true` for write mode.
+- Open **Run Task**
+- Choose `ingredient-parse`
+- Keep `dry_run=true`
+- Click **Queue Run**
+- Inspect run log in **Run History**
 
-## Step 3: Verify With Audit
+## Notes
 
-```bash
-docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
-```
-
-Then review `reports/taxonomy_audit_report.json`.
-
-## Optional: Units Standardization Pass
-
-Run this only after tuning `configs/taxonomy/units_aliases.json`.
-
-```bash
-docker compose run --rm -e TASK=units-cleanup -e RUN_MODE=once mealie-organizer
-docker compose run --rm -e TASK=units-cleanup -e CLEANUP_APPLY=true -e RUN_MODE=once mealie-organizer
-```
+- Write-capable options are blocked by default.
+- Enable dangerous task behavior with per-task policy toggles in the UI.
+- Scheduling and secrets are also managed in the UI.

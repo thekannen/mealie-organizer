@@ -6,16 +6,16 @@ services:
     env_file:
       - .env
     environment:
-      TASK: ${TASK:-categorize}
-      RUN_MODE: ${RUN_MODE:-loop}
-      RUN_INTERVAL_SECONDS: ${RUN_INTERVAL_SECONDS:-21600}
+      TASK: ${TASK:-webui-server}
+      RUN_MODE: ${RUN_MODE:-once}
       TAXONOMY_REFRESH_MODE: ${TAXONOMY_REFRESH_MODE:-merge}
+      WEB_BIND_PORT: ${WEB_BIND_PORT:-4820}
     volumes:
+      - ./configs:/app/configs
       - ./cache:/app/cache
       - ./logs:/app/logs
       - ./reports:/app/reports
-      # Optional: mount custom configs/taxonomy from host.
-      # If omitted, image-bundled defaults are used.
-      # - ./configs:/app/configs
+    ports:
+      - "${WEB_BIND_PORT:-4820}:${WEB_BIND_PORT:-4820}"
     extra_hosts:
       - "host.docker.internal:host-gateway"

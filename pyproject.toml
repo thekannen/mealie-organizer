@@ -9,7 +9,12 @@ description = "Automation tools for Mealie taxonomy and categorization"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+  "apscheduler>=3.10.4",
+  "cryptography>=42.0.0",
+  "fastapi>=0.115.0",
   "requests>=2.31.0",
+  "sqlalchemy>=2.0.30",
+  "uvicorn>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +33,7 @@ mealie-foods = "mealie_organizer.foods_manager:main"
 mealie-units = "mealie_organizer.units_manager:main"
 mealie-labels = "mealie_organizer.labels_manager:main"
 mealie-tools = "mealie_organizer.tools_manager:main"
+mealie-webui-server = "mealie_organizer.webui_server.main:main"
 mealie-plugin-server = "mealie_organizer.plugin_server:main"
 
 [tool.setuptools]

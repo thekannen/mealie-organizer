@@ -41,6 +41,7 @@ reports/
 .idea/
 .DS_Store
 Thumbs.db
+web/node_modules/
 
 # Local issue tracking state
 .beads/

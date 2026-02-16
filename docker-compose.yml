@@ -6,15 +6,17 @@ services:
     env_file:
       - .env
     environment:
-      TASK: categorize
-      RUN_MODE: loop
-      RUN_INTERVAL_SECONDS: 21600
+      TASK: webui-server
+      RUN_MODE: once
       PROVIDER: ""
       TAXONOMY_REFRESH_MODE: merge
+      WEB_BIND_PORT: 4820
     volumes:
       - ./configs:/app/configs
       - ./cache:/app/cache
       - ./logs:/app/logs
       - ./reports:/app/reports
+    ports:
+      - "4820:4820"
     extra_hosts:
       - "host.docker.internal:host-gateway"

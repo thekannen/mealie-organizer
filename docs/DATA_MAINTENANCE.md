@@ -2,69 +2,39 @@
 
 [Overview](../README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
 
-`data-maintenance` orchestrates a full data hygiene pass for Mealie:
+`data-maintenance` orchestrates a full hygiene pass:
 
 `parse -> foods -> units -> taxonomy -> categorize -> cookbooks -> audit`
 
+## Web UI Workflow (Primary)
+
+1. Open `/organizer`
+2. Run `data-maintenance` from **Run Task** with `dry_run=true`
+3. Review run logs and reports
+4. If needed, enable dangerous policy for `data-maintenance`
+5. Re-run with `apply_cleanups=true`
+
+## Scheduling
+
+Use **Schedules** in the UI to run maintenance automatically.
+
+- `interval`: every N seconds
+- `cron`: standard 5-field expression
+
 ## Safety Model
 
-- Default mode is audit-first.
-- Cleanup stages (`foods`, `units`, `labels`, `tools`) plan actions unless explicitly switched to apply.
-- Global `DRY_RUN=true` always forces plan-only behavior.
+- Dangerous options are blocked by default.
+- Per-task policy controls dangerous options (`allow_dangerous`).
+- `dry_run=true` remains recommended for initial validation cycles.
 
-## Default Run
+## Legacy CLI Compatibility (Deprecated)
 
 ```bash
 docker compose run --rm -e TASK=data-maintenance -e RUN_MODE=once mealie-organizer
 ```
 
-## Apply Cleanup Writes
+Apply cleanups:
 
 ```bash
-docker compose run --rm \
-  -e TASK=data-maintenance \
-  -e RUN_MODE=once \
-  -e MAINTENANCE_APPLY_CLEANUPS=true \
-  mealie-organizer
+docker compose run --rm -e TASK=data-maintenance -e MAINTENANCE_APPLY_CLEANUPS=true -e RUN_MODE=once mealie-organizer
 ```
-
-## Stage Selection
-
-Run only selected stages:
-
-```bash
-docker compose run --rm --entrypoint python mealie-organizer \
-  -m mealie_organizer.data_maintenance \
-  --stages parse,foods,units,audit
-```
-
-Continue after failures:
-
-```bash
-docker compose run --rm --entrypoint python mealie-organizer \
-  -m mealie_organizer.data_maintenance \
-  --continue-on-error
-```
-
-## Incremental Cleanup Strategy
-
-- `maintenance.max_actions_per_stage` controls maximum merges per run.
-- `maintenance.checkpoint_dir` stores per-stage merge checkpoints.
-- Run repeatedly until reports show no remaining candidates.
-
-## Checkpoint Reset
-
-To restart a stage from scratch, remove its checkpoint file:
-
-- Foods: `cache/maintenance/foods_cleanup_checkpoint.json`
-- Units: `cache/maintenance/units_cleanup_checkpoint.json`
-- Tools: `cache/maintenance/tools_sync_checkpoint.json`
-
-## Rollback Guidance
-
-- Use dry-run reports before apply mode.
-- Keep conservative caps (`MAX_ACTIONS_PER_STAGE`) during first apply cycles.
-- If an apply run is too aggressive:
-  - disable apply flags
-  - inspect generated reports
-  - restore from Mealie backup if needed

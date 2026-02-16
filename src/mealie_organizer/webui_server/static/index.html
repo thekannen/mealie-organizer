@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mealie Organizer</title>
+    <link rel="stylesheet" href="__BASE_PATH__/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Mealie Organizer Web UI</h1>
+      <p>This fallback shell is active because a compiled React build was not found.</p>
+      <form id="login-form">
+        <label>
+          Username
+          <input id="username" value="admin" />
+        </label>
+        <label>
+          Password
+          <input id="password" type="password" />
+        </label>
+        <button type="submit">Sign In</button>
+      </form>
+      <pre id="output">Waiting for login...</pre>
+    </main>
+    <script>
+      window.__MO_BASE_PATH__ = "__BASE_PATH__";
+    </script>
+    <script src="__BASE_PATH__/app.js"></script>
+  </body>
+</html>
