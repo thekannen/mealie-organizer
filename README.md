@@ -1,320 +1,110 @@
 # Mealie Organizer
 
-Mealie Organizer is a Python automation toolchain for Mealie that keeps recipe metadata clean and useful.
+[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md)
+
+Mealie Organizer keeps Mealie metadata clean and usable at scale.
 
 It can:
-- Apply and maintain category/tag taxonomy templates
+- Refresh categories and tags from templates
 - Sync cookbook templates
-- Categorize/tag recipes with Ollama or ChatGPT-compatible APIs
-- Audit taxonomy quality and output a report
-- Run once or continuously in Docker
+- Categorize/tag recipes using Ollama or ChatGPT-compatible APIs
+- Audit taxonomy quality and usage
+- Run once or on a schedule in Docker
 
-## Why this exists
+## Choose Your Path
 
-As recipe libraries grow, tags and categories become noisy and inconsistent. This project gives you repeatable workflows to keep taxonomy organized without manual cleanup every week.
+| Deployment path | Best for | Install guide | Update guide |
+| --- | --- | --- | --- |
+| GHCR public image (recommended) | Most self-hosters | [Install](INSTALL.md#1-ghcr-public-image-recommended) | [Update](UPDATE.md#1-ghcr-public-image-recommended) |
+| Your own custom image | Teams with custom changes or private registries | [Install](INSTALL.md#2-build-and-push-your-own-image) | [Update](UPDATE.md#2-your-own-custom-image) |
+| Full local Ubuntu manual (no Docker) | Operators who want total host-level control | [Install](INSTALL.md#3-full-local-ubuntu-manual-no-docker) | [Update](UPDATE.md#3-full-local-ubuntu-manual-no-docker) |
 
-## Project layout
+## Common Commands
 
-```text
-.
-├── configs/
-│   ├── config.json
-│   └── taxonomy/
-│       ├── categories.json
-│       ├── tags.json
-│       └── cookbooks.json
-├── scripts/
-│   ├── docker/
-│   │   ├── entrypoint.sh
-│   │   └── update.sh
-│   └── install/
-│       └── ubuntu_setup_mealie.sh
-├── src/mealie_organizer/
-├── tests/
-├── .env.example
-├── docker-compose.yml
-└── README.md
-```
-
-## Configuration model
-
-Use both files, but for different purposes:
-- `.env`: user and environment settings, secrets, deployment-specific values
-- `configs/config.json`: non-secret defaults (timeouts, retries, batching, taxonomy file locations)
-
-Priority order:
-1. CLI flags (where available)
-2. Environment variables (`.env`, Docker env vars, Portainer env vars)
-3. `configs/config.json`
-4. Hardcoded fallback defaults
-
-## Quick start (Docker, recommended)
-
-1. Clone the repo.
-
-```bash
-git clone https://github.com/thekannen/mealie-organizer.git
-cd mealie-organizer
-```
-
-2. Create your environment file.
-
-```bash
-cp .env.example .env
-```
-
-3. Edit `.env`.
-
-Required for all modes:
-- `MEALIE_URL`
-- `MEALIE_API_KEY`
-
-Provider selection:
-- `CATEGORIZER_PROVIDER=ollama` or `chatgpt`
-
-If using Ollama:
-- `OLLAMA_URL`
-- `OLLAMA_MODEL`
-
-If using ChatGPT/OpenAI-compatible:
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- Optional: `OPENAI_BASE_URL` for compatible providers
-- Optional deploy pinning:
-  - `MEALIE_ORGANIZER_IMAGE` (default `ghcr.io/thekannen/mealie-organizer`)
-  - `MEALIE_ORGANIZER_TAG` (default `latest`)
-
-4. Pull and start from GHCR.
+Start (GHCR pull-first):
 
 ```bash
 docker compose pull mealie-organizer
 docker compose up -d --no-build --remove-orphans mealie-organizer
 ```
 
-Optional local build workflow:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build mealie-organizer
-```
-
-### Public image deploy (no registry login required)
-
-This repository publishes a public image to GHCR:
-
-- `ghcr.io/thekannen/mealie-organizer:latest`
-
-You can deploy it directly without `docker login`:
-
-```bash
-docker pull ghcr.io/thekannen/mealie-organizer:latest
-docker compose up -d --no-build mealie-organizer
-```
-
-For controlled rollouts, pin a tag in `.env`:
-
-```env
-MEALIE_ORGANIZER_TAG=v2026.02.6
-```
-
-5. Watch logs.
+Logs:
 
 ```bash
 docker compose logs -f mealie-organizer
 ```
 
-6. Optional one-shot runs.
+Run one-shot tasks:
 
 ```bash
-# Categorize once
 docker compose run --rm -e RUN_MODE=once mealie-organizer
-
-# Taxonomy refresh once (safe merge mode)
 docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organizer
-
-# Cookbook sync once
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
+docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
 ```
 
-## Runtime modes
-
-Container behavior is controlled by env vars:
-- `TASK`: `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`
-- `RUN_MODE`: `once` or `loop`
-- `RUN_INTERVAL_SECONDS`: loop interval (default `21600`)
-
-Defaults in `docker-compose.yml` run categorize in loop mode every 6 hours.
-
-## GHCR deployment model
-
-- Default image: `ghcr.io/thekannen/mealie-organizer:latest`
-- Override image/tag in `.env` with:
-  - `MEALIE_ORGANIZER_IMAGE`
-  - `MEALIE_ORGANIZER_TAG`
-- Local source builds are opt-in via `docker-compose.build.yml`.
-- Full GHCR + CLI setup guide: `docs/docker-ghcr.md`
-
-## Taxonomy refresh behavior
-
-`TASK=taxonomy-refresh` supports two modes:
-- `merge` (default): keep existing organizer data, add missing template values
-- `replace`: delete existing categories/tags, then recreate from template (destructive)
-
-Set via:
-- `.env`: `TAXONOMY_REFRESH_MODE=merge|replace`
-- or runtime override: `-e TAXONOMY_REFRESH_MODE=replace`
-
-## Dry-run mode
-
-Set `DRY_RUN=true` to preview write operations.
-
-In dry-run mode:
-- Taxonomy imports/deletes are printed as `[plan]`
-- Cookbook create/update/delete is printed as `[plan]`
-- Recipe metadata writes are skipped
-
-## Taxonomy templates
-
-Template files live in `configs/taxonomy/`:
-- `categories.json`
-- `tags.json`
-- `cookbooks.json`
-
-Current templates include an `Originals` category/cookbook for manually created or non-URL-import recipes.
-
-### Cookbook filter note
-
-Cookbook queries can be defined with category/tag names in `cookbooks.json`. During sync, the manager resolves names to IDs so Mealie's cookbook editor displays filters correctly.
-
-## Update and redeploy
-
-Use the helper script:
+Use helper update script:
 
 ```bash
 ./scripts/docker/update.sh --source ghcr
 ```
 
-Useful options:
-- `--source <ghcr|local>` (default `ghcr`)
-- `--skip-git-pull`
-- `--no-build`
-- `--branch <name>`
-- `--prune`
+## Runtime Flags
 
-Notes:
-- `--source local` is still available but deprecated for regular deployments.
-- With `--skip-git-pull`, the script can run in non-git environments as long as compose files are present.
+Container behavior is controlled by env vars:
+- `TASK`: `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`
+- `RUN_MODE`: `once` or `loop`
+- `RUN_INTERVAL_SECONDS`: loop interval in seconds
+- `TAXONOMY_REFRESH_MODE`: `merge` (default) or `replace`
+- `DRY_RUN`: `true` for plan-only mode
 
-Manual GHCR equivalent:
+## User-Controlled Settings
 
-```bash
-git pull
-docker compose pull mealie-organizer
-docker compose up -d --no-build --remove-orphans mealie-organizer
-```
+User control remains local even with GHCR images:
+- `.env` for secrets and runtime flags
+- `./configs` mounted to `/app/configs`
+- `./cache`, `./logs`, `./reports` mounted for local state/output
 
-Manual local-build equivalent:
+## Config And Taxonomy Files
 
-```bash
-git pull
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --remove-orphans mealie-organizer
+- App defaults: `configs/config.json`
+- Taxonomy templates:
+  - `configs/taxonomy/categories.json`
+  - `configs/taxonomy/tags.json`
+  - `configs/taxonomy/cookbooks.json`
+
+## Project Layout
+
+```text
+.
+|-- .github/workflows/publish-ghcr.yml
+|-- configs/
+|-- docs/
+|-- scripts/
+|-- src/mealie_organizer/
+|-- tests/
+|-- docker-compose.yml
+|-- docker-compose.build.yml
+|-- .env.example
+|-- INSTALL.md
+|-- UPDATE.md
+`-- README.md
 ```
 
 ## Versioning
 
-This repo uses SemVer with a single source of truth in `VERSION`.
-
-- Package metadata reads version from `VERSION` (via `pyproject.toml` dynamic version)
-- Runtime `mealie_organizer.__version__` resolves to installed package version, or `VERSION` when running from source
+- Version source of truth: `VERSION`
 - Release helper: `scripts/release.sh`
-
-Examples:
-
-```bash
-# bump patch (e.g. 0.1.0 -> 0.1.1)
-scripts/release.sh patch
-
-# bump minor and create git tag
-scripts/release.sh minor --tag
-
-# set exact version
-scripts/release.sh 1.0.0 --tag
-```
-
-## Local development (macOS/Linux)
-
-1. Create and activate a virtual environment.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-2. Install dependencies.
-
-```bash
-pip install -r requirements.txt
-pip install -e .
-```
-
-3. Create env file.
-
-```bash
-cp .env.example .env
-```
-
-4. Run tools.
-
-```bash
-# Categorizer
-PYTHONPATH=src python3 -m mealie_organizer.recipe_categorizer
-
-# Taxonomy refresh (merge)
-PYTHONPATH=src python3 -m mealie_organizer.taxonomy_manager refresh \
-  --mode merge \
-  --categories-file configs/taxonomy/categories.json \
-  --tags-file configs/taxonomy/tags.json \
-  --cleanup --cleanup-only-unused --cleanup-delete-noisy
-
-# Cookbook sync
-PYTHONPATH=src python3 -m mealie_organizer.cookbook_manager sync
-
-# Taxonomy audit
-PYTHONPATH=src python3 -m mealie_organizer.audit_taxonomy
-```
-
-Installed CLI aliases after `pip install -e .`:
-- `mealie-categorizer`
-- `mealie-taxonomy`
-- `mealie-cookbooks`
-- `mealie-taxonomy-audit`
-
-## Ubuntu helper script
-
-You can bootstrap on Ubuntu with:
-
-```bash
-./scripts/install/ubuntu_setup_mealie.sh
-```
-
-Or remote-run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/scripts/install/ubuntu_setup_mealie.sh | bash
-```
-
-Notable flags:
-- `--setup-cron`
-- `--cron-schedule "0 */6 * * *"`
-- `--provider <ollama|chatgpt>`
-- `--install-ollama`
-- `--update`
+- GHCR publishes:
+  - `latest` on `main`
+  - `v*` on git tags
+  - `sha-*` on publishes
 
 ## Troubleshooting
 
-- `MEALIE_URL is not configured`: make sure `.env` has a real URL, not placeholder text.
-- `source: no such file or directory: .venv/bin/activate`: create the venv first with `python3 -m venv .venv`.
-- Ollama in Docker cannot connect to host: set `OLLAMA_URL=http://host.docker.internal:11434/api` and keep `extra_hosts` in compose.
-- Frequent provider retry warnings: reduce concurrency (`BATCH_SIZE`, `MAX_WORKERS`), increase request timeout, or use stronger model capacity.
+- `MEALIE_URL is not configured`: set a real API URL in `.env`
+- Ollama cannot connect from container: use `OLLAMA_URL=http://host.docker.internal:11434/api`
+- High retry rate from provider: reduce `BATCH_SIZE`/`MAX_WORKERS` or increase provider timeout
 
 ## Testing
 
