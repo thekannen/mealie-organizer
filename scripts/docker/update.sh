@@ -21,7 +21,7 @@ Options:
   --service <name>     Docker Compose service name (default: mealie-organizer)
   --source <ghcr|local> Deploy source (default: ghcr).
                        ghcr: pull image and restart without local build
-                       local: use docker-compose.build.yml and build from source
+                       local: use docker-compose.build.yml and build from source (deprecated)
   --skip-git-pull      Skip git fetch/pull step
   --no-build           Restart without rebuilding image (local source only)
   --prune              Run 'docker image prune -f' after update
@@ -76,11 +76,6 @@ if [ "$SOURCE" != "ghcr" ] && [ "$SOURCE" != "local" ]; then
   exit 1
 fi
 
-if [ ! -d "$REPO_ROOT/.git" ]; then
-  echo "[error] Not a git repo: $REPO_ROOT"
-  exit 1
-fi
-
 if [ ! -f "$REPO_ROOT/docker-compose.yml" ]; then
   echo "[error] docker-compose.yml not found in: $REPO_ROOT"
   exit 1
@@ -95,13 +90,20 @@ else
   exit 1
 fi
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "[error] git is required."
-  exit 1
+if [ "$SKIP_GIT_PULL" != true ]; then
+  if [ ! -d "$REPO_ROOT/.git" ]; then
+    echo "[error] --skip-git-pull is false, but repo is not a git checkout: $REPO_ROOT"
+    exit 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[error] git is required when git pull is enabled."
+    exit 1
+  fi
 fi
 
 COMPOSE_FILES=(-f docker-compose.yml)
 if [ "$SOURCE" = "local" ]; then
+  echo "[warn] --source local is deprecated for deployment. Prefer --source ghcr."
   if [ ! -f "$REPO_ROOT/docker-compose.build.yml" ]; then
     echo "[error] docker-compose.build.yml not found in: $REPO_ROOT"
     exit 1
@@ -119,9 +121,8 @@ echo "[start] Repo: $REPO_ROOT"
 echo "[start] Service: $SERVICE"
 echo "[start] Source: $SOURCE"
 
-echo "[start] Current commit: $(git rev-parse --short HEAD)"
-
 if [ "$SKIP_GIT_PULL" != true ]; then
+  echo "[start] Current commit: $(git rev-parse --short HEAD)"
   echo "[start] Updating source from origin/$BRANCH"
   git fetch origin "$BRANCH"
   git checkout "$BRANCH"

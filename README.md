@@ -97,6 +97,25 @@ Optional local build workflow:
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build mealie-organizer
 ```
 
+### Public image deploy (no registry login required)
+
+This repository publishes a public image to GHCR:
+
+- `ghcr.io/thekannen/mealie-organizer:latest`
+
+You can deploy it directly without `docker login`:
+
+```bash
+docker pull ghcr.io/thekannen/mealie-organizer:latest
+docker compose up -d --no-build mealie-organizer
+```
+
+For controlled rollouts, pin a tag in `.env`:
+
+```env
+MEALIE_ORGANIZER_TAG=v2026.02.6
+```
+
 5. Watch logs.
 
 ```bash
@@ -180,6 +199,10 @@ Useful options:
 - `--no-build`
 - `--branch <name>`
 - `--prune`
+
+Notes:
+- `--source local` is still available but deprecated for regular deployments.
+- With `--skip-git-pull`, the script can run in non-git environments as long as compose files are present.
 
 Manual GHCR equivalent:
 
