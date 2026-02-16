@@ -39,29 +39,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "jFpmf",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "AGrcz",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "C7XX2",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "w2cJC",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -1846,6 +1833,19 @@
           "children": [
             {
               "type": "frame",
+              "id": "6UQPP",
+              "name": "authWordmark",
+              "width": "fill_container",
+              "height": 140,
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "../../branding/CookDex_wordmark.png",
+                "mode": "fill"
+              }
+            },
+            {
+              "type": "frame",
               "id": "S4ut1",
               "name": "authBadge",
               "fill": "#FFF1E2",
@@ -1882,7 +1882,7 @@
               "id": "XpeoN",
               "name": "authSub",
               "fill": "#6F635A",
-              "content": "Mealie Organizer guides setup, keeps labels human-friendly, and protects secrets by default.",
+              "content": "CookDex guides setup, keeps labels human-friendly, and protects secrets by default.",
               "fontFamily": "Inter",
               "fontSize": 16,
               "fontWeight": "normal"
@@ -2179,29 +2179,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "gREgi",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "SkWB3",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "8vaFw",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "E2VGM",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -3612,29 +3599,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "p5OZC",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "ThcWL",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "UrebO",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "PRP4h",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -5369,29 +5343,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "7lFux",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "UMZ8m",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "YB5em",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "5ZHFG",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -7244,29 +7205,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "c3dTR",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "5wdXO",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "xH3Fn",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "I4u5D",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -8688,29 +8636,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "nNLdX",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "YywLq",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "RkEw9",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "QNvVM",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -9395,7 +9330,7 @@
                                   "type": "text",
                                   "id": "93O06",
                                   "fill": "#2B2B2B",
-                                  "content": "How do I set up Mealie Organizer for the first time?",
+                                  "content": "How do I set up CookDex for the first time?",
                                   "fontFamily": "Inter",
                                   "fontSize": 14,
                                   "fontWeight": "700"
@@ -10429,29 +10364,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "iZabU",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "T01Tx",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "nSw9U",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "wpCxN",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
@@ -11055,7 +10977,7 @@
                   "type": "text",
                   "id": "u0PTe",
                   "fill": "#2B2B2B",
-                  "content": "About Mealie Organizer",
+                  "content": "About CookDex",
                   "fontFamily": "Inter",
                   "fontSize": 26,
                   "fontWeight": "700"
@@ -11592,7 +11514,7 @@
                           "type": "text",
                           "id": "per6G",
                           "fill": "#2B2B2B",
-                          "content": "Mealie Organizer 2026.2.11",
+                          "content": "CookDex 2026.2.11",
                           "fontFamily": "Inter",
                           "fontSize": 20,
                           "fontWeight": "700"
@@ -11889,7 +11811,7 @@
                           "fill": "#6F635A",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "Mealie Organizer is designed for home server users who want powerful cleanup and organization workflows without command-line complexity.",
+                          "content": "CookDex is designed for home server users who want powerful cleanup and organization workflows without command-line complexity.",
                           "fontFamily": "Inter",
                           "fontSize": 12,
                           "fontWeight": "normal"
@@ -11943,29 +11865,16 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "y5947",
-                  "layout": "vertical",
-                  "gap": 2,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "DQyTs",
-                      "fill": "#2B2B2B",
-                      "content": "Mealie Organizer",
-                      "fontFamily": "Inter",
-                      "fontSize": 20,
-                      "fontWeight": "700"
-                    },
-                    {
-                      "type": "text",
-                      "id": "OplOb",
-                      "fill": "#6F635A",
-                      "content": "Kitchen automation",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "id": "TPwU2",
+                  "name": "brandWordmark",
+                  "width": 200,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../../branding/CookDex_wordmark.png",
+                    "mode": "fill"
+                  }
                 },
                 {
                   "type": "frame",
