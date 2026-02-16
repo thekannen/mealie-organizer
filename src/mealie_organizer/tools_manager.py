@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from .api_client import MealieApiClient
 from .config import (
     env_or_config,
@@ -93,6 +95,20 @@ class ToolsSyncManager:
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _http_status_code(exc: Exception) -> int | None:
+        if not isinstance(exc, requests.HTTPError):
+            return None
+        response = getattr(exc, "response", None)
+        if response is None:
+            return None
+        return response.status_code
+
+    @classmethod
+    def _is_endpoint_unavailable(cls, exc: Exception) -> bool:
+        status_code = cls._http_status_code(exc)
+        return status_code in {404, 405, 501}
+
     def build_duplicate_actions(self, tools: list[dict[str, Any]]) -> list[ToolMergeAction]:
         groups: dict[str, list[dict[str, Any]]] = {}
         for item in tools:
@@ -124,24 +140,52 @@ class ToolsSyncManager:
 
     def run(self) -> dict[str, Any]:
         desired = load_tool_names(self.file_path)
-        existing = self.client.list_tools(per_page=1000)
+        print(f"[start] Syncing {len(desired)} tool(s) from {self.file_path}", flush=True)
+        try:
+            existing = self.client.list_tools(per_page=1000)
+        except Exception as exc:
+            report = {
+                "summary": {
+                    "desired": len(desired),
+                    "existing": 0,
+                    "created": 0,
+                    "skipped": 0,
+                    "merge_candidates_total": 0,
+                    "merge_actions_attempted": 0,
+                    "merged": 0,
+                    "failed": 1,
+                    "checkpoint_skipped": 0,
+                    "mode": "apply" if (self.apply and not self.dry_run) else "audit",
+                },
+                "create_actions": [],
+                "merge_actions": [],
+                "source_file": str(self.file_path),
+                "checkpoint_file": str(self.checkpoint_path),
+                "error": str(exc),
+            }
+            print(f"[error] Failed to list tools: {exc}", flush=True)
+            print("[hint] This Mealie server may not expose tools endpoints for this API version.", flush=True)
+            return report
         existing_by_norm = {
             normalize_name(str(item.get("name") or "")): item
             for item in existing
             if str(item.get("name") or "").strip()
         }
+        print(f"[start] Existing tools found: {len(existing)}", flush=True)
 
         executable = self.apply and not self.dry_run
         created = 0
         skipped = 0
         failed = 0
         create_actions: list[dict[str, Any]] = []
+        endpoint_unavailable = False
 
-        for name in desired:
+        for index, name in enumerate(desired):
             norm = normalize_name(name)
             if norm in existing_by_norm:
                 skipped += 1
                 create_actions.append({"action": "skip", "name": name, "reason": "exists"})
+                print(f"[skip] Tool unchanged: {name}", flush=True)
                 continue
             if executable:
                 try:
@@ -149,14 +193,45 @@ class ToolsSyncManager:
                     created += 1
                     existing_by_norm[norm] = created_item
                     create_actions.append({"action": "create", "name": name, "status": "created"})
+                    print(f"[ok] Created tool: {name}", flush=True)
                 except Exception as exc:
                     failed += 1
                     create_actions.append({"action": "create", "name": name, "status": "failed", "error": str(exc)})
+                    print(f"[error] Create tool failed '{name}': {exc}", flush=True)
+                    if self._is_endpoint_unavailable(exc):
+                        endpoint_unavailable = True
+                        remaining = desired[index + 1 :]
+                        if remaining:
+                            skipped += len(remaining)
+                            for pending in remaining:
+                                create_actions.append(
+                                    {
+                                        "action": "create",
+                                        "name": pending,
+                                        "status": "skipped",
+                                        "reason": "endpoint_unavailable",
+                                    }
+                                )
+                        print(
+                            "[hint] Tool create endpoint is unavailable on this Mealie server/version; "
+                            "skipping remaining create actions.",
+                            flush=True,
+                        )
+                        break
             else:
                 create_actions.append({"action": "create", "name": name, "status": "planned"})
+                print(f"[plan] Create tool: {name}", flush=True)
 
-        tools = self.client.list_tools(per_page=1000)
-        merge_candidates = self.build_duplicate_actions(tools)
+        if endpoint_unavailable:
+            merge_candidates: list[ToolMergeAction] = []
+        else:
+            try:
+                tools = self.client.list_tools(per_page=1000)
+                merge_candidates = self.build_duplicate_actions(tools)
+            except Exception as exc:
+                failed += 1
+                merge_candidates = []
+                print(f"[error] Failed to refresh tools for duplicate scan: {exc}", flush=True)
         checkpoint = self.load_checkpoint()
         merged_source_ids = set(checkpoint)
         merge_actions: list[dict[str, Any]] = []
@@ -184,12 +259,33 @@ class ToolsSyncManager:
                     merged_source_ids.add(candidate.source_id)
                     self.save_checkpoint(merged_source_ids)
                     entry["status"] = "merged"
+                    print(
+                        f"[ok] Merged duplicate tool '{candidate.source_name}' into '{candidate.target_name}'",
+                        flush=True,
+                    )
                 except Exception as exc:
                     failed += 1
                     entry["status"] = "failed"
                     entry["error"] = str(exc)
+                    print(
+                        f"[error] Merge tool failed '{candidate.source_name}' -> '{candidate.target_name}': {exc}",
+                        flush=True,
+                    )
+                    if self._is_endpoint_unavailable(exc):
+                        endpoint_unavailable = True
+                        print(
+                            "[hint] Tool merge endpoint is unavailable on this Mealie server/version; "
+                            "skipping remaining merge actions.",
+                            flush=True,
+                        )
+                        merge_actions.append(entry)
+                        break
             else:
                 entry["status"] = "planned"
+                print(
+                    f"[plan] Merge duplicate tool '{candidate.source_name}' into '{candidate.target_name}'",
+                    flush=True,
+                )
             merge_actions.append(entry)
 
         report = {
@@ -210,7 +306,13 @@ class ToolsSyncManager:
             "source_file": str(self.file_path),
             "checkpoint_file": str(self.checkpoint_path),
         }
-        print(f"[summary] {json.dumps(report['summary'], indent=2)}", flush=True)
+        print(
+            "[done] "
+            f"tools desired={len(desired)} existing={len(existing)} "
+            f"created={created} skipped={skipped} merge_candidates={len(merge_candidates)} "
+            f"merged={merged} failed={failed}",
+            flush=True,
+        )
         return report
 
 

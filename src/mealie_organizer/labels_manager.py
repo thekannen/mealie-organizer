@@ -66,6 +66,7 @@ class LabelsSyncManager:
         }
 
         executable = self.apply and not self.dry_run
+        print(f"[start] Syncing {len(desired_names)} label(s) from {self.file_path}", flush=True)
         created = 0
         skipped = 0
         deleted = 0
@@ -77,6 +78,7 @@ class LabelsSyncManager:
             if norm in existing_by_norm:
                 skipped += 1
                 actions.append({"action": "skip", "name": name, "reason": "exists"})
+                print(f"[skip] Label unchanged: {name}", flush=True)
                 continue
             if executable:
                 try:
@@ -84,11 +86,14 @@ class LabelsSyncManager:
                     created += 1
                     existing_by_norm[norm] = created_item
                     actions.append({"action": "create", "name": name, "status": "created"})
+                    print(f"[ok] Created label: {name}", flush=True)
                 except Exception as exc:
                     failed += 1
                     actions.append({"action": "create", "name": name, "status": "failed", "error": str(exc)})
+                    print(f"[error] Create label failed '{name}': {exc}", flush=True)
             else:
                 actions.append({"action": "create", "name": name, "status": "planned"})
+                print(f"[plan] Create label: {name}", flush=True)
 
         if self.replace:
             desired_norms = {normalize_name(name) for name in desired_names}
@@ -104,11 +109,14 @@ class LabelsSyncManager:
                         self.client.delete_label(label_id)
                         deleted += 1
                         actions.append({"action": "delete", "name": name, "status": "deleted"})
+                        print(f"[ok] Deleted label: {name}", flush=True)
                     except Exception as exc:
                         failed += 1
                         actions.append({"action": "delete", "name": name, "status": "failed", "error": str(exc)})
+                        print(f"[error] Delete label failed '{name}': {exc}", flush=True)
                 else:
                     actions.append({"action": "delete", "name": name, "status": "planned"})
+                    print(f"[plan] Delete label: {name}", flush=True)
 
         report = {
             "summary": {
@@ -124,7 +132,10 @@ class LabelsSyncManager:
             "actions": actions,
             "source_file": str(self.file_path),
         }
-        print(f"[summary] {json.dumps(report['summary'], indent=2)}", flush=True)
+        print(
+            f"[done] labels created={created} deleted={deleted} skipped={skipped} failed={failed}",
+            flush=True,
+        )
         return report
 
 

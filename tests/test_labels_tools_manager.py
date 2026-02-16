@@ -1,3 +1,5 @@
+import requests
+
 from mealie_organizer.labels_manager import LabelsSyncManager, load_label_names
 from mealie_organizer.tools_manager import ToolsSyncManager, load_tool_names
 
@@ -41,6 +43,24 @@ class FakeToolsClient:
         return {}
 
 
+class FakeToolsUnsupportedClient:
+    def __init__(self):
+        self.tools = []
+        self.created: list[str] = []
+
+    def list_tools(self, per_page=1000):
+        return list(self.tools)
+
+    def create_tool(self, name):
+        self.created.append(name)
+        response = requests.Response()
+        response.status_code = 404
+        raise requests.HTTPError("tools endpoint missing", response=response)
+
+    def merge_tool(self, source_id, target_id):
+        raise AssertionError("merge_tool should not be called when create endpoint is unavailable")
+
+
 def test_load_label_names_dedups(tmp_path):
     file_path = tmp_path / "labels.json"
     file_path.write_text('["Meal Prep", "meal prep", "New Recipe"]', encoding="utf-8")
@@ -79,3 +99,20 @@ def test_tools_sync_apply_merges_duplicates(tmp_path):
     report = manager.run()
     assert client.merged == [("2", "1")]
     assert report["summary"]["merged"] == 1
+
+
+def test_tools_sync_apply_stops_after_endpoint_unavailable(tmp_path):
+    file_path = tmp_path / "tools.json"
+    file_path.write_text('["Blender", "Dutch Oven", "Slow Cooker"]', encoding="utf-8")
+    client = FakeToolsUnsupportedClient()
+    manager = ToolsSyncManager(
+        client,
+        dry_run=False,
+        apply=True,
+        file_path=file_path,
+        checkpoint_dir=tmp_path / "checkpoints",
+    )
+    report = manager.run()
+    assert client.created == ["Blender"]
+    assert report["summary"]["failed"] == 1
+    assert report["summary"]["skipped"] == 2
