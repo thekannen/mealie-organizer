@@ -14,93 +14,93 @@
     "position": 2
   },
   {
+    "name": "Casseroles",
+    "description": "Recipes tagged as casseroles.",
+    "queryFilterString": "tags.name IN [\"Casserole\"]",
+    "public": false,
+    "position": 3
+  },
+  {
     "name": "Comfort Food Favorites",
     "description": "Hearty comfort recipes for regular rotation.",
     "queryFilterString": "tags.name IN [\"Comfort Food\"]",
     "public": false,
-    "position": 3
+    "position": 4
   },
   {
     "name": "Crowd and Holiday",
     "description": "Recipes for gatherings and celebrations.",
     "queryFilterString": "tags.name IN [\"Crowd-Pleaser\", \"Party\", \"Holiday\"]",
     "public": false,
-    "position": 4
+    "position": 5
   },
   {
     "name": "Desserts",
     "description": "Dessert recipes, baked treats, and sweet finishes.",
     "queryFilterString": "recipeCategory.name IN [\"Dessert\"]",
     "public": false,
-    "position": 5
+    "position": 6
   },
   {
     "name": "Fresh and Light",
     "description": "Lighter recipes with fresh, lower-carb, or no-cook signals.",
     "queryFilterString": "tags.name IN [\"Fresh\", \"Citrus\", \"No-Cook\", \"Low-Carb\", \"Mediterranean\"]",
     "public": false,
-    "position": 6
+    "position": 7
   },
   {
     "name": "High Protein",
     "description": "Protein-forward meals and snacks.",
     "queryFilterString": "tags.name IN [\"High-Protein\", \"Chicken\", \"Seafood\", \"Tofu\"]",
     "public": false,
-    "position": 7
+    "position": 8
   },
   {
     "name": "Meal Prep Queue",
     "description": "Recipes suited for prep, storage, and reheating.",
     "queryFilterString": "tags.name IN [\"Meal Prep\", \"Make-Ahead\", \"Freezer-Friendly\"]",
     "public": false,
-    "position": 8
+    "position": 9
   },
   {
     "name": "Non-Alcohol Drinks",
     "description": "Non-alcoholic beverages, mocktails, smoothies, and refresher drinks.",
     "queryFilterString": "recipeCategory.name IN [\"Drink\"] AND tags.name IN [\"Non-Alcoholic\"]",
     "public": false,
-    "position": 9
+    "position": 10
   },
   {
     "name": "Noodle Favorites",
     "description": "Noodle recipes across Asian and fusion styles.",
     "queryFilterString": "tags.name IN [\"Noodles\", \"Chinese\", \"Japanese\", \"Korean\", \"Thai\", \"Vietnamese\"]",
     "public": false,
-    "position": 10
+    "position": 11
   },
   {
     "name": "Originals",
     "description": "Manually created home recipes and non-URL imports.",
     "queryFilterString": "recipeCategory.name IN [\"Originals\"]",
     "public": false,
-    "position": 11
+    "position": 12
   },
   {
     "name": "Plant-Based",
     "description": "Vegetarian and vegan recipes, including tofu-forward dishes.",
     "queryFilterString": "tags.name IN [\"Vegetarian\", \"Vegan\", \"Tofu\"]",
     "public": false,
-    "position": 12
+    "position": 13
   },
   {
     "name": "Protein Mains",
     "description": "Main dishes organized by primary protein.",
     "queryFilterString": "tags.name IN [\"Chicken\", \"Beef\", \"Pork\", \"Seafood\"]",
     "public": false,
-    "position": 13
+    "position": 14
   },
   {
     "name": "Weeknight Fast Dinners",
     "description": "Dinner recipes for fast weekday cooking and low-mess prep.",
     "queryFilterString": "recipeCategory.name IN [\"Dinner\"] AND tags.name IN [\"Weeknight\", \"30-Minute\", \"One-Pot\"]",
-    "public": false,
-    "position": 14
-  },
-  {
-    "name": "Casseroles",
-    "description": "Recipes tagged as casseroles.",
-    "queryFilterString": "tags.name IN [\"Casserole\"]",
     "public": false,
     "position": 15
   }

@@ -8,3 +8,4 @@ cache/
 reports/
 .DS_Store
 .tmp/
+.beads/
