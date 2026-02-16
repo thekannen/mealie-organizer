@@ -16,9 +16,15 @@ COPY configs ./configs
 
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir -e .
+    && pip install --no-cache-dir .
 
-RUN mkdir -p /app/cache /app/logs /app/reports
+RUN addgroup --system app \
+    && adduser --system --ingroup app app \
+    && mkdir -p /app/cache /app/logs /app/reports \
+    && chown -R app:app /app \
+    && chmod +x /app/scripts/docker/entrypoint.sh
+
+USER app
 
 ENTRYPOINT ["/app/scripts/docker/entrypoint.sh"]
 CMD []
