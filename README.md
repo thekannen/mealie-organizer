@@ -71,3 +71,16 @@ After first login, runtime `.env`-style variables are configurable from the Web 
 ```bash
 python -m pytest
 ```
+
+## Local Web UI QA Loop
+
+Run the full local verification loop (build -> start -> browser click-through -> analyze) using your `.env` values:
+
+```bash
+python scripts/qa/run_local_webui_qa.py --iterations 3
+```
+
+Artifacts are written to `reports/qa/loop-*/` with:
+- `smoke/report.json` (per-check results)
+- `smoke/screenshots/` (page and failure captures)
+- `server.log` (backend runtime log)

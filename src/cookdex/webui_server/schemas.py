@@ -63,5 +63,15 @@ class SettingsUpdateRequest(BaseModel):
     env: dict[str, str | None] = Field(default_factory=dict)
 
 
+class ProviderConnectionTestRequest(BaseModel):
+    openai_api_key: str | None = None
+    openai_model: str | None = None
+    ollama_url: str | None = None
+    ollama_model: str | None = None
+    mealie_url: str | None = None
+    mealie_api_key: str | None = None
+
+
 class ConfigWriteRequest(BaseModel):
     content: Any
+

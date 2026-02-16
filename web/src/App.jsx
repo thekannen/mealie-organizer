@@ -1,38 +1,50 @@
 import React, { useEffect, useMemo, useState } from "react";
+import wordmark from "./assets/CookDex_wordmark.png";
+import emblem from "./assets/CookDex_light.png";
 
 const NAV_ITEMS = [
-  { id: "overview", label: "Overview" },
-  { id: "runs", label: "Runs" },
-  { id: "schedules", label: "Schedules" },
-  { id: "environment", label: "Environment" },
-  { id: "config", label: "Taxonomy" },
-  { id: "users", label: "Users" },
+  { id: "overview", label: "Overview", icon: "home" },
+  { id: "runs", label: "Runs", icon: "play" },
+  { id: "schedules", label: "Schedules", icon: "calendar" },
+  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "recipe-organization", label: "Recipe Organization", icon: "layers" },
+  { id: "users", label: "Users", icon: "users" },
+  { id: "help", label: "Help", icon: "help" },
+  { id: "about", label: "About", icon: "info" },
 ];
 
 const PAGE_META = {
   overview: {
     title: "System Overview",
-    subtitle: "Live status for tasks, runs, schedules, and configuration coverage.",
+    subtitle: "Live summary of recipe organization coverage, run health, and Mealie metrics.",
   },
   runs: {
-    title: "Start a Run",
-    subtitle: "Pick a task and tune options with plain-language controls.",
+    title: "Runs",
+    subtitle: "Run one-off tasks and review output from manual and scheduled executions.",
   },
   schedules: {
-    title: "Automated Schedules",
-    subtitle: "Create recurring runs without writing cron JSON by hand.",
+    title: "Schedules",
+    subtitle: "Set recurring runs with interval or cron schedules and monitor schedule activity.",
   },
-  environment: {
-    title: "Connections & Preferences",
-    subtitle: "Manage runtime settings with friendly labels and secure secret storage.",
+  settings: {
+    title: "Settings",
+    subtitle: "Configure Mealie, AI provider, and runtime behavior from one place.",
   },
-  config: {
-    title: "Taxonomy Editor",
-    subtitle: "Edit supported files as line-based pills with touch-friendly controls.",
+  "recipe-organization": {
+    title: "Recipe Organization",
+    subtitle: "Manage categories, cookbooks, labels, tags, tools, and units from taxonomy files.",
   },
   users: {
-    title: "Users & Access",
-    subtitle: "Create users, rotate passwords, and manage account access.",
+    title: "Users and Access",
+    subtitle: "Manage accounts, reset passwords, and keep access secure.",
+  },
+  help: {
+    title: "Help Center",
+    subtitle: "Self-contained setup and troubleshooting guidance embedded from project docs.",
+  },
+  about: {
+    title: "About CookDex",
+    subtitle: "Version, project links, and operational metrics for this deployment.",
   },
 };
 
@@ -43,8 +55,33 @@ const CONFIG_LABELS = {
   cookbooks: "Cookbooks",
   labels: "Labels",
   tools: "Tools",
-  units_aliases: "Unit Aliases",
+  units_aliases: "Units",
 };
+
+const TAXONOMY_FILE_NAMES = ["categories", "cookbooks", "labels", "tags", "tools", "units_aliases"];
+
+const HELP_FAQ = [
+  {
+    question: "Why do I need to keep the API key secret?",
+    answer:
+      "The key has write access to your Mealie data. Store it in Settings and avoid sharing screenshots that include connection details.",
+  },
+  {
+    question: "Can I dry-run before applying changes?",
+    answer:
+      "Yes. Most tasks default to dry run. Keep Dry Run enabled when validating new taxonomy updates or parser changes.",
+  },
+  {
+    question: "How do permissions work for team members?",
+    answer:
+      "Create separate user accounts for each person. Use temporary passwords and reset after onboarding for better access hygiene.",
+  },
+  {
+    question: "What does JSON import do on Recipe Organization?",
+    answer:
+      "Import replaces the selected taxonomy file content with your JSON payload. Validate your JSON first and keep backups in git.",
+  },
+];
 
 function inferBasePath() {
   const known = "/cookdex";
@@ -57,23 +94,122 @@ function inferBasePath() {
 const BASE_PATH = inferBasePath();
 const API = `${BASE_PATH}/api/v1`;
 
+const ICON_PATHS = {
+  home: (
+    <>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5 10.5V20h14v-9.5" />
+      <path d="M10 20v-5h4v5" />
+    </>
+  ),
+  play: <path d="M8 6v12l10-6-10-6Z" />,
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18" />
+      <path d="M8 3v4M16 3v4" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 4 8 4-8 4-8-4 8-4Z" />
+      <path d="m4 12 8 4 8-4" />
+      <path d="m4 16 8 4 8-4" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <circle cx="17" cy="9" r="2.2" />
+      <path d="M3 19c0-2.8 2.7-5 6-5s6 2.2 6 5" />
+      <path d="M14 19c.2-1.9 1.8-3.3 4-3.3 1 0 1.9.2 2.7.8" />
+    </>
+  ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.7 9.2a2.7 2.7 0 1 1 4.6 2c-.8.8-1.8 1.3-1.8 2.5" />
+      <circle cx="12" cy="16.9" r=".8" fill="currentColor" stroke="none" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10.5v6" />
+      <circle cx="12" cy="7.5" r=".8" fill="currentColor" stroke="none" />
+    </>
+  ),
+  refresh: <path d="M20 4v5h-5M4 20v-5h5M20 9a8 8 0 0 0-13.6-4M4 15a8 8 0 0 0 13.6 4" />,
+  logout: (
+    <>
+      <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
+      <path d="M14 16l5-4-5-4" />
+      <path d="M9 12h10" />
+    </>
+  ),
+  chevron: <path d="m9 6 6 6-6 6" />,
+  menu: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m20 20-4.2-4.2" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M5 4h12l2 2v14H5z" />
+      <path d="M8 4v5h8V4" />
+      <path d="M8 20v-6h8v6" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 16V6" />
+      <path d="m8.5 9.5 3.5-3.5 3.5 3.5" />
+      <path d="M5 18h14" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M14 5h5v5" />
+      <path d="M19 5 10 14" />
+      <path d="M18 14v5H5V6h5" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 3 5 6v6c0 4.5 2.8 7.6 7 9 4.2-1.4 7-4.5 7-9V6z" />
+      <path d="m9.5 12 1.8 1.8 3.2-3.2" />
+    </>
+  ),
+};
+
+function Icon({ name, className = "" }) {
+  return (
+    <svg className={`ui-icon ${className}`.trim()} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {ICON_PATHS[name] || <circle cx="12" cy="12" r="8" />}
+    </svg>
+  );
+}
+
 function safeJsonParse(value) {
   try {
     return JSON.parse(value);
   } catch {
     return null;
   }
-}
-
-function errorMessageFromPayload(payload, status) {
-  if (payload && typeof payload === "object") {
-    const detail = payload.detail ?? payload.message ?? payload.error;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
-    }
-    return `Request failed (${status})`;
-  }
-  return `Request failed (${status})`;
 }
 
 function normalizeErrorMessage(raw) {
@@ -147,10 +283,89 @@ function moveArrayItem(items, fromIndex, toIndex) {
   next.splice(toIndex, 0, moved);
   return next;
 }
+function parseIso(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function formatDateTime(value) {
+  const date = parseIso(value);
+  if (!date) {
+    return "-";
+  }
+  return date.toLocaleString();
+}
+
+function formatDurationMs(ms) {
+  const safe = Math.max(0, Math.floor(ms));
+  const totalSeconds = Math.floor(safe / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+function formatRunTime(run) {
+  const started = parseIso(run.started_at);
+  if (!started) {
+    return "--:--:--";
+  }
+  const finished = parseIso(run.finished_at);
+  if (!finished) {
+    if (String(run.status || "").toLowerCase() === "running") {
+      return formatDurationMs(Date.now() - started.getTime());
+    }
+    return "--:--:--";
+  }
+  return formatDurationMs(finished.getTime() - started.getTime());
+}
+
+function runTypeLabel(run) {
+  return run.schedule_id ? "Scheduled" : "Manual";
+}
+
+function userRoleLabel(username, currentUsername) {
+  return String(username || "") === String(currentUsername || "") ? "Owner" : "Editor";
+}
+
+function statusClass(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "succeeded") {
+    return "success";
+  }
+  if (value === "running") {
+    return "running";
+  }
+  if (value === "failed" || value === "canceled") {
+    return "danger";
+  }
+  return "neutral";
+}
+
+function errorMessageFromPayload(payload, status) {
+  if (payload && typeof payload === "object") {
+    const detail = payload.detail ?? payload.message ?? payload.error;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+    return `Request failed (${status})`;
+  }
+  return `Request failed (${status})`;
+}
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   let body = options.body;
+
   if (body && typeof body !== "string") {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(body);
@@ -190,10 +405,29 @@ async function api(path, options = {}) {
   return textPayload;
 }
 
+function CoverageRing({ label, value, helper, detail, tone = "accent" }) {
+  const percent = Math.max(0, Math.min(100, Number(value) || 0));
+  const degree = Math.round((percent / 100) * 360);
+
+  return (
+    <div className="coverage-card">
+      <div
+        className={`coverage-ring tone-${tone}`}
+        style={{ background: `conic-gradient(var(--tone-color) ${degree}deg, var(--line-soft) ${degree}deg)` }}
+      >
+        <span>{percent}%</span>
+      </div>
+      <h4>{label}</h4>
+      <p>{helper}</p>
+      {detail ? <p className="tiny muted">{detail}</p> : null}
+    </div>
+  );
+}
+
 function fieldFromOption(option, value, onChange) {
   if (option.type === "boolean") {
     return (
-      <label key={option.key} className="field row">
+      <label key={option.key} className="field field-inline">
         <span>{option.label}</span>
         <input
           type="checkbox"
@@ -270,6 +504,7 @@ function normalizeTaskOptions(task, values) {
 export default function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
   const [setupRequired, setSetupRequired] = useState(false);
   const [registerUsername, setRegisterUsername] = useState("admin");
   const [registerPassword, setRegisterPassword] = useState("");
@@ -277,23 +512,31 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [session, setSession] = useState(null);
+
   const [theme, setTheme] = useState(() => {
-    const stored = window.localStorage.getItem("mo_webui_theme");
+    const stored = window.localStorage.getItem("cookdex_webui_theme");
     if (stored === "light" || stored === "dark") {
       return stored;
     }
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return "light";
   });
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activePage, setActivePage] = useState("overview");
 
   const [tasks, setTasks] = useState([]);
   const [runs, setRuns] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [users, setUsers] = useState([]);
+
   const [selectedTask, setSelectedTask] = useState("");
   const [taskValues, setTaskValues] = useState({});
+  const [runSearch, setRunSearch] = useState("");
+  const [runTypeFilter, setRunTypeFilter] = useState("all");
   const [runLog, setRunLog] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState("");
 
+  const [scheduleSearch, setScheduleSearch] = useState("");
   const [scheduleForm, setScheduleForm] = useState({
     name: "",
     task_id: "",
@@ -305,22 +548,39 @@ export default function App() {
   const [scheduleOptionValues, setScheduleOptionValues] = useState({});
 
   const [configFiles, setConfigFiles] = useState([]);
-  const [activeConfig, setActiveConfig] = useState("");
-  const [activeConfigBody, setActiveConfigBody] = useState("{}\n");
-  const [activeConfigMode, setActiveConfigMode] = useState("json");
-  const [activeConfigListKind, setActiveConfigListKind] = useState("");
+  const [activeConfig, setActiveConfig] = useState("categories");
+  const [activeConfigBody, setActiveConfigBody] = useState("[]\n");
+  const [activeConfigMode, setActiveConfigMode] = useState("line-pills");
+  const [activeConfigListKind, setActiveConfigListKind] = useState("name_object");
   const [activeConfigItems, setActiveConfigItems] = useState([]);
   const [configDraftItem, setConfigDraftItem] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
-  const [touchDragState, setTouchDragState] = useState(null);
+
+  const [importTarget, setImportTarget] = useState("categories");
+  const [importJsonText, setImportJsonText] = useState("");
 
   const [envSpecs, setEnvSpecs] = useState({});
   const [envDraft, setEnvDraft] = useState({});
   const [envClear, setEnvClear] = useState({});
+  const [connectionChecks, setConnectionChecks] = useState({
+    mealie: { loading: false, ok: null, detail: "" },
+    openai: { loading: false, ok: null, detail: "" },
+    ollama: { loading: false, ok: null, detail: "" },
+  });
 
   const [newUserUsername, setNewUserUsername] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserRole, setNewUserRole] = useState("Editor");
   const [newUserPassword, setNewUserPassword] = useState("");
+  const [userSearch, setUserSearch] = useState("");
   const [resetPasswords, setResetPasswords] = useState({});
+
+  const [taxonomyItemsByFile, setTaxonomyItemsByFile] = useState({});
+  const [helpDocs, setHelpDocs] = useState([]);
+  const [overviewMetrics, setOverviewMetrics] = useState(null);
+  const [aboutMeta, setAboutMeta] = useState(null);
+  const [healthMeta, setHealthMeta] = useState(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState("");
 
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
@@ -333,6 +593,14 @@ export default function App() {
   );
 
   const activePageMeta = PAGE_META[activePage] || PAGE_META.overview;
+
+  const taskTitleById = useMemo(() => {
+    const map = new Map();
+    for (const task of tasks) {
+      map.set(task.task_id, task.title || task.task_id);
+    }
+    return map;
+  }, [tasks]);
 
   const envList = useMemo(
     () =>
@@ -347,14 +615,17 @@ export default function App() {
     [envSpecs]
   );
 
-  const envGroups = useMemo(() => {
+  const visibleEnvGroups = useMemo(() => {
     const grouped = new Map();
     for (const item of envList) {
-      const group = String(item.group || "General");
-      if (!grouped.has(group)) {
-        grouped.set(group, []);
+      const groupName = String(item.group || "General");
+      if (groupName === "Web UI" || groupName === "Behavior") {
+        continue;
       }
-      grouped.get(group).push(item);
+      if (!grouped.has(groupName)) {
+        grouped.set(groupName, []);
+      }
+      grouped.get(groupName).push(item);
     }
     return [...grouped.entries()];
   }, [envList]);
@@ -370,10 +641,174 @@ export default function App() {
     return stats;
   }, [runs]);
 
+  const filteredRuns = useMemo(() => {
+    const source =
+      runTypeFilter === "manual"
+        ? runs.filter((run) => !run.schedule_id)
+        : runTypeFilter === "scheduled"
+        ? runs.filter((run) => Boolean(run.schedule_id))
+        : runs;
+    const query = runSearch.trim().toLowerCase();
+    if (!query) {
+      return source;
+    }
+    return source.filter((run) => {
+      const taskLabel = taskTitleById.get(run.task_id) || run.task_id;
+      const fields = [taskLabel, run.task_id, run.status, runTypeLabel(run), run.triggered_by, run.run_id]
+        .join(" ")
+        .toLowerCase();
+      return fields.includes(query);
+    });
+  }, [runs, runSearch, runTypeFilter, taskTitleById]);
+
+  const filteredScheduledRuns = useMemo(() => {
+    const source = runs.filter((run) => Boolean(run.schedule_id));
+    const query = scheduleSearch.trim().toLowerCase();
+    if (!query) {
+      return source;
+    }
+    return source.filter((run) => {
+      const taskLabel = taskTitleById.get(run.task_id) || run.task_id;
+      const fields = [taskLabel, run.task_id, run.status, run.schedule_id || ""].join(" ").toLowerCase();
+      return fields.includes(query);
+    });
+  }, [runs, scheduleSearch, taskTitleById]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    if (!query) {
+      return users;
+    }
+    return users.filter((item) => {
+      const username = String(item.username || "");
+      const inferredRole = username === session?.username ? "owner" : "editor";
+      return `${username} ${inferredRole}`.toLowerCase().includes(query);
+    });
+  }, [users, userSearch, session]);
+
+  const taxonomyCounts = useMemo(() => {
+    const rows = {};
+    for (const name of TAXONOMY_FILE_NAMES) {
+      const content = taxonomyItemsByFile[name];
+      rows[name] = Array.isArray(content) ? content.length : 0;
+    }
+    return rows;
+  }, [taxonomyItemsByFile]);
+
+  const overviewTotals = useMemo(() => {
+    const liveTotals = overviewMetrics?.totals || {};
+    return {
+      recipes: liveTotals.recipes ?? 0,
+      ingredients: liveTotals.ingredients ?? 0,
+      categories: liveTotals.categories ?? taxonomyCounts.categories ?? 0,
+      tags: liveTotals.tags ?? taxonomyCounts.tags ?? 0,
+      tools: liveTotals.tools ?? taxonomyCounts.tools ?? 0,
+      labels: liveTotals.labels ?? taxonomyCounts.labels ?? 0,
+      units: liveTotals.units ?? taxonomyCounts.units_aliases ?? 0,
+    };
+  }, [overviewMetrics, taxonomyCounts]);
+
+  const overviewCoverage = useMemo(
+    () => overviewMetrics?.coverage || { categories: 0, tags: 0, tools: 0 },
+    [overviewMetrics]
+  );
+
+  const sortedRuns = useMemo(() => {
+    const copy = [...runs];
+    copy.sort((a, b) => {
+      const aTs = parseIso(a.started_at || a.created_at)?.getTime() || 0;
+      const bTs = parseIso(b.started_at || b.created_at)?.getTime() || 0;
+      return bTs - aTs;
+    });
+    return copy;
+  }, [runs]);
+
+  const runsTodayCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return sortedRuns.filter((run) => {
+      const ts = parseIso(run.started_at || run.created_at)?.getTime() || 0;
+      return ts >= start;
+    }).length;
+  }, [sortedRuns]);
+
+  const latestFailureLabel = useMemo(() => {
+    const failed = sortedRuns.find((run) => String(run.status || "").toLowerCase() === "failed");
+    if (!failed) {
+      return "None";
+    }
+    const ts = parseIso(failed.finished_at || failed.started_at || failed.created_at);
+    if (!ts) {
+      return "Unknown";
+    }
+    const deltaMs = Date.now() - ts.getTime();
+    const deltaDays = Math.floor(deltaMs / (24 * 60 * 60 * 1000));
+    if (deltaDays <= 0) {
+      return "Today";
+    }
+    return `${deltaDays}d ago`;
+  }, [sortedRuns]);
+
+  const upcomingScheduleCount = useMemo(() => {
+    const now = Date.now();
+    const nextDay = now + 24 * 60 * 60 * 1000;
+    return schedules.filter((schedule) => {
+      const ts = parseIso(schedule.next_run_at)?.getTime();
+      return Boolean(ts && ts >= now && ts <= nextDay);
+    }).length;
+  }, [schedules]);
+
+  const taskMixRows = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const counts = new Map();
+    for (const run of runs) {
+      const ts = parseIso(run.started_at || run.created_at)?.getTime();
+      if (!ts || ts < weekAgo) {
+        continue;
+      }
+      const taskId = String(run.task_id || "");
+      const key = taskTitleById.get(taskId) || taskId || "Unknown";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const rows = [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+    const total = rows.reduce((sum, row) => sum + row.count, 0) || 1;
+    return rows.map((row) => ({ ...row, percent: Math.round((row.count / total) * 100) }));
+  }, [runs, taskTitleById]);
+
+  const upcomingScheduleRows = useMemo(() => {
+    const rows = [...schedules]
+      .filter((schedule) => parseIso(schedule.next_run_at))
+      .sort((a, b) => {
+        const aTs = parseIso(a.next_run_at)?.getTime() || Number.MAX_SAFE_INTEGER;
+        const bTs = parseIso(b.next_run_at)?.getTime() || Number.MAX_SAFE_INTEGER;
+        return aTs - bTs;
+      })
+      .slice(0, 3);
+
+    return rows.map((schedule) => ({
+      id: schedule.schedule_id,
+      label: taskTitleById.get(schedule.task_id) || schedule.task_id || schedule.name || "Scheduled task",
+      nextRun: formatDateTime(schedule.next_run_at),
+    }));
+  }, [schedules, taskTitleById]);
+
+  const latestRun = useMemo(() => sortedRuns[0] || null, [sortedRuns]);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem("mo_webui_theme", theme);
+    window.localStorage.setItem("cookdex_webui_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    setTaskValues(buildDefaultOptionValues(selectedTaskDef));
+  }, [selectedTaskDef]);
+
+  useEffect(() => {
+    setScheduleOptionValues(buildDefaultOptionValues(scheduleTaskDef));
+  }, [scheduleTaskDef]);
 
   function clearBanners() {
     setError("");
@@ -383,6 +818,16 @@ export default function App() {
   function handleError(exc) {
     setNotice("");
     setError(normalizeErrorMessage(exc?.message || exc));
+  }
+
+  function setConfigEditorState(content) {
+    const editor = parseLineEditorContent(content);
+    setActiveConfigMode(editor.mode);
+    setActiveConfigListKind(editor.listKind);
+    setActiveConfigItems(editor.items);
+    setConfigDraftItem("");
+    setDragIndex(null);
+    setActiveConfigBody(`${JSON.stringify(content, null, 2)}\n`);
   }
 
   async function refreshSession() {
@@ -397,24 +842,68 @@ export default function App() {
     }
   }
 
+  async function loadTaxonomyContent() {
+    const responses = await Promise.all(
+      TAXONOMY_FILE_NAMES.map((name) => api(`/config/files/${name}`).catch(() => null))
+    );
+
+    const next = {};
+    for (const payload of responses) {
+      if (!payload || !payload.name) {
+        continue;
+      }
+      next[payload.name] = payload.content;
+    }
+    setTaxonomyItemsByFile(next);
+
+    if (activeConfig && next[activeConfig]) {
+      setConfigEditorState(next[activeConfig]);
+    } else if (!activeConfig && next.categories) {
+      setActiveConfig("categories");
+      setConfigEditorState(next.categories);
+    }
+  }
+
   async function loadData() {
     try {
-      const [taskPayload, runPayload, schedulePayload, settingsPayload, configPayload, usersPayload] =
-        await Promise.all([
-          api("/tasks"),
-          api("/runs"),
-          api("/schedules"),
-          api("/settings"),
-          api("/config/files"),
-          api("/users"),
-        ]);
+      const [
+        taskPayload,
+        runPayload,
+        schedulePayload,
+        settingsPayload,
+        configPayload,
+        usersPayload,
+        helpPayload,
+        metricsPayload,
+        aboutPayload,
+        healthPayload,
+      ] = await Promise.all([
+        api("/tasks"),
+        api("/runs"),
+        api("/schedules"),
+        api("/settings"),
+        api("/config/files"),
+        api("/users"),
+        api("/help/docs").catch(() => ({ items: [] })),
+        api("/metrics/overview").catch(() => null),
+        api("/about/meta").catch(() => null),
+        api("/health").catch(() => null),
+      ]);
 
       const nextTasks = taskPayload.items || [];
+      const nextRuns = runPayload.items || [];
+      const nextSchedules = schedulePayload.items || [];
+
       setTasks(nextTasks);
-      setRuns(runPayload.items || []);
-      setSchedules(schedulePayload.items || []);
+      setRuns(nextRuns);
+      setSchedules(nextSchedules);
       setConfigFiles(configPayload.items || []);
       setUsers(usersPayload.items || []);
+      setHelpDocs(helpPayload.items || []);
+      setOverviewMetrics(metricsPayload);
+      setAboutMeta(aboutPayload);
+      setHealthMeta(healthPayload);
+      setLastLoadedAt(new Date().toISOString());
 
       const nextSpecs = settingsPayload.env || {};
       setEnvSpecs(nextSpecs);
@@ -432,6 +921,8 @@ export default function App() {
       if (!scheduleForm.task_id && nextTasks.length > 0) {
         setScheduleForm((prev) => ({ ...prev, task_id: nextTasks[0].task_id }));
       }
+
+      await loadTaxonomyContent();
     } catch (exc) {
       handleError(exc);
     }
@@ -446,6 +937,7 @@ export default function App() {
         if (!active) {
           return;
         }
+
         const required = Boolean(payload.setup_required);
         setSetupRequired(required);
         if (required) {
@@ -469,14 +961,6 @@ export default function App() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    setTaskValues(buildDefaultOptionValues(selectedTaskDef));
-  }, [selectedTaskDef]);
-
-  useEffect(() => {
-    setScheduleOptionValues(buildDefaultOptionValues(scheduleTaskDef));
-  }, [scheduleTaskDef]);
 
   async function registerFirstUser(event) {
     event.preventDefault();
@@ -518,6 +1002,9 @@ export default function App() {
       clearBanners();
       await api("/auth/logout", { method: "POST" });
       setSession(null);
+      setRuns([]);
+      setSchedules([]);
+      setUsers([]);
     } catch (exc) {
       handleError(exc);
     }
@@ -545,8 +1032,8 @@ export default function App() {
     try {
       clearBanners();
       const payload = await api(`/runs/${runId}/log`);
-      setRunLog(payload);
-      setNotice("");
+      setRunLog(payload || "");
+      setSelectedRunId(runId);
     } catch (exc) {
       handleError(exc);
     }
@@ -560,7 +1047,7 @@ export default function App() {
         body: { policies: { [taskId]: { allow_dangerous: value } } },
       });
       await loadData();
-      setNotice("Policy updated.");
+      setNotice("Task policy updated.");
     } catch (exc) {
       handleError(exc);
     }
@@ -610,6 +1097,7 @@ export default function App() {
     try {
       clearBanners();
       const env = {};
+
       for (const item of envList) {
         const key = String(item.key);
         const nextValue = String(envDraft[key] ?? "");
@@ -648,15 +1136,25 @@ export default function App() {
     }
   }
 
-  function setConfigEditorState(content) {
-    const editor = parseLineEditorContent(content);
-    setActiveConfigMode(editor.mode);
-    setActiveConfigListKind(editor.listKind);
-    setActiveConfigItems(editor.items);
+  function configDraftValue(index, value) {
+    setActiveConfigItems((prev) => prev.map((item, rowIndex) => (rowIndex === index ? value : item)));
+  }
+
+  function addConfigLine() {
+    const value = configDraftItem.trim();
+    if (!value) {
+      return;
+    }
+    setActiveConfigItems((prev) => [...prev, value]);
     setConfigDraftItem("");
-    setDragIndex(null);
-    setTouchDragState(null);
-    setActiveConfigBody(`${JSON.stringify(content, null, 2)}\n`);
+  }
+
+  function removeConfigLine(index) {
+    setActiveConfigItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
+  }
+
+  function moveConfigLine(fromIndex, toIndex) {
+    setActiveConfigItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
   }
 
   async function openConfig(name) {
@@ -670,47 +1168,6 @@ export default function App() {
     }
   }
 
-  function addConfigLine() {
-    const nextValue = configDraftItem.trim();
-    if (!nextValue) {
-      return;
-    }
-    setActiveConfigItems((prev) => [...prev, nextValue]);
-    setConfigDraftItem("");
-  }
-
-  function removeConfigLine(index) {
-    setActiveConfigItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
-  }
-
-  function updateConfigLine(index, value) {
-    setActiveConfigItems((prev) => prev.map((item, rowIndex) => (rowIndex === index ? value : item)));
-  }
-
-  function moveConfigLine(fromIndex, toIndex) {
-    setActiveConfigItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
-  }
-
-  function handleLineTouchStart(index, event) {
-    const touch = event.touches?.[0];
-    if (!touch) {
-      return;
-    }
-    setTouchDragState({ index, startX: touch.clientX });
-  }
-
-  function handleLineTouchEnd(index, event) {
-    const touch = event.changedTouches?.[0];
-    if (!touch || !touchDragState || touchDragState.index !== index) {
-      return;
-    }
-    const deltaX = touch.clientX - touchDragState.startX;
-    if (deltaX < -60) {
-      removeConfigLine(index);
-    }
-    setTouchDragState(null);
-  }
-
   async function saveConfig() {
     if (!activeConfig) {
       return;
@@ -719,6 +1176,7 @@ export default function App() {
     try {
       clearBanners();
       let content;
+
       if (activeConfigMode === "line-pills") {
         const cleanItems = activeConfigItems.map((item) => String(item).trim()).filter(Boolean);
         if (activeConfigListKind === "string") {
@@ -726,21 +1184,63 @@ export default function App() {
         } else if (activeConfigListKind === "name_object") {
           content = cleanItems.map((name) => ({ name }));
         } else {
-          throw new Error("Unsupported line editor mode for this file.");
+          content = cleanItems;
         }
       } else {
-        content = JSON.parse(activeConfigBody);
+        const parsed = JSON.parse(activeConfigBody);
+        content = parsed;
       }
 
       await api(`/config/files/${activeConfig}`, {
         method: "PUT",
         body: { content },
       });
+
+      if (TAXONOMY_FILE_NAMES.includes(activeConfig) && Array.isArray(content)) {
+        setTaxonomyItemsByFile((prev) => ({ ...prev, [activeConfig]: content }));
+      }
+
+      setConfigEditorState(content);
       await loadData();
-      setNotice("Config saved.");
+      setNotice(`${CONFIG_LABELS[activeConfig] || activeConfig} saved.`);
     } catch (exc) {
       handleError(exc);
     }
+  }
+
+  async function importTaxonomyJson() {
+    try {
+      clearBanners();
+      const target = importTarget;
+      const payload = JSON.parse(importJsonText);
+      if (!Array.isArray(payload)) {
+        setError("Imported JSON must be an array for taxonomy files.");
+        return;
+      }
+
+      await api(`/config/files/${target}`, {
+        method: "PUT",
+        body: { content: payload },
+      });
+
+      setImportJsonText("");
+      if (activeConfig === target) {
+        setConfigEditorState(payload);
+      }
+      await loadData();
+      setNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  function generateTemporaryPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+    let value = "";
+    for (let index = 0; index < 14; index += 1) {
+      value += chars[Math.floor(Math.random() * chars.length)];
+    }
+    setNewUserPassword(value);
   }
 
   async function createUser(event) {
@@ -749,12 +1249,11 @@ export default function App() {
       clearBanners();
       await api("/users", {
         method: "POST",
-        body: {
-          username: newUserUsername,
-          password: newUserPassword,
-        },
+        body: { username: newUserUsername, password: newUserPassword },
       });
       setNewUserUsername("");
+      setNewUserEmail("");
+      setNewUserRole("Editor");
       setNewUserPassword("");
       await loadData();
       setNotice("User created.");
@@ -764,12 +1263,11 @@ export default function App() {
   }
 
   async function resetUserPassword(usernameValue) {
-    const nextPassword = String(resetPasswords[usernameValue] || "");
-    if (!nextPassword.trim()) {
-      setError("Enter a new password before resetting.");
+    const nextPassword = String(resetPasswords[usernameValue] || "").trim();
+    if (!nextPassword) {
+      setError("Enter a replacement password first.");
       return;
     }
-
     try {
       clearBanners();
       await api(`/users/${encodeURIComponent(usernameValue)}/reset-password`, {
@@ -777,7 +1275,7 @@ export default function App() {
         body: { password: nextPassword },
       });
       setResetPasswords((prev) => ({ ...prev, [usernameValue]: "" }));
-      setNotice(`Password updated for ${usernameValue}.`);
+      setNotice(`Password reset for ${usernameValue}.`);
     } catch (exc) {
       handleError(exc);
     }
@@ -788,68 +1286,191 @@ export default function App() {
       clearBanners();
       await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });
       await loadData();
-      setNotice(`User removed: ${usernameValue}`);
+      setNotice(`Removed ${usernameValue}.`);
     } catch (exc) {
       handleError(exc);
     }
   }
 
+  function draftOverrideValue(key) {
+    const value = String(envDraft[key] ?? "").trim();
+    if (!value) {
+      return null;
+    }
+    return value;
+  }
+
+  async function runConnectionTest(kind) {
+    try {
+      setConnectionChecks((prev) => ({
+        ...prev,
+        [kind]: { loading: true, ok: null, detail: "Running connection test..." },
+      }));
+
+      const body = {
+        mealie_url: draftOverrideValue("MEALIE_URL"),
+        mealie_api_key: envClear.MEALIE_API_KEY ? "" : draftOverrideValue("MEALIE_API_KEY"),
+        openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
+        openai_model: draftOverrideValue("OPENAI_MODEL"),
+        ollama_url: draftOverrideValue("OLLAMA_URL"),
+        ollama_model: draftOverrideValue("OLLAMA_MODEL"),
+      };
+
+      const result = await api(`/settings/test/${kind}`, {
+        method: "POST",
+        body,
+      });
+
+      setConnectionChecks((prev) => ({
+        ...prev,
+        [kind]: {
+          loading: false,
+          ok: Boolean(result.ok),
+          detail: String(result.detail || (result.ok ? "Connection validated." : "Connection failed.")),
+        },
+      }));
+    } catch (exc) {
+      setConnectionChecks((prev) => ({
+        ...prev,
+        [kind]: {
+          loading: false,
+          ok: false,
+          detail: normalizeErrorMessage(exc?.message || exc),
+        },
+      }));
+    }
+  }
+
   function renderOverviewPage() {
-    const cards = [
-      { label: "Tasks", value: tasks.length },
-      { label: "Runs", value: runs.length },
-      { label: "Schedules", value: schedules.length },
-      { label: "Users", value: users.length },
+    const recipeTotal = Math.max(1, Number(overviewTotals.recipes) || 0);
+    const unitsCoverage = Math.max(
+      0,
+      Math.min(100, Math.round(((overviewTotals.units || 0) / Math.max(overviewTotals.ingredients || 1, 1)) * 100))
+    );
+    const progressRows = [
+      { key: "categories", label: "Categories", value: overviewCoverage.categories || 0 },
+      { key: "tags", label: "Tags", value: overviewCoverage.tags || 0 },
+      { key: "tools", label: "Tools", value: overviewCoverage.tools || 0 },
+      { key: "units", label: "Units Normalized", value: unitsCoverage },
     ];
 
     return (
-      <section className="page-grid">
-        <article className="panel">
-          <h2>System Snapshot</h2>
-          <div className="stats-grid">
-            {cards.map((card) => (
-              <div className="stat-card" key={card.label}>
-                <p className="label">{card.label}</p>
-                <p className="value">{card.value}</p>
-              </div>
-            ))}
-          </div>
-          <div className="status-row">
-            <span className="chip queued">Queued {runStats.queued}</span>
-            <span className="chip running">Running {runStats.running}</span>
-            <span className="chip success">Succeeded {runStats.succeeded}</span>
-            <span className="chip failed">Failed {runStats.failed}</span>
-            <span className="chip canceled">Canceled {runStats.canceled}</span>
-          </div>
+      <section className="page-grid overview-grid">
+        <article className="card tone-soft intro-card">
+          <h3>Good morning. Your organizer is healthy and ready.</h3>
+          <p>No failed runs in the latest window. {upcomingScheduleCount} schedules are due in the next 24 hours.</p>
+          {!overviewMetrics?.ok && overviewMetrics?.reason ? (
+            <p className="muted tiny">{overviewMetrics.reason}</p>
+          ) : null}
         </article>
 
-        <article className="panel">
-          <h2>Recent Runs</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.length === 0 ? (
-                  <tr>
-                    <td colSpan={3}>No runs found yet.</td>
-                  </tr>
-                ) : (
-                  runs.slice(0, 8).map((run) => (
-                    <tr key={run.run_id}>
-                      <td>{run.task_id}</td>
-                      <td>{run.status}</td>
-                      <td>{run.created_at}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        <section className="overview-stats">
+          <article className="card stat-card">
+            <p className="label">Tasks</p>
+            <p className="value">{tasks.length}</p>
+          </article>
+          <article className="card stat-card">
+            <p className="label">Runs Today</p>
+            <p className="value">{runsTodayCount}</p>
+          </article>
+          <article className="card stat-card">
+            <p className="label">Schedules</p>
+            <p className="value">{schedules.length}</p>
+          </article>
+          <article className="card stat-card">
+            <p className="label">Users</p>
+            <p className="value">{users.length}</p>
+          </article>
+        </section>
+
+        <article className="card chart-panel">
+          <div className="card-head">
+            <h3>Recipe Organization Results</h3>
+            <p>How categorizer changes are being applied across your recipe library.</p>
+          </div>
+
+          <div className="coverage-grid">
+            <CoverageRing
+              label="Categories Applied"
+              value={overviewCoverage.categories}
+              helper={`${Math.round(overviewCoverage.categories || 0)}% categorized`}
+              detail={`${Math.round((recipeTotal * (overviewCoverage.categories || 0)) / 100)} of ${recipeTotal} recipes`}
+              tone="accent"
+            />
+            <CoverageRing
+              label="Tags Applied"
+              value={overviewCoverage.tags}
+              helper={`${Math.round(overviewCoverage.tags || 0)}% tagged`}
+              detail={`${Math.round((recipeTotal * (overviewCoverage.tags || 0)) / 100)} of ${recipeTotal} recipes`}
+              tone="olive"
+            />
+            <CoverageRing
+              label="Tools Assigned"
+              value={overviewCoverage.tools}
+              helper={`${Math.round(overviewCoverage.tools || 0)}% with tools`}
+              detail={`${Math.round((recipeTotal * (overviewCoverage.tools || 0)) / 100)} of ${recipeTotal} recipes`}
+              tone="terracotta"
+            />
+          </div>
+
+          <h4>Coverage by Taxonomy Field</h4>
+          <div className="progress-list">
+            {progressRows.map((row) => {
+              const percent = Math.max(0, Math.min(100, Math.round(Number(row.value) || 0)));
+              return (
+                <div className="progress-row" key={row.key}>
+                  <span>{row.label}</span>
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{ width: `${percent}%` }} />
+                  </div>
+                  <span>{percent}%</span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="muted tiny">Source: latest categorizer task and Mealie metadata sync.</p>
+        </article>
+
+        <article className="card quick-view">
+          <h3>Quick View Data</h3>
+          <p className="muted">High-signal operational data without leaving Overview.</p>
+          <ul className="kv-list">
+            <li>
+              <span>Upcoming schedules (24h)</span>
+              <strong>{upcomingScheduleCount}</strong>
+            </li>
+            <li>
+              <span>Queued runs</span>
+              <strong>{runStats.queued}</strong>
+            </li>
+            <li>
+              <span>Last failure</span>
+              <strong>{latestFailureLabel}</strong>
+            </li>
+          </ul>
+
+          <div className="top-usage">
+            <h4>Task Mix This Week</h4>
+            <ul>
+              {taskMixRows.map((item) => (
+                <li key={`taskmix-${item.name}`}>
+                  <span>{item.name}</span>
+                  <span>{item.percent}%</span>
+                </li>
+              ))}
+              {taskMixRows.length === 0 ? <li className="muted">No runs in the last seven days.</li> : null}
+            </ul>
+
+            <h4>Next Scheduled Jobs</h4>
+            <ul>
+              {upcomingScheduleRows.map((item) => (
+                <li key={`next-${item.id}`}>
+                  <span>{item.nextRun}</span>
+                  <span>{item.label}</span>
+                </li>
+              ))}
+              {upcomingScheduleRows.length === 0 ? <li className="muted">No scheduled jobs in the queue.</li> : null}
+            </ul>
           </div>
         </article>
       </section>
@@ -857,93 +1478,157 @@ export default function App() {
   }
 
   function renderRunsPage() {
+    const selectedRun = runs.find((item) => item.run_id === selectedRunId) || null;
+
     return (
-      <section className="page-grid two-col">
-        <article className="panel">
-          <h2>Task Setup</h2>
-          <label className="field">
-            <span>Choose task</span>
-            <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
-              {tasks.map((task) => (
-                <option value={task.task_id} key={task.task_id}>
-                  {task.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="form-grid">
-            {(selectedTaskDef?.options || []).map((option) =>
-              fieldFromOption(option, taskValues[option.key], (key, value) =>
-                setTaskValues((prev) => ({ ...prev, [key]: value }))
-              )
-            )}
-          </div>
-          {selectedTaskDef ? (
-            <label className="field row">
-              <span>Allow write changes for this task</span>
-              <input
-                type="checkbox"
-                checked={Boolean(selectedTaskDef.policy?.allow_dangerous)}
-                onChange={(event) => togglePolicy(selectedTaskDef.task_id, event.target.checked)}
-              />
+      <section className="page-grid runs-page">
+        <article className="card run-builder-card">
+          <h3>Start a Run</h3>
+          <p className="muted">Queue one-off tasks for immediate execution.</p>
+
+          <div className="run-form">
+            <label className="field">
+              <span>Task</span>
+              <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
+                <option value="">Choose task</option>
+                {tasks.map((task) => (
+                  <option key={task.task_id} value={task.task_id}>
+                    {task.title}
+                  </option>
+                ))}
+              </select>
             </label>
-          ) : null}
-          <button onClick={triggerRun}>Start Run</button>
+
+            {(selectedTaskDef?.options || []).length > 0 ? (
+              <div className="option-grid">
+                {(selectedTaskDef?.options || []).map((option) =>
+                  fieldFromOption(option, taskValues[option.key], (key, value) =>
+                    setTaskValues((prev) => ({ ...prev, [key]: value }))
+                  )
+                )}
+              </div>
+            ) : (
+                <p className="muted tiny">This task has no additional options.</p>
+              )}
+
+            <button type="button" className="primary" onClick={triggerRun}>
+              <Icon name="play" />
+              Queue Run
+            </button>
+          </div>
         </article>
 
-        <article className="panel">
-          <h2>Run History</h2>
+        <article className="card runs-history-card">
+          <div className="card-head split">
+            <div>
+              <h3>All Runs</h3>
+              <p>Manual and scheduled runs are shown together.</p>
+            </div>
+            <label className="search-box">
+              <Icon name="search" />
+                <input
+                  value={runSearch}
+                  onChange={(event) => setRunSearch(event.target.value)}
+                  placeholder="Search task, type, or status"
+                />
+              </label>
+            </div>
+
+          <div className="run-type-filters">
+            <button
+              type="button"
+              className={`chip-btn ${runTypeFilter === "all" ? "active" : ""}`}
+              onClick={() => setRunTypeFilter("all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={`chip-btn ${runTypeFilter === "manual" ? "active" : ""}`}
+              onClick={() => setRunTypeFilter("manual")}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              className={`chip-btn ${runTypeFilter === "scheduled" ? "active" : ""}`}
+              onClick={() => setRunTypeFilter("scheduled")}
+            >
+              Scheduled
+            </button>
+          </div>
+
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Task</th>
+                  <th>Type</th>
                   <th>Status</th>
-                  <th>When</th>
-                  <th>Log</th>
+                  <th>Run Time</th>
                 </tr>
               </thead>
               <tbody>
-                {runs.length === 0 ? (
+                {filteredRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No runs available yet.</td>
+                    <td colSpan={4}>No runs found.</td>
                   </tr>
                 ) : (
-                  runs.map((run) => (
-                    <tr key={run.run_id}>
-                      <td>{run.task_id}</td>
-                      <td>{run.status}</td>
-                      <td>{run.created_at}</td>
+                  filteredRuns.map((run) => (
+                    <tr
+                      key={run.run_id}
+                      className={selectedRunId === run.run_id ? "selected-row" : ""}
+                      onClick={() => fetchLog(run.run_id)}
+                    >
+                      <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
+                      <td>{runTypeLabel(run)}</td>
                       <td>
-                        <button className="secondary" onClick={() => fetchLog(run.run_id)}>
-                          View
-                        </button>
+                        <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
                       </td>
+                      <td>{formatRunTime(run)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
-          <pre className="log">{runLog || "Select a run to preview logs."}</pre>
+
+          <div className="log-section">
+            <div className="log-head">
+              <h4>Selected Run Output</h4>
+              <span className="muted tiny">
+                {selectedRun
+                  ? `${taskTitleById.get(selectedRun.task_id) || selectedRun.task_id} • ${runTypeLabel(
+                      selectedRun
+                    )} • ${formatRunTime(selectedRun)}`
+                  : "Select any row above to inspect its full formatted output."}
+              </span>
+            </div>
+            <pre className="log-viewer">{runLog || "Select any row above to inspect its full formatted output."}</pre>
+          </div>
         </article>
       </section>
     );
   }
 
   function renderSchedulesPage() {
+    const selectedScheduleRun =
+      runs.find((item) => item.run_id === selectedRunId && item.schedule_id) || filteredScheduledRuns[0] || null;
+
     return (
-      <section className="page-grid two-col">
-        <article className="panel">
-          <h2>Create Schedule</h2>
-          <form onSubmit={createSchedule} className="form-grid">
+      <section className="page-grid schedules-page">
+        <article className="card run-builder-card">
+          <h3>Create Schedule</h3>
+          <form className="run-form" onSubmit={createSchedule}>
             <label className="field">
-              <span>Schedule name</span>
+              <span>Schedule Name</span>
               <input
                 value={scheduleForm.name}
                 onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Morning cleanup"
               />
             </label>
+
             <label className="field">
               <span>Task</span>
               <select
@@ -958,139 +1643,194 @@ export default function App() {
                 ))}
               </select>
             </label>
-            <label className="field">
-              <span>Run type</span>
-              <select
-                value={scheduleForm.kind}
-                onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
-              >
-                <option value="interval">Every X seconds</option>
-                <option value="cron">Cron expression</option>
-              </select>
-            </label>
-            {scheduleForm.kind === "interval" ? (
+
+            <div className="option-grid two">
               <label className="field">
-                <span>Seconds</span>
-                <input
-                  type="number"
-                  value={scheduleForm.seconds}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, seconds: event.target.value }))}
-                />
+                <span>Type</span>
+                <select
+                  value={scheduleForm.kind}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
+                >
+                  <option value="interval">Interval</option>
+                  <option value="cron">Cron</option>
+                </select>
               </label>
-            ) : (
-              <label className="field">
-                <span>Cron</span>
-                <input
-                  value={scheduleForm.cron}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, cron: event.target.value }))}
-                />
-              </label>
-            )}
+
+              {scheduleForm.kind === "interval" ? (
+                <label className="field">
+                  <span>Seconds</span>
+                  <input
+                    type="number"
+                    value={scheduleForm.seconds}
+                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, seconds: event.target.value }))}
+                  />
+                </label>
+              ) : (
+                <label className="field">
+                  <span>Cron Expression</span>
+                  <input
+                    value={scheduleForm.cron}
+                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, cron: event.target.value }))}
+                  />
+                </label>
+              )}
+            </div>
 
             {(scheduleTaskDef?.options || []).length > 0 ? (
-              <div className="full-row inline-card">
-                <h3>Task Options</h3>
-                <div className="form-grid">
-                  {(scheduleTaskDef?.options || []).map((option) =>
-                    fieldFromOption(option, scheduleOptionValues[option.key], (key, value) =>
-                      setScheduleOptionValues((prev) => ({ ...prev, [key]: value }))
-                    )
-                  )}
-                </div>
+              <div className="option-grid">
+                {(scheduleTaskDef?.options || []).map((option) =>
+                  fieldFromOption(option, scheduleOptionValues[option.key], (key, value) =>
+                    setScheduleOptionValues((prev) => ({ ...prev, [key]: value }))
+                  )
+                )}
               </div>
             ) : null}
 
-            <label className="field row full-row">
+            <label className="field field-inline">
               <span>Enabled</span>
               <input
                 type="checkbox"
                 checked={Boolean(scheduleForm.enabled)}
-                onChange={(event) =>
-                  setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))
-                }
+                onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
               />
             </label>
-            <button type="submit">Save Schedule</button>
+
+            <button type="submit" className="primary">
+              <Icon name="save" />
+              Save Schedule
+            </button>
           </form>
         </article>
 
-        <article className="panel">
-          <h2>Current Schedules</h2>
-          <ul className="list">
-            {schedules.length === 0 ? (
-              <li>No schedules configured yet.</li>
-            ) : (
-              schedules.map((schedule) => (
-                <li key={schedule.schedule_id} className="list-item-row">
-                  <div>
-                    <strong>{schedule.name}</strong>
-                    <p className="muted-text small">
-                      {schedule.task_id} | {schedule.schedule_kind} | next {schedule.next_run_at || "-"}
-                    </p>
-                  </div>
-                  <button className="secondary" onClick={() => deleteSchedule(schedule.schedule_id)}>
-                    Delete
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
+        <article className="card runs-history-card">
+          <div className="card-head split">
+            <div>
+              <h3>Schedule Activity</h3>
+              <p>Recent schedule-triggered runs and outcomes.</p>
+            </div>
+            <label className="search-box">
+              <Icon name="search" />
+                <input
+                  value={scheduleSearch}
+                  onChange={(event) => setScheduleSearch(event.target.value)}
+                  placeholder="Search task or status"
+                />
+              </label>
+            </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Run Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredScheduledRuns.length === 0 ? (
+                  <tr>
+                    <td colSpan={4}>No scheduled runs found.</td>
+                  </tr>
+                ) : (
+                  filteredScheduledRuns.map((run) => (
+                    <tr
+                      key={run.run_id}
+                      className={selectedRunId === run.run_id ? "selected-row" : ""}
+                      onClick={() => fetchLog(run.run_id)}
+                    >
+                      <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
+                      <td>{runTypeLabel(run)}</td>
+                      <td>
+                        <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
+                      </td>
+                      <td>{formatRunTime(run)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="log-section">
+            <div className="log-head">
+              <h4>Latest log preview</h4>
+              <span className="muted tiny">
+                {selectedScheduleRun
+                  ? `${taskTitleById.get(selectedScheduleRun.task_id) || selectedScheduleRun.task_id} • ${formatRunTime(
+                      selectedScheduleRun
+                    )}`
+                  : "Select a scheduled run to preview output."}
+              </span>
+            </div>
+            <pre className="log-viewer">{runLog || "Select a scheduled run to preview output."}</pre>
+          </div>
         </article>
       </section>
     );
   }
 
-  function renderEnvironmentPage() {
+  function renderSettingsPage() {
     return (
-      <section className="page-grid">
-        <article className="panel">
-          <h2>Connections & Preferences</h2>
-          <p className="muted-text">
-            Friendly labels are shown first. Technical keys are available for advanced troubleshooting.
-          </p>
-          <div className="env-groups">
-            {envGroups.map(([groupName, items]) => (
-              <section className="env-group" key={groupName}>
-                <h3>{groupName}</h3>
-                <div className="env-list">
+      <section className="page-grid recipe-grid">
+        <article className="card">
+          <div className="card-head split">
+            <div>
+              <h3>Live Environment Settings</h3>
+              <p>Manage connection and AI settings used by background tasks.</p>
+            </div>
+            <button className="ghost" onClick={loadData}>
+              <Icon name="refresh" />
+              Reload
+            </button>
+          </div>
+
+          <div className="settings-groups">
+            {visibleEnvGroups.map(([group, items]) => (
+              <section key={group} className="settings-group">
+                <h4>{group}</h4>
+                <div className="settings-rows">
                   {items.map((item) => {
                     const key = String(item.key);
-                    const source = String(item.source || "unset");
                     const hasValue = Boolean(item.has_value);
+                    const source = String(item.source || "unset");
                     return (
-                      <div className="env-item" key={key}>
-                        <label className="field">
-                          <span>{item.label || key}</span>
+                      <div key={key} className="settings-row">
+                        <div className="settings-labels">
+                          <label>{item.label || key}</label>
+                          <p>{item.description}</p>
+                          <div className="meta-line">
+                            <span>{key}</span>
+                            <span>{source}</span>
+                          </div>
+                        </div>
+                        <div className="settings-input-wrap">
                           <input
                             type={item.secret ? "password" : "text"}
                             value={envDraft[key] ?? ""}
-                            placeholder={item.secret && hasValue ? "stored secret" : ""}
+                            placeholder={item.secret && hasValue ? "Stored secret" : ""}
                             onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setEnvDraft((prev) => ({ ...prev, [key]: nextValue }));
+                              const next = event.target.value;
+                              setEnvDraft((prev) => ({ ...prev, [key]: next }));
                               if (item.secret && envClear[key]) {
                                 setEnvClear((prev) => ({ ...prev, [key]: false }));
                               }
                             }}
                           />
-                        </label>
-                        <div className="env-meta">
-                          <span className="badge">source: {source}</span>
-                          <span className="badge">key: {key}</span>
                           {item.secret ? (
                             <button
                               type="button"
-                              className="secondary"
+                              className="ghost small"
                               onClick={() => {
                                 setEnvDraft((prev) => ({ ...prev, [key]: "" }));
                                 setEnvClear((prev) => ({ ...prev, [key]: true }));
                               }}
                             >
-                              Clear Secret
+                              Clear
                             </button>
                           ) : null}
                         </div>
-                        <p className="muted-text small">{item.description}</p>
                       </div>
                     );
                   })}
@@ -1098,138 +1838,248 @@ export default function App() {
               </section>
             ))}
           </div>
-          <button onClick={saveEnvironment}>Save Settings</button>
+
+          <button className="primary" onClick={saveEnvironment}>
+            <Icon name="save" />
+            Apply Changes
+          </button>
         </article>
+
+        <aside className="stacked-cards">
+          <article className="card">
+            <h3>Connection Tests</h3>
+            <p className="muted">Validate saved or draft values before running long jobs.</p>
+
+            <div className="connection-tests">
+              <button
+                className="ghost"
+                onClick={() => runConnectionTest("mealie")}
+                disabled={connectionChecks.mealie.loading}
+              >
+                {connectionChecks.mealie.loading ? "Testing..." : "Test Mealie"}
+              </button>
+              <p className={`tiny ${connectionChecks.mealie.ok === false ? "danger-text" : ""}`}>
+                {connectionChecks.mealie.detail || "Check Mealie URL/API key connectivity."}
+              </p>
+
+              <button
+                className="ghost"
+                onClick={() => runConnectionTest("openai")}
+                disabled={connectionChecks.openai.loading}
+              >
+                {connectionChecks.openai.loading ? "Testing..." : "Test OpenAI API Key"}
+              </button>
+              <p className={`tiny ${connectionChecks.openai.ok === false ? "danger-text" : ""}`}>
+                {connectionChecks.openai.detail || "Validate OpenAI key and selected model."}
+              </p>
+
+              <button
+                className="ghost"
+                onClick={() => runConnectionTest("ollama")}
+                disabled={connectionChecks.ollama.loading}
+              >
+                {connectionChecks.ollama.loading ? "Testing..." : "Test Ollama Connection"}
+              </button>
+              <p className={`tiny ${connectionChecks.ollama.ok === false ? "danger-text" : ""}`}>
+                {connectionChecks.ollama.detail || "Validate Ollama endpoint reachability."}
+              </p>
+            </div>
+          </article>
+
+          <article className="card">
+            <h3>Task Safety Policies</h3>
+            <p className="muted">Enable dangerous writes per task when you are ready to apply changes.</p>
+            <ul className="policy-list">
+              {tasks.map((task) => (
+                <li key={task.task_id}>
+                  <div>
+                    <strong>{task.title}</strong>
+                    <p className="tiny muted">{task.task_id}</p>
+                  </div>
+                  <label className="field-inline tiny-toggle">
+                    <span>Allow writes</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(task.policy?.allow_dangerous)}
+                      onChange={(event) => togglePolicy(task.task_id, event.target.checked)}
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </aside>
       </section>
     );
   }
 
-  function renderConfigPage() {
-    return (
-      <section className="page-grid">
-        <article className="panel">
-          <h2>Taxonomy & Config Files</h2>
-          <div className="config-grid">
-            <aside>
-              <ul className="list">
-                {configFiles.length === 0 ? (
-                  <li>No managed config files available.</li>
-                ) : (
-                  configFiles.map((item) => (
-                    <li key={item.name}>
-                      <button className="secondary" onClick={() => openConfig(item.name)}>
-                        {CONFIG_LABELS[item.name] || item.name}
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </aside>
-            <div>
-              <h3>{CONFIG_LABELS[activeConfig] || "Choose a config file"}</h3>
-              {activeConfigMode === "line-pills" ? (
-                <section className="pill-editor">
-                  <div className="pill-input-row">
-                    <input
-                      value={configDraftItem}
-                      placeholder="Add line and press Enter"
-                      onChange={(event) => setConfigDraftItem(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          addConfigLine();
-                        }
-                      }}
-                    />
-                    <button type="button" className="secondary" onClick={addConfigLine}>
-                      Add
-                    </button>
-                  </div>
-                  <ul className="pill-lines">
-                    {activeConfigItems.map((item, index) => (
-                      <li
-                        key={`${activeConfig}-${index}`}
-                        className="pill-line"
-                        draggable
-                        onDragStart={() => setDragIndex(index)}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={() => {
-                          if (dragIndex !== null) {
-                            moveConfigLine(dragIndex, index);
-                            setDragIndex(null);
-                          }
-                        }}
-                        onTouchStart={(event) => handleLineTouchStart(index, event)}
-                        onTouchEnd={(event) => handleLineTouchEnd(index, event)}
-                      >
-                        <span className="line-index">{index + 1}</span>
-                        <input
-                          value={item}
-                          onChange={(event) => updateConfigLine(index, event.target.value)}
-                        />
-                        <div className="line-actions">
-                          <button
-                            type="button"
-                            className="secondary small"
-                            onClick={() => moveConfigLine(index, Math.max(index - 1, 0))}
-                            disabled={index === 0}
-                          >
-                            Up
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary small"
-                            onClick={() =>
-                              moveConfigLine(index, Math.min(index + 1, activeConfigItems.length - 1))
-                            }
-                            disabled={index === activeConfigItems.length - 1}
-                          >
-                            Down
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary small"
-                            onClick={() => removeConfigLine(index)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="muted-text small">
-                    Mobile gestures: swipe left on a line to remove it.
-                  </p>
-                </section>
-              ) : (
-                <section>
-                  <p className="muted-text small">
-                    Advanced mode: this file needs full JSON editing because its structure is not a simple list.
-                  </p>
-                  <textarea
-                    rows={18}
-                    value={activeConfigBody}
-                    onChange={(event) => setActiveConfigBody(event.target.value)}
-                  />
-                </section>
-              )}
+  function renderRecipeOrganizationPage() {
+    const activeContentCount = Array.isArray(taxonomyItemsByFile[activeConfig])
+      ? taxonomyItemsByFile[activeConfig].length
+      : activeConfigItems.length;
 
-              <button onClick={saveConfig} disabled={!activeConfig}>
+    return (
+      <section className="page-grid settings-grid">
+        <article className="card">
+          <h3>Recipe Organization</h3>
+          <p className="muted">Edit taxonomy values using pill-style controls and save directly to JSON files.</p>
+
+          <div className="taxonomy-pills">
+            {TAXONOMY_FILE_NAMES.map((name) => (
+              <button
+                key={name}
+                className={`pill-btn ${activeConfig === name ? "active" : ""}`}
+                onClick={() => {
+                  setActiveConfig(name);
+                  openConfig(name);
+                }}
+              >
+                {CONFIG_LABELS[name]}
+                <span>{taxonomyCounts[name] || 0}</span>
+              </button>
+            ))}
+          </div>
+
+          {activeConfigMode === "line-pills" ? (
+            <section className="pill-editor">
+              <div className="pill-input-row">
+                <input
+                  value={configDraftItem}
+                  placeholder="Add a value and press Enter"
+                  onChange={(event) => setConfigDraftItem(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addConfigLine();
+                    }
+                  }}
+                />
+                <button className="ghost" type="button" onClick={addConfigLine}>
+                  Add
+                </button>
+              </div>
+
+              <ul className="pill-lines">
+                {activeConfigItems.map((item, index) => (
+                  <li
+                    key={`${activeConfig}-${index}`}
+                    className="pill-line"
+                    draggable
+                    onDragStart={() => setDragIndex(index)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      if (dragIndex !== null) {
+                        moveConfigLine(dragIndex, index);
+                        setDragIndex(null);
+                      }
+                    }}
+                  >
+                    <span className="line-index">{index + 1}</span>
+                    <input value={item} onChange={(event) => configDraftValue(index, event.target.value)} />
+                    <div className="line-actions">
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveConfigLine(index, Math.max(index - 1, 0))}
+                        disabled={index === 0}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost small"
+                        onClick={() => moveConfigLine(index, Math.min(index + 1, activeConfigItems.length - 1))}
+                        disabled={index === activeConfigItems.length - 1}
+                      >
+                        Down
+                      </button>
+                      <button type="button" className="ghost small" onClick={() => removeConfigLine(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted tiny">Drag items to reorder. Use advanced mode only if needed.</p>
+            </section>
+          ) : (
+            <section>
+              <p className="muted tiny">Advanced mode: this file requires full JSON editing.</p>
+              <textarea
+                rows={18}
+                value={activeConfigBody}
+                onChange={(event) => setActiveConfigBody(event.target.value)}
+              />
+            </section>
+          )}
+
+          <div className="split-actions">
+            <div className="split-actions-group">
+              <button className="primary" onClick={saveConfig} disabled={!activeConfig}>
+                <Icon name="save" />
                 Save File
               </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => {
+                  if (activeConfig) {
+                    openConfig(activeConfig);
+                  }
+                }}
+              >
+                Discard
+              </button>
             </div>
+            <span className="muted tiny">{activeContentCount} values in current file</span>
           </div>
         </article>
+
+        <aside className="stacked-cards">
+          <article className="card">
+            <h3>Import from JSON</h3>
+            <p className="muted">Upload JSON to add or replace recipe organization values.</p>
+
+            <label className="field">
+              <span>Target File</span>
+              <select value={importTarget} onChange={(event) => setImportTarget(event.target.value)}>
+                {TAXONOMY_FILE_NAMES.map((name) => (
+                  <option key={name} value={name}>
+                    {CONFIG_LABELS[name]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>JSON Payload</span>
+              <textarea
+                rows={12}
+                value={importJsonText}
+                onChange={(event) => setImportJsonText(event.target.value)}
+                placeholder='[ {"name": "One"}, {"name": "Two"} ]'
+              />
+            </label>
+
+            <button className="primary" onClick={importTaxonomyJson}>
+              <Icon name="upload" />
+              Import JSON
+            </button>
+            <p className="muted tiny">Supports categories, cookbooks, labels, tags, tools, and units.</p>
+          </article>
+        </aside>
       </section>
     );
   }
 
   function renderUsersPage() {
     return (
-      <section className="page-grid two-col">
-        <article className="panel">
-          <h2>Create User</h2>
-          <form className="form-grid" onSubmit={createUser}>
+      <section className="page-grid settings-grid users-grid">
+        <article className="card">
+          <h3>Create User</h3>
+          <p className="muted">Create accounts for household members or shared kitchen devices.</p>
+
+          <form className="run-form" onSubmit={createUser}>
             <label className="field">
               <span>Username</span>
               <input
@@ -1238,101 +2088,363 @@ export default function App() {
                 placeholder="kitchen-tablet"
               />
             </label>
+
             <label className="field">
-              <span>Temporary password</span>
+              <span>Email (optional)</span>
               <input
-                type="password"
-                value={newUserPassword}
-                onChange={(event) => setNewUserPassword(event.target.value)}
-                placeholder="At least 8 characters"
+                value={newUserEmail}
+                onChange={(event) => setNewUserEmail(event.target.value)}
+                placeholder="tablet@kitchen.local"
               />
             </label>
-            <button className="full-row" type="submit">
+
+            <label className="field">
+              <span>Role</span>
+              <select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value)}>
+                <option value="Editor">Editor</option>
+                <option value="Viewer">Viewer</option>
+                <option value="Owner">Owner</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Temporary Password</span>
+              <div className="password-row">
+                <input
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(event) => setNewUserPassword(event.target.value)}
+                  placeholder="At least 8 characters"
+                />
+                <button type="button" className="ghost" onClick={generateTemporaryPassword}>
+                  Generate
+                </button>
+              </div>
+            </label>
+
+            <div className="password-helper">
+              <Icon name="shield" />
+              <span>Use a strong temporary password and rotate after first login.</span>
+            </div>
+
+            <button type="submit" className="primary">
+              <Icon name="users" />
               Create User
             </button>
           </form>
         </article>
 
-        <article className="panel">
-          <h2>Current Users</h2>
-          <ul className="list user-list">
-            {users.length === 0 ? (
-              <li>No users available.</li>
-            ) : (
-              users.map((item) => (
-                <li key={item.username} className="user-row">
-                  <div className="user-row-head">
-                    <strong>{item.username}</strong>
-                    <span className="muted-text small">Created: {item.created_at}</span>
-                  </div>
-                  <div className="user-row-actions">
-                    <input
-                      type="password"
-                      placeholder="New password"
-                      value={resetPasswords[item.username] || ""}
-                      onChange={(event) =>
-                        setResetPasswords((prev) => ({ ...prev, [item.username]: event.target.value }))
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => resetUserPassword(item.username)}
-                    >
-                      Reset Password
-                    </button>
-                    {session?.username !== item.username ? (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => deleteUser(item.username)}
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <span className="badge">active account</span>
-                    )}
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
+        <article className="card">
+          <div className="card-head split">
+            <div>
+              <h3>Current Users</h3>
+              <p>Reset passwords and remove inactive accounts.</p>
+            </div>
+            <label className="search-box">
+              <Icon name="search" />
+              <input
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+                placeholder="Search username or role"
+              />
+            </label>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Last Active</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>No users found.</td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((item) => (
+                    <tr key={item.username}>
+                      <td>
+                        <strong>{item.username}</strong>
+                      </td>
+                      <td>{userRoleLabel(item.username, session?.username)}</td>
+                      <td>
+                        <span className="status-pill success">
+                          {session?.username === item.username ? "Active Session" : "Active"}
+                        </span>
+                      </td>
+                      <td>{formatDateTime(item.created_at)}</td>
+                      <td>
+                        <div className="user-actions">
+                          <input
+                            type="password"
+                            placeholder="New password"
+                            value={resetPasswords[item.username] || ""}
+                            onChange={(event) =>
+                              setResetPasswords((prev) => ({ ...prev, [item.username]: event.target.value }))
+                            }
+                          />
+                          <button className="ghost" onClick={() => resetUserPassword(item.username)}>
+                            Reset
+                          </button>
+                          {session?.username !== item.username ? (
+                            <button className="ghost" onClick={() => deleteUser(item.username)}>
+                              Remove
+                            </button>
+                          ) : (
+                            <span className="muted tiny">Cannot remove current account</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="muted tiny">
+            {users.length} users total • {users.length} active • 0 disabled
+          </p>
         </article>
       </section>
     );
   }
 
+  function renderHelpPage() {
+    return (
+      <section className="page-grid settings-grid help-grid">
+        <article className="card">
+          <h3>Setup FAQ</h3>
+          <p className="muted">Quick answers for first-time setup and common safe workflows.</p>
+
+          <div className="accordion-stack">
+            {HELP_FAQ.map((item, index) => (
+              <details className="accordion" key={item.question} open={index === 0}>
+                <summary>
+                  <Icon name="help" />
+                  <span>{item.question}</span>
+                  <Icon name="chevron" />
+                </summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+        </article>
+
+        <aside className="stacked-cards">
+          <article className="card">
+            <h3>Setup and Troubleshooting</h3>
+            <p className="muted">Embedded markdown from the repository docs for in-app guidance.</p>
+
+            <div className="accordion-stack compact">
+              {helpDocs.length === 0 ? (
+                <p className="muted tiny">No embedded docs were found in this deployment.</p>
+              ) : (
+                helpDocs.map((doc) => (
+                  <details className="accordion" key={doc.id}>
+                    <summary>
+                      <Icon name="info" />
+                      <span>{doc.title}</span>
+                      <Icon name="chevron" />
+                    </summary>
+                    <pre className="doc-preview">{doc.content}</pre>
+                  </details>
+                ))
+              )}
+            </div>
+          </article>
+        </aside>
+      </section>
+    );
+  }
+
+  function renderAboutPage() {
+    const appVersion = aboutMeta?.app_version || healthMeta?.version || "-";
+    const backendStatus = healthMeta?.ok === false ? "Degraded" : "Connected";
+    const lastSyncLabel = lastLoadedAt ? formatDateTime(lastLoadedAt) : "-";
+
+    return (
+      <section className="page-grid settings-grid about-grid">
+        <article className="card">
+          <h3>Library Metrics</h3>
+          <p className="muted">Current Mealie library and managed taxonomy counts.</p>
+
+          <div className="metric-grid">
+            <article>
+              <span>Recipes</span>
+              <strong>{overviewTotals.recipes}</strong>
+            </article>
+            <article>
+              <span>Ingredients</span>
+              <strong>{overviewTotals.ingredients}</strong>
+            </article>
+            <article>
+              <span>Tools</span>
+              <strong>{overviewTotals.tools}</strong>
+            </article>
+            <article>
+              <span>Categories</span>
+              <strong>{overviewTotals.categories}</strong>
+            </article>
+            <article>
+              <span>Cookbooks</span>
+              <strong>{taxonomyCounts.cookbooks || 0}</strong>
+            </article>
+            <article>
+              <span>Tags</span>
+              <strong>{overviewTotals.tags}</strong>
+            </article>
+            <article>
+              <span>Labels</span>
+              <strong>{overviewTotals.labels}</strong>
+            </article>
+            <article>
+              <span>Units</span>
+              <strong>{overviewTotals.units}</strong>
+            </article>
+          </div>
+
+          <div className="about-actions">
+            <button className="primary" onClick={loadData}>
+              <Icon name="refresh" />
+              Refresh Metrics
+            </button>
+            <span className="muted tiny">Metrics refresh from local state and Mealie API.</span>
+          </div>
+        </article>
+
+        <article className="card">
+          <h3>Automation Activity</h3>
+          <p className="muted">
+            Last run:{" "}
+            {latestRun ? `${formatDateTime(latestRun.finished_at || latestRun.started_at || latestRun.created_at)}` : "-"} •{" "}
+            {latestRun ? `${taskTitleById.get(latestRun.task_id) || latestRun.task_id}` : "No runs yet"} •{" "}
+            {latestRun ? `${latestRun.status}` : "n/a"}
+          </p>
+          <div className="about-actions">
+            <button className="ghost" onClick={loadData}>
+              <Icon name="refresh" />
+              Run Health Check
+            </button>
+            <button className="ghost" onClick={() => setActivePage("runs")}>
+              <Icon name="play" />
+              View Run History
+            </button>
+          </div>
+        </article>
+
+        <aside className="stacked-cards">
+          <article className="card">
+            <h3>Version</h3>
+            <p className="muted">CookDex {appVersion}</p>
+            <p className="tiny muted">Web UI runtime version: {aboutMeta?.webui_version || "-"}</p>
+          </article>
+
+          <article className="card">
+            <h3>Project Links</h3>
+            <a
+              className="link-btn"
+              href={aboutMeta?.links?.github || "https://github.com/thekannen/cookdex"}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="external" />
+              Open GitHub Repository
+            </a>
+            <a
+              className="link-btn"
+              href={aboutMeta?.links?.sponsor || "https://github.com/sponsors/thekannen"}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="external" />
+              Sponsor the Project
+            </a>
+          </article>
+
+          <article className="card">
+            <h3>Application Details</h3>
+            <ul className="kv-list">
+              <li>
+                <span>License</span>
+                <strong>MIT</strong>
+              </li>
+              <li>
+                <span>Build Channel</span>
+                <strong>Stable</strong>
+              </li>
+              <li>
+                <span>Backend</span>
+                <strong>{backendStatus}</strong>
+              </li>
+              <li>
+                <span>Environment</span>
+                <strong>Self-hosted</strong>
+              </li>
+              <li>
+                <span>Last Sync</span>
+                <strong>{lastSyncLabel}</strong>
+              </li>
+            </ul>
+          </article>
+
+          <article className="card">
+            <h3>Why this app exists</h3>
+            <p className="muted">
+              CookDex is designed for home server users who want powerful cleanup and organization workflows without
+              command-line complexity.
+            </p>
+          </article>
+        </aside>
+      </section>
+    );
+  }
+
   function renderPage() {
-    if (activePage === "runs") {
-      return renderRunsPage();
-    }
-    if (activePage === "schedules") {
-      return renderSchedulesPage();
-    }
-    if (activePage === "environment") {
-      return renderEnvironmentPage();
-    }
-    if (activePage === "config") {
-      return renderConfigPage();
-    }
-    if (activePage === "users") {
-      return renderUsersPage();
-    }
+    if (activePage === "runs") return renderRunsPage();
+    if (activePage === "schedules") return renderSchedulesPage();
+    if (activePage === "settings") return renderSettingsPage();
+    if (activePage === "recipe-organization") return renderRecipeOrganizationPage();
+    if (activePage === "users") return renderUsersPage();
+    if (activePage === "help") return renderHelpPage();
+    if (activePage === "about") return renderAboutPage();
     return renderOverviewPage();
   }
 
   if (setupRequired && !session) {
     return (
-      <main className="shell auth-shell">
-        <section className="panel auth-panel">
-          <h1>Set Up CookDex</h1>
-          <p>Create the first admin account to unlock the rest of the app.</p>
+      <main className="auth-shell">
+        <section className="auth-left">
+          <img src={wordmark} alt="CookDex" className="auth-wordmark" />
+          <p className="auth-badge">First-time setup made simple</p>
+          <h1>Manage recipe automation without the CLI.</h1>
+          <p>
+            CookDex gives clear controls for taxonomy, scheduling, and task runs while keeping defaults safe for daily
+            use.
+          </p>
+          <div className="auth-points">
+            <p>No YAML edits needed for standard setup.</p>
+            <p>Runtime settings are grouped with plain descriptions.</p>
+            <p>No recipe data changes happen until you explicitly run tasks.</p>
+          </div>
+        </section>
+
+        <section className="auth-card">
+          <h2>Create Admin Account</h2>
+          <p>This account can manage users, schedules, settings, and runs.</p>
           <form onSubmit={registerFirstUser}>
             <label className="field">
-              <span>Admin username</span>
+              <span>Admin Username</span>
               <input
                 value={registerUsername}
                 onChange={(event) => setRegisterUsername(event.target.value)}
+                placeholder="admin"
               />
             </label>
             <label className="field">
@@ -1341,9 +2453,13 @@ export default function App() {
                 type="password"
                 value={registerPassword}
                 onChange={(event) => setRegisterPassword(event.target.value)}
+                placeholder="At least 8 characters"
               />
             </label>
-            <button type="submit">Create Admin Account</button>
+            <button type="submit" className="primary">
+              <Icon name="users" />
+              Create Admin Account
+            </button>
           </form>
           {error ? <div className="banner error">{error}</div> : null}
         </section>
@@ -1353,10 +2469,17 @@ export default function App() {
 
   if (!session) {
     return (
-      <main className="shell auth-shell">
-        <section className="panel auth-panel">
-          <h1>CookDex</h1>
-          <p>Sign in to manage runs, schedules, and settings.</p>
+      <main className="auth-shell">
+        <section className="auth-left">
+          <img src={wordmark} alt="CookDex" className="auth-wordmark" />
+          <p className="eyebrow">Welcome back.</p>
+          <h1>Sign in to your CookDex workspace.</h1>
+          <p>Control runs, schedules, settings, and recipe organization from one desktop-first interface.</p>
+        </section>
+
+        <section className="auth-card">
+          <h2>Sign In</h2>
+          <p>Use your CookDex user credentials.</p>
           <form onSubmit={doLogin}>
             <label className="field">
               <span>Username</span>
@@ -1364,13 +2487,12 @@ export default function App() {
             </label>
             <label className="field">
               <span>Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </label>
-            <button type="submit">Sign In</button>
+            <button type="submit" className="primary">
+              <Icon name="play" />
+              Sign In
+            </button>
           </form>
           {error ? <div className="banner error">{error}</div> : null}
         </section>
@@ -1378,39 +2500,80 @@ export default function App() {
     );
   }
 
+  const showHeaderBreadcrumb = activePage === "overview";
+  const showHeaderRefresh = activePage === "overview";
+
   return (
-    <main className="shell app-shell">
-      <aside className="panel sidebar">
-        <div className="sidebar-brand">
-          <h1>CookDex</h1>
-          <p className="muted-text">Web UI-first automation control center.</p>
-        </div>
-        <nav className="navbar">
-          <div className="nav-shell vertical">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                className={`nav-btn ${activePage === item.id ? "active" : ""}`}
-                onClick={() => setActivePage(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
+    <main className="app-shell">
+      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div className="sidebar-top">
+          <div className="brand-wrap">
+            <img src={sidebarCollapsed ? emblem : wordmark} alt="CookDex" className="brand-mark" />
+            {!sidebarCollapsed ? <p className="muted tiny">Web UI-first automation control center.</p> : null}
           </div>
-        </nav>
-        <div className="sidebar-actions">
-          <button className="secondary" onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          <button className="icon-btn" onClick={() => setSidebarCollapsed((prev) => !prev)} aria-label="Toggle sidebar">
+            <Icon name="menu" />
           </button>
-          <button className="secondary" onClick={loadData}>Refresh</button>
-          <button onClick={doLogout}>Log Out</button>
+        </div>
+
+        <nav className="sidebar-nav">
+          <p className="muted tiny">Workspace</p>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item ${activePage === item.id ? "active" : ""}`}
+              onClick={() => setActivePage(item.id)}
+              title={item.label}
+            >
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="user-chip">
+            <span className="avatar">{String(session.username || "u").slice(0, 1).toUpperCase()}</span>
+            <div>
+              <strong>{session.username}</strong>
+              <p className="tiny muted">Owner</p>
+            </div>
+          </div>
+
+          <div className="sidebar-actions">
+            <button className="ghost" onClick={loadData} title="Refresh data">
+              <Icon name="refresh" />
+              <span>Refresh</span>
+            </button>
+            <button
+              className="ghost"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              title="Toggle theme"
+            >
+              <Icon name="settings" />
+              <span>Theme</span>
+            </button>
+            <button className="ghost" onClick={doLogout} title="Log out">
+              <Icon name="logout" />
+              <span>Log Out</span>
+            </button>
+          </div>
         </div>
       </aside>
 
       <section className="content-shell">
-        <header className="topbar panel">
-          <h2>{activePageMeta.title}</h2>
-          <p className="muted-text">{activePageMeta.subtitle}</p>
+        <header className="page-header card">
+          <div>
+            {showHeaderBreadcrumb ? <p className="eyebrow">Home / {activePageMeta.title}</p> : null}
+            <h2>{activePageMeta.title}</h2>
+            <p className="muted">{activePageMeta.subtitle}</p>
+          </div>
+          {showHeaderRefresh ? (
+            <button className="ghost" onClick={loadData}>
+              <Icon name="refresh" />
+              Refresh
+            </button>
+          ) : null}
         </header>
 
         {error ? <div className="banner error">{error}</div> : null}
@@ -1421,3 +2584,4 @@ export default function App() {
     </main>
   );
 }
+

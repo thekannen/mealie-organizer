@@ -3,15 +3,19 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+import requests
 
+from .. import __version__
 from .config_files import ConfigFilesManager
 from .env_catalog import ENV_SPEC_BY_KEY, ENV_VAR_SPECS, EnvVarSpec
 from .runner import RunQueueManager
@@ -26,6 +30,7 @@ from .schemas import (
     ScheduleUpdateRequest,
     SettingsUpdateRequest,
     UserCreateRequest,
+    ProviderConnectionTestRequest,
     UserPasswordResetRequest,
 )
 from .security import SecretCipher, hash_password, new_session_token, verify_password
@@ -35,6 +40,264 @@ from .tasks import TaskRegistry
 
 _ENV_KEY_RE = re.compile(r"^[A-Z0-9_]+$")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,64}$")
+_HELP_DOCS: tuple[dict[str, str], ...] = (
+    {"id": "quick-start", "title": "Quick Start Checklist", "group": "Setup", "file": "GETTING_STARTED.md"},
+    {"id": "install-update", "title": "Install and Update", "group": "Setup", "file": "INSTALL.md"},
+    {"id": "tasks-api", "title": "Tasks and API Reference", "group": "Troubleshooting", "file": "TASKS.md"},
+    {"id": "data-pipeline", "title": "Data Maintenance Pipeline", "group": "Troubleshooting", "file": "DATA_MAINTENANCE.md"},
+)
+
+
+def _percent(part: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    return int(round((part / total) * 100))
+
+
+def _resolve_next_url(current_url: str, next_link: Any) -> str | None:
+    if not isinstance(next_link, str) or not next_link:
+        return None
+    if next_link.lower().startswith(("http://", "https://")):
+        return next_link
+
+    if next_link.startswith("/"):
+        base = urlsplit(current_url)
+        rel = urlsplit(next_link)
+        path = rel.path
+        if base.path.startswith("/api/") and not path.startswith("/api/"):
+            path = f"/api{path}"
+        return urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+
+    return urljoin(current_url, next_link)
+
+
+def _fetch_paginated_items(url: str, headers: dict[str, str], timeout: int = 20, max_pages: int = 30) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    next_url: str | None = url
+    pages = 0
+
+    while next_url and pages < max_pages:
+        pages += 1
+        response = requests.get(next_url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if not isinstance(data, dict):
+            return items
+
+        page_items = data.get("items")
+        if isinstance(page_items, list):
+            items.extend(item for item in page_items if isinstance(item, dict))
+            next_url = _resolve_next_url(next_url, data.get("next"))
+            continue
+        return items
+
+    return items
+
+
+def _build_help_docs_payload(services: Services) -> list[dict[str, str]]:
+    docs_root = (services.settings.config_root / "docs").resolve()
+    payload: list[dict[str, str]] = []
+
+    for item in _HELP_DOCS:
+        path = (docs_root / item["file"]).resolve()
+        try:
+            path.relative_to(docs_root)
+        except Exception:
+            continue
+        if not path.exists() or not path.is_file():
+            continue
+
+        payload.append(
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "group": item["group"],
+                "content": path.read_text(encoding="utf-8"),
+            }
+        )
+
+    return payload
+
+
+def _top_counter_rows(counter: Counter[str], denominator: int, limit: int = 6) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for name, count in counter.most_common(limit):
+        rows.append({"name": name, "count": int(count), "percent": _percent(int(count), denominator)})
+    return rows
+
+
+def _build_overview_metrics_payload(services: Services) -> dict[str, Any]:
+    runtime_env = _build_runtime_env(services.state, services.cipher)
+    mealie_url = str(runtime_env.get("MEALIE_URL", "")).strip().rstrip("/")
+    mealie_api_key = str(runtime_env.get("MEALIE_API_KEY", "")).strip()
+
+    payload: dict[str, Any] = {
+        "ok": False,
+        "reason": "",
+        "totals": {
+            "recipes": 0,
+            "ingredients": 0,
+            "tools": 0,
+            "categories": 0,
+            "tags": 0,
+            "labels": 0,
+            "units": 0,
+        },
+        "coverage": {"categories": 0, "tags": 0, "tools": 0},
+        "top": {"categories": [], "tags": [], "tools": []},
+    }
+
+    if not mealie_url or not mealie_api_key:
+        payload["reason"] = "Set Mealie URL and API key in Settings to load live overview metrics."
+        return payload
+
+    headers = {
+        "Authorization": f"Bearer {mealie_api_key}",
+        "Accept": "application/json",
+    }
+
+    try:
+        recipes = _fetch_paginated_items(f"{mealie_url}/recipes?perPage=1000", headers)
+        categories = _fetch_paginated_items(f"{mealie_url}/organizers/categories?perPage=1000", headers)
+        tags = _fetch_paginated_items(f"{mealie_url}/organizers/tags?perPage=1000", headers)
+        try:
+            tools = _fetch_paginated_items(f"{mealie_url}/organizers/tools?perPage=1000", headers)
+        except Exception:
+            tools = _fetch_paginated_items(f"{mealie_url}/tools?perPage=1000", headers)
+        foods = _fetch_paginated_items(f"{mealie_url}/foods?perPage=1000", headers)
+        units = _fetch_paginated_items(f"{mealie_url}/units?perPage=1000", headers)
+    except requests.RequestException as exc:
+        payload["reason"] = f"Unable to fetch Mealie metrics: {exc}"
+        return payload
+
+    recipe_total = len(recipes)
+
+    recipes_with_categories = 0
+    recipes_with_tags = 0
+    recipes_with_tools = 0
+
+    category_counter: Counter[str] = Counter()
+    tag_counter: Counter[str] = Counter()
+    tool_counter: Counter[str] = Counter()
+
+    for recipe in recipes:
+        category_rows = recipe.get("recipeCategory") or []
+        tag_rows = recipe.get("tags") or []
+        tool_rows = recipe.get("tools") or recipe.get("recipeTool") or []
+
+        if isinstance(category_rows, list) and len(category_rows) > 0:
+            recipes_with_categories += 1
+            for row in category_rows:
+                if isinstance(row, dict):
+                    name = str(row.get("name") or "").strip()
+                    if name:
+                        category_counter[name] += 1
+
+        if isinstance(tag_rows, list) and len(tag_rows) > 0:
+            recipes_with_tags += 1
+            for row in tag_rows:
+                if isinstance(row, dict):
+                    name = str(row.get("name") or "").strip()
+                    if name:
+                        tag_counter[name] += 1
+
+        if isinstance(tool_rows, list) and len(tool_rows) > 0:
+            recipes_with_tools += 1
+            for row in tool_rows:
+                if isinstance(row, dict):
+                    name = str(row.get("name") or "").strip()
+                    if name:
+                        tool_counter[name] += 1
+
+    payload["ok"] = True
+    payload["totals"] = {
+        "recipes": recipe_total,
+        "ingredients": len(foods),
+        "tools": len(tools),
+        "categories": len(categories),
+        "tags": len(tags),
+        "labels": 0,
+        "units": len(units),
+    }
+    payload["coverage"] = {
+        "categories": _percent(recipes_with_categories, recipe_total),
+        "tags": _percent(recipes_with_tags, recipe_total),
+        "tools": _percent(recipes_with_tools, recipe_total),
+    }
+    payload["top"] = {
+        "categories": _top_counter_rows(category_counter, recipe_total),
+        "tags": _top_counter_rows(tag_counter, recipe_total),
+        "tools": _top_counter_rows(tool_counter, recipe_total),
+    }
+    return payload
+
+
+def _resolve_runtime_value(runtime_env: dict[str, str], key: str, override: str | None = None) -> str:
+    if override is not None:
+        return str(override).strip()
+    return str(runtime_env.get(key, "")).strip()
+
+
+def _test_mealie_connection(url: str, api_key: str) -> tuple[bool, str]:
+    base_url = url.rstrip("/")
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    try:
+        response = requests.get(f"{base_url}/users/self", headers=headers, timeout=12)
+        response.raise_for_status()
+        return True, "Mealie connection validated."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
+    if not api_key:
+        return False, "OpenAI API key is required."
+    endpoint = "https://api.openai.com/v1/chat/completions"
+    body = {
+        "model": model or "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.post(endpoint, headers=headers, json=body, timeout=15)
+        response.raise_for_status()
+        return True, "OpenAI API key validated."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
+    base_url = url.strip().rstrip("/")
+    if not base_url:
+        return False, "Ollama URL is required."
+
+    if base_url.endswith("/api"):
+        tags_url = f"{base_url}/tags"
+    elif base_url.endswith("/api/tags"):
+        tags_url = base_url
+    else:
+        tags_url = f"{base_url}/api/tags"
+
+    try:
+        response = requests.get(tags_url, timeout=12)
+        response.raise_for_status()
+        payload = response.json()
+        models = payload.get("models") if isinstance(payload, dict) else None
+        if isinstance(models, list) and model:
+            found = any(str(item.get("name") or "").startswith(model) for item in models if isinstance(item, dict))
+            if not found:
+                return True, f"Connection OK, model '{model}' was not listed by Ollama."
+        return True, "Ollama connection validated."
+    except Exception as exc:
+        return False, str(exc)
+
 
 
 @dataclass(frozen=True)
@@ -305,8 +568,35 @@ def create_app() -> FastAPI:
 
     @app.get(f"{api_prefix}/health")
     async def health() -> dict[str, Any]:
-        return {"ok": True, "base_path": settings.base_path}
+        return {"ok": True, "base_path": settings.base_path, "version": __version__}
 
+    @app.get(f"{api_prefix}/metrics/overview")
+    async def get_overview_metrics(
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        return _build_overview_metrics_payload(services)
+
+    @app.get(f"{api_prefix}/about/meta")
+    async def get_about_meta(
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        return {
+            "app_version": __version__,
+            "webui_version": app.version,
+            "counts": {
+                "tasks": len(services.registry.task_ids),
+                "users": len(services.state.list_users()),
+                "runs": len(services.state.list_runs(limit=500)),
+                "schedules": len(services.scheduler.list_schedules()),
+                "config_files": len(services.config_files.list_files()),
+            },
+            "links": {
+                "github": "https://github.com/thekannen/cookdex",
+                "sponsor": "https://github.com/sponsors/thekannen",
+            },
+        }
     @app.get(f"{api_prefix}/auth/bootstrap-status")
     async def bootstrap_status(services: Services = Depends(_require_services)) -> dict[str, Any]:
         return {"setup_required": not services.state.has_users()}
@@ -613,6 +903,50 @@ def create_app() -> FastAPI:
 
         return await get_settings(_session, services)
 
+    @app.post(f"{api_prefix}/settings/test/mealie")
+    async def test_mealie_settings(
+        payload: ProviderConnectionTestRequest,
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        runtime_env = _build_runtime_env(services.state, services.cipher)
+        mealie_url = _resolve_runtime_value(runtime_env, "MEALIE_URL", payload.mealie_url).rstrip("/")
+        mealie_api_key = _resolve_runtime_value(runtime_env, "MEALIE_API_KEY", payload.mealie_api_key)
+        if not mealie_url or not mealie_api_key:
+            return {"ok": False, "detail": "Mealie URL and API key are required."}
+        ok, detail = _test_mealie_connection(mealie_url, mealie_api_key)
+        return {"ok": ok, "detail": detail}
+
+    @app.post(f"{api_prefix}/settings/test/openai")
+    async def test_openai_settings(
+        payload: ProviderConnectionTestRequest,
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        runtime_env = _build_runtime_env(services.state, services.cipher)
+        openai_api_key = _resolve_runtime_value(runtime_env, "OPENAI_API_KEY", payload.openai_api_key)
+        openai_model = _resolve_runtime_value(runtime_env, "OPENAI_MODEL", payload.openai_model) or "gpt-4o-mini"
+        ok, detail = _test_openai_connection(openai_api_key, openai_model)
+        return {"ok": ok, "detail": detail, "model": openai_model}
+
+    @app.post(f"{api_prefix}/settings/test/ollama")
+    async def test_ollama_settings(
+        payload: ProviderConnectionTestRequest,
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        runtime_env = _build_runtime_env(services.state, services.cipher)
+        ollama_url = _resolve_runtime_value(runtime_env, "OLLAMA_URL", payload.ollama_url)
+        ollama_model = _resolve_runtime_value(runtime_env, "OLLAMA_MODEL", payload.ollama_model)
+        ok, detail = _test_ollama_connection(ollama_url, ollama_model)
+        return {"ok": ok, "detail": detail, "model": ollama_model}
+
+    @app.get(f"{api_prefix}/help/docs")
+    async def get_help_docs(
+        _session: dict[str, Any] = Depends(_require_session),
+        services: Services = Depends(_require_services),
+    ) -> dict[str, Any]:
+        return {"items": _build_help_docs_payload(services)}
     @app.get(f"{api_prefix}/config/files")
     async def list_config_files(
         _session: dict[str, Any] = Depends(_require_session),
@@ -672,3 +1006,4 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500, content={"error": "runtime_error", "detail": str(exc)})
 
     return app
+
