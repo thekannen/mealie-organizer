@@ -1,8 +1,6 @@
 services:
   mealie-organizer:
-    build:
-      context: .
-    image: mealie-organizer:latest
+    image: ${MEALIE_ORGANIZER_IMAGE:-ghcr.io/thekannen/mealie-organizer}:${MEALIE_ORGANIZER_TAG:-latest}
     container_name: mealie-organizer
     restart: unless-stopped
     env_file:

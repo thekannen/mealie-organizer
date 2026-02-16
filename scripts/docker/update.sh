@@ -9,6 +9,7 @@ SERVICE="${SERVICE:-mealie-organizer}"
 SKIP_GIT_PULL="${SKIP_GIT_PULL:-false}"
 NO_BUILD="${NO_BUILD:-false}"
 PRUNE="${PRUNE:-false}"
+SOURCE="${SOURCE:-ghcr}"
 
 usage() {
   cat <<USAGE
@@ -18,8 +19,11 @@ Options:
   --repo-root <path>   Repo root path (default: script-derived repo root)
   --branch <name>      Git branch to update from (default: main)
   --service <name>     Docker Compose service name (default: mealie-organizer)
+  --source <ghcr|local> Deploy source (default: ghcr).
+                       ghcr: pull image and restart without local build
+                       local: use docker-compose.build.yml and build from source
   --skip-git-pull      Skip git fetch/pull step
-  --no-build           Restart without rebuilding image
+  --no-build           Restart without rebuilding image (local source only)
   --prune              Run 'docker image prune -f' after update
   -h, --help           Show this help text
 USAGE
@@ -37,6 +41,10 @@ while [ $# -gt 0 ]; do
       ;;
     --service)
       SERVICE="$2"
+      shift 2
+      ;;
+    --source)
+      SOURCE="$2"
       shift 2
       ;;
     --skip-git-pull)
@@ -63,6 +71,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ "$SOURCE" != "ghcr" ] && [ "$SOURCE" != "local" ]; then
+  echo "[error] --source must be 'ghcr' or 'local'."
+  exit 1
+fi
+
 if [ ! -d "$REPO_ROOT/.git" ]; then
   echo "[error] Not a git repo: $REPO_ROOT"
   exit 1
@@ -87,10 +100,24 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
+COMPOSE_FILES=(-f docker-compose.yml)
+if [ "$SOURCE" = "local" ]; then
+  if [ ! -f "$REPO_ROOT/docker-compose.build.yml" ]; then
+    echo "[error] docker-compose.build.yml not found in: $REPO_ROOT"
+    exit 1
+  fi
+  COMPOSE_FILES+=(-f docker-compose.build.yml)
+fi
+
+compose_run() {
+  "${COMPOSE_CMD[@]}" "${COMPOSE_FILES[@]}" "$@"
+}
+
 cd "$REPO_ROOT"
 
 echo "[start] Repo: $REPO_ROOT"
 echo "[start] Service: $SERVICE"
+echo "[start] Source: $SOURCE"
 
 echo "[start] Current commit: $(git rev-parse --short HEAD)"
 
@@ -104,16 +131,26 @@ else
   echo "[skip] Git pull skipped"
 fi
 
-if [ "$NO_BUILD" = true ]; then
-  echo "[start] Restarting service without rebuild"
-  "${COMPOSE_CMD[@]}" up -d --no-build --remove-orphans "$SERVICE"
+if [ "$SOURCE" = "ghcr" ]; then
+  if [ "$NO_BUILD" = true ]; then
+    echo "[warn] --no-build is ignored for --source ghcr"
+  fi
+  echo "[start] Pulling image from registry"
+  compose_run pull "$SERVICE"
+  echo "[start] Restarting service from pulled image"
+  compose_run up -d --no-build --remove-orphans "$SERVICE"
 else
-  echo "[start] Rebuilding and restarting service"
-  "${COMPOSE_CMD[@]}" up -d --build --remove-orphans "$SERVICE"
+  if [ "$NO_BUILD" = true ]; then
+    echo "[start] Restarting local-source service without rebuild"
+    compose_run up -d --no-build --remove-orphans "$SERVICE"
+  else
+    echo "[start] Rebuilding and restarting local-source service"
+    compose_run up -d --build --remove-orphans "$SERVICE"
+  fi
 fi
 
 echo "[ok] Service status"
-"${COMPOSE_CMD[@]}" ps "$SERVICE"
+compose_run ps "$SERVICE"
 
 if [ "$PRUNE" = true ]; then
   echo "[start] Pruning dangling images"

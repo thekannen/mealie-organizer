@@ -80,11 +80,21 @@ If using ChatGPT/OpenAI-compatible:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - Optional: `OPENAI_BASE_URL` for compatible providers
+- Optional deploy pinning:
+  - `MEALIE_ORGANIZER_IMAGE` (default `ghcr.io/thekannen/mealie-organizer`)
+  - `MEALIE_ORGANIZER_TAG` (default `latest`)
 
-4. Build and start.
+4. Pull and start from GHCR.
 
 ```bash
-docker compose up -d --build
+docker compose pull mealie-organizer
+docker compose up -d --no-build --remove-orphans mealie-organizer
+```
+
+Optional local build workflow:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build mealie-organizer
 ```
 
 5. Watch logs.
@@ -114,6 +124,15 @@ Container behavior is controlled by env vars:
 - `RUN_INTERVAL_SECONDS`: loop interval (default `21600`)
 
 Defaults in `docker-compose.yml` run categorize in loop mode every 6 hours.
+
+## GHCR deployment model
+
+- Default image: `ghcr.io/thekannen/mealie-organizer:latest`
+- Override image/tag in `.env` with:
+  - `MEALIE_ORGANIZER_IMAGE`
+  - `MEALIE_ORGANIZER_TAG`
+- Local source builds are opt-in via `docker-compose.build.yml`.
+- Full GHCR + CLI setup guide: `docs/docker-ghcr.md`
 
 ## Taxonomy refresh behavior
 
@@ -152,20 +171,29 @@ Cookbook queries can be defined with category/tag names in `cookbooks.json`. Dur
 Use the helper script:
 
 ```bash
-./scripts/docker/update.sh
+./scripts/docker/update.sh --source ghcr
 ```
 
 Useful options:
+- `--source <ghcr|local>` (default `ghcr`)
 - `--skip-git-pull`
 - `--no-build`
 - `--branch <name>`
 - `--prune`
 
-Manual equivalent:
+Manual GHCR equivalent:
 
 ```bash
 git pull
-docker compose up -d --build --remove-orphans mealie-organizer
+docker compose pull mealie-organizer
+docker compose up -d --no-build --remove-orphans mealie-organizer
+```
+
+Manual local-build equivalent:
+
+```bash
+git pull
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build --remove-orphans mealie-organizer
 ```
 
 ## Versioning
