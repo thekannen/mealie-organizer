@@ -1,6 +1,6 @@
 # Mealie Organizer
 
-[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md)
+[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
 
 Mealie Organizer keeps Mealie metadata clean and usable at scale.
 
@@ -54,6 +54,8 @@ docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
 ```
 
+Advanced task flags and task-specific workflows are documented in [TASKS.md](TASKS.md).
+
 Use helper update script:
 
 ```bash
@@ -68,6 +70,8 @@ Container behavior is controlled by env vars:
 - `RUN_INTERVAL_SECONDS`: loop interval in seconds
 - `TAXONOMY_REFRESH_MODE`: `merge` (default) or `replace`
 - `DRY_RUN`: `true` for plan-only mode
+
+For full task and switch behavior, see [TASKS.md](TASKS.md).
 
 ## User-Controlled Settings
 
@@ -100,6 +104,7 @@ User control remains local even with GHCR images:
 |-- .env.example
 |-- INSTALL.md
 |-- UPDATE.md
+|-- TASKS.md
 `-- README.md
 ```
 
