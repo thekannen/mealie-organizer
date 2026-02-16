@@ -2,7 +2,26 @@ import json
 import os
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+def _looks_like_repo_root(path: Path) -> bool:
+    return (path / "configs" / "config.json").exists() or (path / "configs" / "taxonomy").exists()
+
+
+def _discover_repo_root() -> Path:
+    env_root = os.environ.get("MEALIE_ORGANIZER_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if candidate.exists():
+            return candidate
+
+    source_root = Path(__file__).resolve().parents[2]
+    for candidate in (Path.cwd(), Path("/app"), source_root):
+        if _looks_like_repo_root(candidate):
+            return candidate
+    return source_root
+
+
+REPO_ROOT = _discover_repo_root()
 ENV_FILE = REPO_ROOT / ".env"
 CONFIG_FILE = REPO_ROOT / "configs" / "config.json"
 MEALIE_URL_PLACEHOLDER = "http://your.server.ip.address:9000/api"

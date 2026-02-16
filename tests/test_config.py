@@ -1,5 +1,8 @@
+import importlib
+
 import pytest
 
+import mealie_organizer.config as config_module
 from mealie_organizer.config import (
     env_or_config,
     require_mealie_url,
@@ -82,3 +85,18 @@ def test_resolve_mealie_api_key_uses_legacy_alias(monkeypatch):
     monkeypatch.delenv("MEALIE_API_KEY", raising=False)
     monkeypatch.setenv("MEALIE_API_TOKEN", "legacy-token")
     assert resolve_mealie_api_key(required=True) == "legacy-token"
+
+
+def test_repo_root_uses_env_override(monkeypatch, tmp_path):
+    custom_root = tmp_path / "custom-root"
+    (custom_root / "configs" / "taxonomy").mkdir(parents=True)
+    (custom_root / "configs" / "config.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("MEALIE_ORGANIZER_ROOT", str(custom_root))
+    reloaded = importlib.reload(config_module)
+    try:
+        assert reloaded.REPO_ROOT == custom_root.resolve()
+        assert reloaded.resolve_repo_path("configs/taxonomy") == custom_root.resolve() / "configs" / "taxonomy"
+    finally:
+        monkeypatch.delenv("MEALIE_ORGANIZER_ROOT", raising=False)
+        importlib.reload(config_module)
