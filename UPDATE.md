@@ -6,11 +6,13 @@ This document covers update flows by deployment path.
 
 ## 1) GHCR Public Image (Recommended)
 
+Commands below assume the no-clone setup from `INSTALL.md` with `compose.yaml`.
+
 ### Stay on latest
 
 ```bash
-docker compose pull mealie-organizer
-docker compose up -d --no-build --remove-orphans mealie-organizer
+docker compose -f compose.yaml pull mealie-organizer
+docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
 ```
 
 ### Pin to a specific release tag
@@ -24,11 +26,11 @@ MEALIE_ORGANIZER_TAG=v2026.02.6
 Then deploy:
 
 ```bash
-docker compose pull mealie-organizer
-docker compose up -d --no-build --remove-orphans mealie-organizer
+docker compose -f compose.yaml pull mealie-organizer
+docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
 ```
 
-### Use helper script (recommended)
+### If you cloned the full repo, helper script option
 
 ```bash
 ./scripts/docker/update.sh --source ghcr
@@ -110,7 +112,7 @@ Optional helper:
 
 `scripts/docker/update.sh` is kept and current.
 
-- Preferred: `--source ghcr`
+- Preferred when running from a cloned repo: `--source ghcr`
 - Available but deprecated for routine deployment: `--source local`
 
 If you run outside a git checkout, use:

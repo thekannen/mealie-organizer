@@ -48,7 +48,13 @@ Generated tags include:
 
 ## 3) Deploy from GHCR (default)
 
-`docker-compose.yml` is GHCR-first. Configure optional image/tag in `.env`:
+For no-clone installs, use `compose.ghcr.yml` from the repository root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/mealie-organizer/main/compose.ghcr.yml -o compose.yaml
+```
+
+Configure optional image/tag in `.env`:
 
 ```env
 MEALIE_ORGANIZER_IMAGE=ghcr.io/thekannen/mealie-organizer
@@ -58,8 +64,8 @@ MEALIE_ORGANIZER_TAG=latest
 Deploy:
 
 ```bash
-docker compose pull mealie-organizer
-docker compose up -d --no-build --remove-orphans mealie-organizer
+docker compose -f compose.yaml pull mealie-organizer
+docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
 ```
 
 ## 4) Pin and Roll Back
@@ -73,8 +79,8 @@ MEALIE_ORGANIZER_TAG=v1.2.3
 Then redeploy:
 
 ```bash
-docker compose pull mealie-organizer
-docker compose up -d --no-build --remove-orphans mealie-organizer
+docker compose -f compose.yaml pull mealie-organizer
+docker compose -f compose.yaml up -d --no-build --remove-orphans mealie-organizer
 ```
 
 ## 5) Local Build Override
@@ -110,7 +116,7 @@ Use local source mode (deprecated; kept for compatibility):
 All user/runtime settings remain editable on the deployment host:
 
 - `.env` for secrets and runtime flags
-- `./configs` mounted to `/app/configs`
+- optional `./configs` mounted to `/app/configs`
 - `./cache`, `./logs`, `./reports` mounted for state/output
 
 Changing images does not remove this local control model.

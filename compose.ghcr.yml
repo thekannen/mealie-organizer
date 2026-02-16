@@ -1,0 +1,21 @@
+services:
+  mealie-organizer:
+    image: ${MEALIE_ORGANIZER_IMAGE:-ghcr.io/thekannen/mealie-organizer}:${MEALIE_ORGANIZER_TAG:-latest}
+    container_name: mealie-organizer
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TASK: ${TASK:-categorize}
+      RUN_MODE: ${RUN_MODE:-loop}
+      RUN_INTERVAL_SECONDS: ${RUN_INTERVAL_SECONDS:-21600}
+      TAXONOMY_REFRESH_MODE: ${TAXONOMY_REFRESH_MODE:-merge}
+    volumes:
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      # Optional: mount custom configs/taxonomy from host.
+      # If omitted, image-bundled defaults are used.
+      # - ./configs:/app/configs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

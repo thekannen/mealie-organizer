@@ -7,3 +7,4 @@ cache/
 .pytest_cache/
 reports/
 .DS_Store
+.tmp/
