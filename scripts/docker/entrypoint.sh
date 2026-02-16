@@ -8,6 +8,14 @@ PROVIDER="${PROVIDER:-}"
 CLEANUP_APPLY="${CLEANUP_APPLY:-false}"
 MAINTENANCE_APPLY_CLEANUPS="${MAINTENANCE_APPLY_CLEANUPS:-false}"
 
+# Use absolute in-container defaults so packaged installs resolve taxonomy files reliably.
+export TAXONOMY_CATEGORIES_FILE="${TAXONOMY_CATEGORIES_FILE:-/app/configs/taxonomy/categories.json}"
+export TAXONOMY_TAGS_FILE="${TAXONOMY_TAGS_FILE:-/app/configs/taxonomy/tags.json}"
+export COOKBOOKS_FILE="${COOKBOOKS_FILE:-/app/configs/taxonomy/cookbooks.json}"
+export LABELS_FILE="${LABELS_FILE:-/app/configs/taxonomy/labels.json}"
+export TOOLS_FILE="${TOOLS_FILE:-/app/configs/taxonomy/tools.json}"
+export UNITS_ALIAS_FILE="${UNITS_ALIAS_FILE:-/app/configs/taxonomy/units_aliases.json}"
+
 is_true() {
   case "${1,,}" in
     1|true|yes|on) return 0 ;;
