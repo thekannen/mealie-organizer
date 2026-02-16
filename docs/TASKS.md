@@ -240,6 +240,7 @@ Default behavior:
 
 - Serves `/mo-plugin/page` companion UI
 - Serves `/mo-plugin/static/injector.js` for top-bar button injection
+- Uses `/mo-plugin/api/v1/auth/context` so top-bar injection renders only for admins
 - Exposes `/mo-plugin/api/v1/parser/status` and `/mo-plugin/api/v1/parser/runs`
 - Enforces admin-only access by validating Mealie bearer/cookie tokens via `/api/users/self`
 - Runs parser in dry-run mode only when started from plugin API
