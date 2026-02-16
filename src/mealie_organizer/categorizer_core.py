@@ -5,6 +5,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -121,6 +122,49 @@ class MealieCategorizer:
         }
         self.cache = self.load_cache()
 
+    @staticmethod
+    def _resolve_next_url(current_url, next_link):
+        if not isinstance(next_link, str) or not next_link:
+            return None
+        if next_link.lower().startswith(("http://", "https://")):
+            return next_link
+
+        if next_link.startswith("/"):
+            base = urlsplit(current_url)
+            rel = urlsplit(next_link)
+            path = rel.path
+            # Mealie can return '/recipes?...' even when requests are sent to '/api/recipes?...'.
+            if base.path.startswith("/api/") and not path.startswith("/api/"):
+                path = f"/api{path}"
+            return urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+
+        return urljoin(current_url, next_link)
+
+    def _get_paginated(self, url, timeout=60):
+        items = []
+        next_url = url
+
+        while next_url:
+            response = requests.get(next_url, headers=self.headers, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+
+            if isinstance(data, list):
+                return data if not items else items + data
+            if not isinstance(data, dict):
+                return data
+
+            page_items = data.get("items")
+            if page_items is None:
+                return data
+            if not isinstance(page_items, list):
+                return page_items
+
+            items.extend(page_items)
+            next_url = self._resolve_next_url(next_url, data.get("next"))
+
+        return items
+
     def load_cache(self):
         if self.cache_file.exists():
             with self.cache_file.open("r", encoding="utf-8") as f:
@@ -219,21 +263,13 @@ class MealieCategorizer:
         self.log(f"[summary] duration={(elapsed / 60):.1f} min avg_rate={rate:.2f}/s")
 
     def get_all_recipes(self):
-        response = requests.get(f"{self.mealie_url}/recipes?perPage=999", headers=self.headers, timeout=60)
-        response.raise_for_status()
-        return response.json().get("items", [])
+        return self._get_paginated(f"{self.mealie_url}/recipes?perPage=1000", timeout=60)
 
     def get_all_categories(self):
-        response = requests.get(f"{self.mealie_url}/organizers/categories", headers=self.headers, timeout=60)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("items", data)
+        return self._get_paginated(f"{self.mealie_url}/organizers/categories?perPage=1000", timeout=60)
 
     def get_all_tags(self):
-        response = requests.get(f"{self.mealie_url}/organizers/tags", headers=self.headers, timeout=60)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("items", data)
+        return self._get_paginated(f"{self.mealie_url}/organizers/tags?perPage=1000", timeout=60)
 
     @staticmethod
     def make_prompt(recipes, category_names, tag_names):

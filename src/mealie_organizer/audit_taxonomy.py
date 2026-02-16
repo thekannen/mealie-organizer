@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -21,10 +22,46 @@ def parse_args():
 
 
 def get_json(session, url):
-    response = session.get(url, timeout=60)
-    response.raise_for_status()
-    data = response.json()
-    return data.get("items", data)
+    def _resolve_next_url(current_url, next_link):
+        if not isinstance(next_link, str) or not next_link:
+            return None
+        if next_link.lower().startswith(("http://", "https://")):
+            return next_link
+
+        if next_link.startswith("/"):
+            base = urlsplit(current_url)
+            rel = urlsplit(next_link)
+            path = rel.path
+            # Mealie can return '/recipes?...' even when requests are sent to '/api/recipes?...'.
+            if base.path.startswith("/api/") and not path.startswith("/api/"):
+                path = f"/api{path}"
+            return urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+
+        return urljoin(current_url, next_link)
+
+    items = []
+    next_url = url
+
+    while next_url:
+        response = session.get(next_url, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, list):
+            return data if not items else items + data
+        if not isinstance(data, dict):
+            return data
+
+        page_items = data.get("items")
+        if page_items is None:
+            return data
+        if not isinstance(page_items, list):
+            return page_items
+
+        items.extend(page_items)
+        next_url = _resolve_next_url(next_url, data.get("next"))
+
+    return items
 
 
 def normalize_for_similarity(name):
@@ -86,9 +123,9 @@ def main():
         }
     )
 
-    recipes = get_json(session, f"{mealie_url}/recipes?perPage=999")
-    categories = get_json(session, f"{mealie_url}/organizers/categories?perPage=999")
-    tags = get_json(session, f"{mealie_url}/organizers/tags?perPage=999")
+    recipes = get_json(session, f"{mealie_url}/recipes?perPage=1000")
+    categories = get_json(session, f"{mealie_url}/organizers/categories?perPage=1000")
+    tags = get_json(session, f"{mealie_url}/organizers/tags?perPage=1000")
 
     category_usage = {c.get("name", ""): 0 for c in categories if c.get("name")}
     tag_usage = {t.get("name", ""): 0 for t in tags if t.get("name")}
