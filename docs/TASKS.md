@@ -1,6 +1,6 @@
 # Mealie Organizer Tasks
 
-[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
+[Overview](../README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
 
 This guide explains each task, the special switches, and when to use each mode.
 

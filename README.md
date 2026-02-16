@@ -1,8 +1,9 @@
 # Mealie Organizer
 
-[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
+[Overview](README.md) | [Install](docs/INSTALL.md) | [Update](docs/UPDATE.md) | [Tasks](docs/TASKS.md)
 
 Mealie Organizer keeps Mealie metadata clean and usable at scale.
+Operational guides now live under [`docs/`](docs/README.md).
 
 It can:
 - Refresh categories and tags from templates
@@ -15,9 +16,9 @@ It can:
 
 | Deployment path | Best for | Install guide | Update guide |
 | --- | --- | --- | --- |
-| GHCR public image (recommended, no clone needed) | Most self-hosters | [Install](INSTALL.md#1-ghcr-public-image-recommended) | [Update](UPDATE.md#1-ghcr-public-image-recommended) |
-| Your own custom image | Teams with custom changes or private registries | [Install](INSTALL.md#2-build-and-push-your-own-image) | [Update](UPDATE.md#2-your-own-custom-image) |
-| Full local Ubuntu manual (no Docker) | Operators who want total host-level control | [Install](INSTALL.md#3-full-local-ubuntu-manual-no-docker) | [Update](UPDATE.md#3-full-local-ubuntu-manual-no-docker) |
+| GHCR public image (recommended, no clone needed) | Most self-hosters | [Install](docs/INSTALL.md#1-ghcr-public-image-recommended) | [Update](docs/UPDATE.md#1-ghcr-public-image-recommended) |
+| Your own custom image | Teams with custom changes or private registries | [Install](docs/INSTALL.md#2-build-and-push-your-own-image) | [Update](docs/UPDATE.md#2-your-own-custom-image) |
+| Full local Ubuntu manual (no Docker) | Operators who want total host-level control | [Install](docs/INSTALL.md#3-full-local-ubuntu-manual-no-docker) | [Update](docs/UPDATE.md#3-full-local-ubuntu-manual-no-docker) |
 
 ## Common Commands
 
@@ -54,7 +55,7 @@ docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
 ```
 
-Advanced task flags and task-specific workflows are documented in [TASKS.md](TASKS.md).
+Advanced task flags and task-specific workflows are documented in [docs/TASKS.md](docs/TASKS.md).
 
 Use helper update script:
 
@@ -71,7 +72,7 @@ Container behavior is controlled by env vars:
 - `TAXONOMY_REFRESH_MODE`: `merge` (default) or `replace`
 - `DRY_RUN`: `true` for plan-only mode
 
-For full task and switch behavior, see [TASKS.md](TASKS.md).
+For full task and switch behavior, see [docs/TASKS.md](docs/TASKS.md).
 
 ## User-Controlled Settings
 
@@ -95,6 +96,11 @@ User control remains local even with GHCR images:
 |-- .github/workflows/publish-ghcr.yml
 |-- configs/
 |-- docs/
+|   |-- README.md
+|   |-- INSTALL.md
+|   |-- UPDATE.md
+|   |-- TASKS.md
+|   `-- docker-ghcr.md
 |-- scripts/
 |-- src/mealie_organizer/
 |-- tests/
@@ -102,9 +108,6 @@ User control remains local even with GHCR images:
 |-- docker-compose.build.yml
 |-- compose.ghcr.yml
 |-- .env.example
-|-- INSTALL.md
-|-- UPDATE.md
-|-- TASKS.md
 `-- README.md
 ```
 

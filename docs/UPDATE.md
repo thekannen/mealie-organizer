@@ -1,6 +1,6 @@
 # Update Mealie Organizer
 
-[Overview](README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
+[Overview](../README.md) | [Install](INSTALL.md) | [Update](UPDATE.md) | [Tasks](TASKS.md)
 
 This document covers update flows by deployment path.
 

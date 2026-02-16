@@ -1,16 +1,45 @@
+# Local environment and secrets
 .env
 .env.*
 !.env.example
+
+# Virtual environments
 .venv/
+venv/
+
+# Python bytecode and artifacts
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+*.so
 *.egg-info/
+.eggs/
 build/
 dist/
-cache/
-*.log
+pip-wheel-metadata/
+
+# Test, coverage, and static analysis caches
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# Local runtime/output folders
+cache/
+logs/
 reports/
-.DS_Store
 .tmp/
+*.log
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local issue tracking state
 .beads/

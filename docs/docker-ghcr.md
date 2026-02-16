@@ -1,6 +1,6 @@
 # Docker Deployment with GHCR
 
-> For self-host install/update flows, use `INSTALL.md` and `UPDATE.md`.
+> For self-host install/update flows, use [INSTALL.md](INSTALL.md) and [UPDATE.md](UPDATE.md).
 > This document is focused on GHCR registry behavior and publishing details.
 
 This project now defaults to pulling prebuilt images from GitHub Container Registry (GHCR):
