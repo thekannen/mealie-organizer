@@ -96,7 +96,7 @@ Use the helper script in GHCR mode (default):
 ./scripts/docker/update.sh --source ghcr
 ```
 
-Use local source mode:
+Use local source mode (deprecated; kept for compatibility):
 
 ```bash
 ./scripts/docker/update.sh --source local
