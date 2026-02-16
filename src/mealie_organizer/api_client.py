@@ -260,34 +260,49 @@ class MealieApiClient:
 
     def list_tools(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         try:
-            return self.get_paginated("/tools", per_page=per_page, timeout=60)
+            return self.get_paginated("/organizers/tools", per_page=per_page, timeout=60)
         except requests.HTTPError as exc:
             if not self._is_http_404(exc):
                 raise
-        return self.get_paginated("/organizers/tools", per_page=per_page, timeout=60)
+        # Backward compatibility for servers exposing tools at top-level.
+        return self.get_paginated("/tools", per_page=per_page, timeout=60)
 
     def create_tool(self, name: str) -> dict[str, Any]:
         try:
-            data = self.request_json("POST", "/tools", json={"name": name}, timeout=60)
+            data = self.request_json(
+                "POST",
+                "/organizers/tools",
+                json={"name": name, "householdsWithTool": []},
+                timeout=60,
+            )
             if isinstance(data, dict):
                 return data
             return {}
         except requests.HTTPError as exc:
             if not self._is_http_404(exc):
                 raise
-        return self.create_organizer_item("tools", {"name": name})
+        # Backward compatibility for servers exposing tools at top-level.
+        data = self.request_json("POST", "/tools", json={"name": name}, timeout=60)
+        if isinstance(data, dict):
+            return data
+        return {}
 
     def merge_tool(self, source_id: str, target_id: str) -> dict[str, Any]:
+        try:
+            return self._merge_entity("/organizers/tools/merge", source_id, target_id)
+        except requests.HTTPError as exc:
+            if not self._is_http_404(exc):
+                raise
         try:
             return self._merge_entity("/tools/merge", source_id, target_id)
         except requests.HTTPError as exc:
             if not self._is_http_404(exc):
                 raise
-        # Older Mealie versions expose tools under organizers without a merge route.
-        raise requests.HTTPError(
-            "Tool merge endpoint is unavailable on this Mealie server/version. "
-            "Tools can be seeded, but duplicate merges are not supported."
-        )
+            # Mealie docs do not currently advertise a tools merge endpoint.
+            raise requests.HTTPError(
+                "Tool merge endpoint is unavailable on this Mealie server/version. "
+                "Tools can be seeded, but duplicate merges are not supported."
+            ) from exc
 
     def _merge_entity(self, route: str, source_id: str, target_id: str) -> dict[str, Any]:
         payload_candidates = [
@@ -300,14 +315,15 @@ class MealieApiClient:
         ]
         last_exc: Exception | None = None
         for payload in payload_candidates:
-            try:
-                data = self.request_json("POST", route, json=payload, timeout=60)
-                if isinstance(data, dict):
-                    return data
-                return {}
-            except requests.HTTPError as exc:
-                last_exc = exc
-                continue
+            for method in ("PUT", "POST"):
+                try:
+                    data = self.request_json(method, route, json=payload, timeout=60)
+                    if isinstance(data, dict):
+                        return data
+                    return {}
+                except requests.HTTPError as exc:
+                    last_exc = exc
+                    continue
         if last_exc:
             raise last_exc
         return {}

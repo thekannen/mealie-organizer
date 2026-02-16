@@ -28,6 +28,7 @@ mealie-foods = "mealie_organizer.foods_manager:main"
 mealie-units = "mealie_organizer.units_manager:main"
 mealie-labels = "mealie_organizer.labels_manager:main"
 mealie-tools = "mealie_organizer.tools_manager:main"
+mealie-plugin-server = "mealie_organizer.plugin_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -107,7 +107,9 @@ class ToolsSyncManager:
     @classmethod
     def _is_endpoint_unavailable(cls, exc: Exception) -> bool:
         status_code = cls._http_status_code(exc)
-        return status_code in {404, 405, 501}
+        if status_code in {404, 405, 501}:
+            return True
+        return "endpoint is unavailable" in str(exc).lower()
 
     def build_duplicate_actions(self, tools: list[dict[str, Any]]) -> list[ToolMergeAction]:
         groups: dict[str, list[dict[str, Any]]] = {}

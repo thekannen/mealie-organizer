@@ -8,4 +8,5 @@ Operational guides are grouped here for easier navigation:
 - [Tasks](TASKS.md)
 - [Data Maintenance Pipeline](DATA_MAINTENANCE.md)
 - [Parser Migration](PARSER_MIGRATION.md)
+- [Mealie UI Plugin PoC](PLUGIN_POC.md)
 - [Docker GHCR deployment details](docker-ghcr.md)

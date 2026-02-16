@@ -49,6 +49,9 @@ run_task() {
     ingredient-parse)
       python -m mealie_organizer.ingredient_parser
       ;;
+    plugin-server)
+      python -m mealie_organizer.plugin_server
+      ;;
     foods-cleanup)
       if is_true "$CLEANUP_APPLY"; then
         python -m mealie_organizer.foods_manager cleanup --apply
@@ -85,7 +88,7 @@ run_task() {
       fi
       ;;
     *)
-      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, cookbook-sync, ingredient-parse, foods-cleanup, units-cleanup, labels-sync, tools-sync, or data-maintenance."
+      echo "[error] Unknown TASK '$TASK'. Use categorize, taxonomy-refresh, taxonomy-audit, cookbook-sync, ingredient-parse, plugin-server, foods-cleanup, units-cleanup, labels-sync, tools-sync, or data-maintenance."
       exit 1
       ;;
   esac

@@ -7,6 +7,7 @@ Operational guides now live under [`docs/`](docs/README.md).
 
 It can:
 - Parse unstructured ingredients into Mealie parsed ingredient data
+- Serve an admin-only Mealie UI companion plugin page for parser dry-runs
 - Clean and deduplicate foods and units with incremental safety controls
 - Seed and sync labels/tools catalogs
 - Refresh categories and tags from templates
@@ -58,10 +59,12 @@ docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organiz
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=data-maintenance -e RUN_MODE=once mealie-organizer
+docker compose run --rm -e TASK=plugin-server -e RUN_MODE=once -p 9102:9102 mealie-organizer
 ```
 
 Advanced task flags and task-specific workflows are documented in [docs/TASKS.md](docs/TASKS.md).
 First-time bootstrap walkthrough is documented in [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+No-fork Mealie plugin overlay workflow is documented in [docs/PLUGIN_POC.md](docs/PLUGIN_POC.md).
 
 Use helper update script:
 
@@ -73,7 +76,7 @@ Use helper update script:
 
 Container behavior is controlled by env vars:
 - `TASK`: `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`
-- Additional `TASK` values: `ingredient-parse`, `foods-cleanup`, `units-cleanup`, `labels-sync`, `tools-sync`, `data-maintenance`
+- Additional `TASK` values: `ingredient-parse`, `plugin-server`, `foods-cleanup`, `units-cleanup`, `labels-sync`, `tools-sync`, `data-maintenance`
 - `RUN_MODE`: `once` or `loop`
 - `RUN_INTERVAL_SECONDS`: loop interval in seconds
 - `TAXONOMY_REFRESH_MODE`: `merge` (default) or `replace`

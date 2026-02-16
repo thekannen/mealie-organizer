@@ -33,6 +33,7 @@ For advanced CLI flags not exposed by `TASK`, run the Python module directly wit
 | `taxonomy-audit` | Build taxonomy quality/usage report | `python -m mealie_organizer.audit_taxonomy` | Read-only (writes local report file) |
 | `cookbook-sync` | Upsert cookbook definitions from JSON | `python -m mealie_organizer.cookbook_manager sync` | Writes changes unless `DRY_RUN=true` |
 | `ingredient-parse` | Parse unparsed recipe ingredients into structured fields | `python -m mealie_organizer.ingredient_parser` | Writes patches unless `DRY_RUN=true` |
+| `plugin-server` | Serve Mealie UI companion plugin endpoints/assets | `python -m mealie_organizer.plugin_server` | Read-only except parser dry-run execution state |
 | `foods-cleanup` | Detect and merge duplicate foods conservatively | `python -m mealie_organizer.foods_manager cleanup` | Audit mode by default; apply with `CLEANUP_APPLY=true` |
 | `units-cleanup` | Standardize units using alias map and merge actions | `python -m mealie_organizer.units_manager cleanup` | Audit mode by default; apply with `CLEANUP_APPLY=true` |
 | `labels-sync` | Seed/sync labels catalog from config | `python -m mealie_organizer.labels_manager` | Audit mode by default; apply with `CLEANUP_APPLY=true` |
@@ -49,6 +50,11 @@ For advanced CLI flags not exposed by `TASK`, run the Python module directly wit
 | `TASK` | `categorize` | entrypoint | Task selector. |
 | `RUN_MODE` | `loop` in compose | entrypoint | `once` runs a single pass, `loop` repeats forever. |
 | `RUN_INTERVAL_SECONDS` | `21600` | entrypoint loop mode | Must be an integer. |
+| `PLUGIN_BIND_HOST` | `0.0.0.0` | plugin-server | Bind host for plugin server. |
+| `PLUGIN_BIND_PORT` | `9102` | plugin-server | Bind port for plugin server. |
+| `PLUGIN_BASE_PATH` | `/mo-plugin` | plugin-server | URL prefix for plugin page/assets/API. |
+| `PLUGIN_TOKEN_COOKIES` | `mealie.access_token,access_token` | plugin-server | Cookie names checked for Mealie session token. |
+| `PLUGIN_AUTH_TIMEOUT_SECONDS` | `15` | plugin-server | Timeout when validating user/admin via Mealie API. |
 | `PROVIDER` | empty | categorize task path | Docker-only override passed as `--provider` when `TASK=categorize`. |
 | `TAXONOMY_REFRESH_MODE` | `merge` | taxonomy-refresh task path | `merge` or `replace`. |
 | `CLEANUP_APPLY` | `false` | foods/units/labels/tools tasks | Enables write mode for those tasks when true. |
@@ -81,6 +87,7 @@ docker compose run --rm -e TASK=taxonomy-refresh -e RUN_MODE=once mealie-organiz
 docker compose run --rm -e TASK=taxonomy-audit -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=cookbook-sync -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=ingredient-parse -e RUN_MODE=once mealie-organizer
+docker compose run --rm -e TASK=plugin-server -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=foods-cleanup -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=units-cleanup -e RUN_MODE=once mealie-organizer
 docker compose run --rm -e TASK=labels-sync -e RUN_MODE=once mealie-organizer
@@ -227,6 +234,29 @@ docker compose run --rm -e TASK=ingredient-parse -e RUN_MODE=once mealie-organiz
 docker compose run --rm -e TASK=ingredient-parse -e DRY_RUN=true -e RUN_MODE=once mealie-organizer
 ```
 
+## `plugin-server` Deep Dive
+
+Default behavior:
+
+- Serves `/mo-plugin/page` companion UI
+- Serves `/mo-plugin/static/injector.js` for top-bar button injection
+- Exposes `/mo-plugin/api/v1/parser/status` and `/mo-plugin/api/v1/parser/runs`
+- Enforces admin-only access by validating Mealie bearer/cookie tokens via `/api/users/self`
+- Runs parser in dry-run mode only when started from plugin API
+
+Special switches:
+
+- `PLUGIN_BIND_HOST`, `PLUGIN_BIND_PORT`
+- `PLUGIN_BASE_PATH`
+- `PLUGIN_TOKEN_COOKIES`
+- `PLUGIN_AUTH_TIMEOUT_SECONDS`
+
+Example:
+
+```bash
+docker compose run --rm -e TASK=plugin-server -e RUN_MODE=once mealie-organizer
+```
+
 ## `foods-cleanup` and `units-cleanup` Deep Dive
 
 Default behavior:
@@ -304,7 +334,7 @@ docker compose run --rm --entrypoint python mealie-organizer -m mealie_organizer
 
 ## Troubleshooting
 
-- `[error] Unknown TASK ...`: `TASK` must be one of `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`, `ingredient-parse`, `foods-cleanup`, `units-cleanup`, `labels-sync`, `tools-sync`, `data-maintenance`.
+- `[error] Unknown TASK ...`: `TASK` must be one of `categorize`, `taxonomy-refresh`, `taxonomy-audit`, `cookbook-sync`, `ingredient-parse`, `plugin-server`, `foods-cleanup`, `units-cleanup`, `labels-sync`, `tools-sync`, `data-maintenance`.
 - `MEALIE_URL is not configured`: set real `MEALIE_URL` in `.env`.
 - `MEALIE_API_KEY is empty`: set `MEALIE_API_KEY` in `.env`.
 - Loop interval error: `RUN_INTERVAL_SECONDS` must be numeric.
