@@ -61,7 +61,7 @@ def _build_help_docs_payload(services: Services) -> list[dict[str, str]]:
 
 def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
     """Synchronous overview metrics builder; called via asyncio.to_thread."""
-    from ..api_client import MealieApiClient
+    from ...api_client import MealieApiClient
 
     runtime_env = build_runtime_env(services.state, services.cipher)
     mealie_url = str(runtime_env.get("MEALIE_URL", "")).strip().rstrip("/")
