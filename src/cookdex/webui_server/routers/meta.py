@@ -14,10 +14,9 @@ from ..deps import Services, build_runtime_env, require_services, require_sessio
 router = APIRouter(tags=["meta"])
 
 _HELP_DOCS: tuple[dict[str, str], ...] = (
-    {"id": "quick-start", "title": "Quick Start Checklist", "group": "Setup", "file": "GETTING_STARTED.md"},
-    {"id": "install-update", "title": "Install and Update", "group": "Setup", "file": "INSTALL.md"},
-    {"id": "tasks-api", "title": "Tasks and API Reference", "group": "Troubleshooting", "file": "TASKS.md"},
-    {"id": "data-pipeline", "title": "Data Maintenance Pipeline", "group": "Troubleshooting", "file": "DATA_MAINTENANCE.md"},
+    {"id": "tasks-api", "title": "Tasks and API Reference", "group": "Reference", "file": "TASKS.md"},
+    {"id": "data-pipeline", "title": "Data Maintenance Pipeline", "group": "Reference", "file": "DATA_MAINTENANCE.md"},
+    {"id": "parser-migration", "title": "Parser Configuration", "group": "Reference", "file": "PARSER_MIGRATION.md"},
 )
 
 

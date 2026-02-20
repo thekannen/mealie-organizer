@@ -51,6 +51,36 @@ const ICON_PATHS = {
       <circle cx="12" cy="7.5" r=".8" fill="currentColor" stroke="none" />
     </>
   ),
+  folder: (
+    <>
+      <path d="M4 4h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />
+    </>
+  ),
+  "book-open": (
+    <>
+      <path d="M2 4h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2z" />
+      <path d="M22 4h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-3.3 3.6-6 8-6s8 2.7 8 6" />
+    </>
+  ),
+  "life-buoy": (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="m15 9 3.5-3.5M9 15l-3.5 3.5M15 15l3.5 3.5M9 9 5.5 5.5" />
+    </>
+  ),
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   refresh: <path d="M20 4v5h-5M4 20v-5h5M20 9a8 8 0 0 0-13.6-4M4 15a8 8 0 0 0 13.6 4" />,
   logout: (
     <>

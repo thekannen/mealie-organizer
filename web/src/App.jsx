@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import wordmark from "./assets/CookDex_wordmark.png";
 import emblem from "./assets/CookDex_light.png";
 
-import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ } from "./constants";
+import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING } from "./constants";
 import {
   api,
   buildDefaultOptionValues,
@@ -2044,44 +2044,72 @@ export default function App() {
   function renderHelpPage() {
     return (
       <section className="page-grid settings-grid help-grid">
-        <article className="card">
-          <h3>Setup and Troubleshooting</h3>
-          <p className="muted">Embedded markdown from the repository docs for in-app guidance.</p>
-
-          <div className="accordion-stack compact">
-            {helpDocs.length === 0 ? (
-              <p className="muted tiny">No embedded docs were found in this deployment.</p>
-            ) : (
-              helpDocs.map((doc) => (
-                <details className="accordion" key={doc.id}>
-                  <summary>
-                    <Icon name="info" />
-                    <span>{doc.title}</span>
-                    <Icon name="chevron" />
-                  </summary>
-                  <div className="doc-preview markdown-preview">{renderMarkdownDocument(doc.content)}</div>
-                </details>
-              ))
-            )}
-          </div>
-        </article>
-
-        <aside className="stacked-cards">
+        <div className="stacked-cards">
           <article className="card">
-            <h3>Setup FAQ</h3>
-            <p className="muted">Quick answers for first-time setup and common safe workflows.</p>
+            <h3>Frequently Asked Questions</h3>
+            <p className="muted">Common workflows and quick answers for daily use.</p>
 
             <div className="accordion-stack">
               {HELP_FAQ.map((item, index) => (
                 <details className="accordion" key={item.question} open={index === 0}>
                   <summary>
-                    <Icon name="help" />
+                    <Icon name={item.icon || "help"} />
                     <span>{item.question}</span>
                     <Icon name="chevron" />
                   </summary>
                   <p>{item.answer}</p>
                 </details>
               ))}
+            </div>
+          </article>
+
+          <article className="card">
+            <h3>Troubleshooting</h3>
+            <p className="muted">Common issues grouped by area.</p>
+
+            <div className="accordion-stack">
+              {HELP_TROUBLESHOOTING.map((section) => (
+                <details className="accordion" key={section.title}>
+                  <summary>
+                    <Icon name={section.icon || "info"} />
+                    <span>{section.title}</span>
+                    <Icon name="chevron" />
+                  </summary>
+                  <div className="doc-preview">
+                    <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                      {section.items.map((tip, idx) => (
+                        <li key={idx} className="muted" style={{ fontSize: "0.82rem", marginBottom: "0.3rem" }}>
+                          {tip}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </article>
+        </div>
+
+        <aside className="stacked-cards">
+          <article className="card">
+            <h3>Reference Guides</h3>
+            <p className="muted">Embedded documentation you can read without leaving the app.</p>
+
+            <div className="accordion-stack">
+              {helpDocs.length === 0 ? (
+                <p className="muted tiny">No embedded docs were found in this deployment.</p>
+              ) : (
+                helpDocs.map((doc) => (
+                  <details className="accordion" key={doc.id}>
+                    <summary>
+                      <Icon name="info" />
+                      <span>{doc.title}</span>
+                      <Icon name="chevron" />
+                    </summary>
+                    <div className="doc-preview markdown-preview">{renderMarkdownDocument(doc.content)}</div>
+                  </details>
+                ))
+              )}
             </div>
           </article>
         </aside>
@@ -2250,11 +2278,10 @@ export default function App() {
           <p className="auth-badge">First-time setup made simple</p>
           <h1>Manage recipe automation without the CLI.</h1>
           <p>
-            CookDex gives clear controls for taxonomy, scheduling, and task runs while keeping defaults safe for daily
-            use.
+            CookDex guides setup, keeps labels human-friendly, and protects secrets by default.
           </p>
           <div className="auth-points">
-            <p>No YAML edits needed for standard setup.</p>
+            <p>One admin account unlocks the full workspace.</p>
             <p>Runtime settings are grouped with plain descriptions.</p>
             <p>No recipe data changes happen until you explicitly run tasks.</p>
           </div>
@@ -2287,6 +2314,7 @@ export default function App() {
             </button>
           </form>
           {error ? <div className="banner error">{error}</div> : null}
+          <p className="muted tiny">Already set up? Reload the page after creating your account to sign in.</p>
         </section>
       </main>
     );
@@ -2297,9 +2325,14 @@ export default function App() {
       <main className="auth-shell">
         <section className="auth-left">
           <img src={wordmark} alt="CookDex" className="auth-wordmark" />
-          <p className="eyebrow">Welcome back.</p>
+          <p className="auth-badge">Welcome back</p>
           <h1>Sign in to your CookDex workspace.</h1>
-          <p>Control runs, schedules, settings, and recipe organization from one desktop-first interface.</p>
+          <p>CookDex guides setup, keeps labels human-friendly, and protects secrets by default.</p>
+          <div className="auth-points">
+            <p>Run tasks manually or on a schedule from one interface.</p>
+            <p>Manage taxonomy files, categories, and cookbooks visually.</p>
+            <p>Review run history and logs without touching the command line.</p>
+          </div>
         </section>
 
         <section className="auth-card">
@@ -2329,12 +2362,11 @@ export default function App() {
   const showHeaderRefresh = activePage === "overview";
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-wrap">
             <img src={sidebarCollapsed ? emblem : wordmark} alt="CookDex" className="brand-mark" />
-            {!sidebarCollapsed ? <p className="muted tiny">Web UI-first automation control center.</p> : null}
           </div>
           <button className="icon-btn" onClick={() => setSidebarCollapsed((prev) => !prev)} aria-label="Toggle sidebar">
             <Icon name="menu" />
@@ -2358,28 +2390,31 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="user-chip">
-            <span className="avatar">{String(session.username || "u").slice(0, 1).toUpperCase()}</span>
+            <span className="avatar"><Icon name="user" /></span>
             <div>
+              <p className="tiny muted">Signed in as</p>
               <strong>{session.username}</strong>
-              <p className="tiny muted">Owner</p>
             </div>
+            <span className="role-badge">Owner</span>
           </div>
 
           <div className="sidebar-actions">
-            <button className="ghost" onClick={loadData} title="Refresh data">
-              <Icon name="refresh" />
-              <span>Refresh</span>
-            </button>
-            <button
-              className="ghost"
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              title="Toggle theme"
-            >
-              <Icon name="settings" />
-              <span>Theme</span>
-            </button>
+            <div className="sidebar-actions-row">
+              <button className="ghost" onClick={loadData} title="Refresh data">
+                <Icon name="refresh" />
+                <span>Refresh</span>
+              </button>
+              <button
+                className="ghost"
+                onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                title="Toggle theme"
+              >
+                <Icon name="settings" />
+                <span>Theme</span>
+              </button>
+            </div>
             <button className="ghost" onClick={doLogout} title="Log out">
-              <Icon name="logout" />
+              <Icon name="x" />
               <span>Log Out</span>
             </button>
           </div>
