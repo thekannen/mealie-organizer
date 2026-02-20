@@ -136,6 +136,7 @@ curl http://localhost:4820/cookdex/api/v1/health
 
 - [Install](docs/INSTALL.md) — full deployment walkthrough
 - [Getting Started](docs/GETTING_STARTED.md) — first login and first task run
+- [Local Dev](docs/LOCAL_DEV.md) — run and test locally without Docker
 - [Tasks](docs/TASKS.md) — task reference and safety policies
 - [Data Maintenance](docs/DATA_MAINTENANCE.md) — staged cleanup pipeline
 - [Parser Migration](docs/PARSER_MIGRATION.md) — migrating from standalone parser
