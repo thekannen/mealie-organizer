@@ -22,11 +22,13 @@ class RunQueueManager:
         registry: TaskRegistry,
         environment_provider: ENVProvider,
         logs_dir: Path,
+        max_log_files: int = 200,
     ) -> None:
         self.state = state
         self.registry = registry
         self.environment_provider = environment_provider
         self.logs_dir = logs_dir
+        self.max_log_files = max_log_files
         self._queue: Queue[str] = Queue()
         self._stop = Event()
         self._thread: Thread | None = None
@@ -51,7 +53,7 @@ class RunQueueManager:
             for proc in list(self._active.values()):
                 try:
                     proc.terminate()
-                except Exception:
+                except OSError:
                     continue
             self._active.clear()
 
@@ -82,23 +84,27 @@ class RunQueueManager:
         status = str(record.get("status"))
         if status in {"succeeded", "failed", "canceled"}:
             return False
-        if status == "queued":
-            self.state.update_run_status(
-                run_id,
-                status="canceled",
-                finished_at=utc_now_iso(),
-                exit_code=None,
-                error_text="Canceled before execution.",
-            )
-            return True
 
+        # Hold the active lock across both the status check and the
+        # termination to avoid a race with _execute_run finishing.
         with self._active_lock:
+            if status == "queued":
+                self.state.update_run_status(
+                    run_id,
+                    status="canceled",
+                    finished_at=utc_now_iso(),
+                    exit_code=None,
+                    error_text="Canceled before execution.",
+                )
+                return True
+
             proc = self._active.get(run_id)
-        if proc is not None:
-            try:
-                proc.terminate()
-            except Exception:
-                pass
+            if proc is not None:
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+
         self.state.update_run_status(
             run_id,
             status="canceled",
@@ -135,6 +141,7 @@ class RunQueueManager:
             if str(run.get("status")) != "queued":
                 continue
             self._execute_run(run_id, run)
+            self._rotate_logs()
 
     def _execute_run(self, run_id: str, run: dict[str, Any]) -> None:
         started_at = utc_now_iso()
@@ -144,7 +151,7 @@ class RunQueueManager:
 
         try:
             execution = self.registry.build_execution(str(run["task_id"]), dict(run.get("options") or {}))
-        except Exception as exc:
+        except (KeyError, ValueError, TypeError) as exc:
             message = f"Task build failed: {exc}"
             log_path.write_text(message + "\n", encoding="utf-8")
             self.state.update_run_status(
@@ -175,7 +182,7 @@ class RunQueueManager:
                     text=True,
                     bufsize=1,
                 )
-            except Exception as exc:
+            except FileNotFoundError as exc:
                 message = f"Failed to start process: {exc}"
                 log_file.write(message + "\n")
                 self.state.update_run_status(
@@ -201,7 +208,8 @@ class RunQueueManager:
                 with self._active_lock:
                     self._active.pop(run_id, None)
 
-            if self.state.get_run(run_id) and str(self.state.get_run(run_id).get("status")) == "canceled":
+            current_run = self.state.get_run(run_id)
+            if current_run and str(current_run.get("status")) == "canceled":
                 self.state.update_run_log_size(run_id, log_path.stat().st_size)
                 return
 
@@ -222,3 +230,17 @@ class RunQueueManager:
                     error_text=f"Process exited with code {exit_code}.",
                 )
             self.state.update_run_log_size(run_id, log_path.stat().st_size)
+
+    def _rotate_logs(self) -> None:
+        if self.max_log_files <= 0:
+            return
+        try:
+            log_files = sorted(self.logs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime)
+        except OSError:
+            return
+        excess = len(log_files) - self.max_log_files
+        for path in log_files[:excess]:
+            try:
+                path.unlink()
+            except OSError:
+                continue

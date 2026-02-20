@@ -26,7 +26,7 @@ def _seed_config_root(root: Path) -> None:
 def _login(client: TestClient) -> None:
     response = client.post(
         "/cookdex/api/v1/auth/login",
-        json={"username": "admin", "password": "secret-pass"},
+        json={"username": "admin", "password": "Secret-pass1"},
     )
     assert response.status_code == 200
 
@@ -36,11 +36,12 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
     _seed_config_root(config_root)
 
     monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
-    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "secret-pass")
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
     monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
     monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
     monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
     monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
     monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
     monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
 
@@ -72,7 +73,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         create_user = client.post(
             "/cookdex/api/v1/users",
-            json={"username": "kitchen-tablet", "password": "tablet-pass-01"},
+            json={"username": "kitchen-tablet", "password": "Tablet-pass01"},
         )
         assert create_user.status_code == 201
         assert create_user.json()["username"] == "kitchen-tablet"
@@ -83,7 +84,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         reset_password = client.post(
             "/cookdex/api/v1/users/kitchen-tablet/reset-password",
-            json={"password": "tablet-pass-02"},
+            json={"password": "Tablet-pass02"},
         )
         assert reset_password.status_code == 200
 
@@ -182,6 +183,7 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
     monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
     monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
     monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
 
     app_module = importlib.import_module("cookdex.webui_server.app")
     importlib.reload(app_module)
@@ -200,7 +202,7 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
 
         register = client.post(
             "/cookdex/api/v1/auth/register",
-            json={"username": "admin", "password": "secret-pass"},
+            json={"username": "admin", "password": "Secret-pass1"},
         )
         assert register.status_code == 200
         assert register.json()["username"] == "admin"

@@ -12,7 +12,8 @@ Copy `.env.example` to `.env` and set:
 ## 2) Launch service
 
 ```bash
-docker compose -f compose.ghcr.yml up -d cookdex
+docker compose pull cookdex
+docker compose up -d cookdex
 ```
 
 ## 3) Open Web UI

@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_PASSWORD_MIN_LENGTH = 8
+_PASSWORD_PATTERN = re.compile(
+    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$"
+)
+_PASSWORD_HELP = (
+    "Password must be at least 8 characters with at least one uppercase letter, "
+    "one lowercase letter, and one digit."
+)
+
+
+def _validate_password_strength(value: str) -> str:
+    if not _PASSWORD_PATTERN.match(value):
+        raise ValueError(_PASSWORD_HELP)
+    return value
 
 
 class LoginRequest(BaseModel):
@@ -12,16 +28,31 @@ class LoginRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=1)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=_PASSWORD_MIN_LENGTH)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, value: str) -> str:
+        return _validate_password_strength(value)
 
 
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=1)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=_PASSWORD_MIN_LENGTH)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, value: str) -> str:
+        return _validate_password_strength(value)
 
 
 class UserPasswordResetRequest(BaseModel):
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=_PASSWORD_MIN_LENGTH)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, value: str) -> str:
+        return _validate_password_strength(value)
 
 
 class RunCreateRequest(BaseModel):

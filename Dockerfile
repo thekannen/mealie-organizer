@@ -17,7 +17,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt pyproject.toml README.md ./
+COPY requirements.txt pyproject.toml README.md VERSION ./
 COPY src ./src
 COPY scripts ./scripts
 COPY configs ./configs
@@ -35,6 +35,9 @@ RUN addgroup --system app \
     && chmod +x /app/scripts/docker/entrypoint.sh
 
 USER app
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:${WEB_BIND_PORT:-4820}${WEB_BASE_PATH:-/cookdex}/api/v1/health || exit 1
 
 ENTRYPOINT ["/app/scripts/docker/entrypoint.sh"]
 CMD []

@@ -19,12 +19,11 @@ class StateStore:
         self._write_lock = Lock()
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _connect(self, *, readonly: bool = False) -> Iterator[sqlite3.Connection]:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(
             str(self.db_path),
             timeout=30,
-            isolation_level=None,
             check_same_thread=False,
         )
         conn.row_factory = sqlite3.Row
@@ -32,6 +31,11 @@ class StateStore:
         conn.execute("PRAGMA journal_mode = WAL;")
         try:
             yield conn
+            if not readonly:
+                conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -140,24 +144,24 @@ class StateStore:
                     )
 
     def has_users(self) -> bool:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT 1 FROM users LIMIT 1;").fetchone()
             return row is not None
 
     def count_users(self) -> int:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT COUNT(*) AS value FROM users;").fetchone()
             return int(row["value"]) if row is not None else 0
 
     def list_users(self) -> list[dict[str, str]]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute(
                 "SELECT username, created_at FROM users ORDER BY username ASC;"
             ).fetchall()
         return [{"username": str(row["username"]), "created_at": str(row["created_at"])} for row in rows]
 
     def user_exists(self, username: str) -> bool:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT 1 FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
             return row is not None
 
@@ -198,7 +202,7 @@ class StateStore:
                 return int(result.rowcount or 0) > 0
 
     def get_password_hash(self, username: str) -> str | None:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT password_hash FROM users WHERE username = ?;", (username,)).fetchone()
             if row is None:
                 return None
@@ -207,6 +211,7 @@ class StateStore:
     def delete_user(self, username: str) -> bool:
         with self._write_lock:
             with self._connect() as conn:
+                # Both deletes are in a single transaction (atomic).
                 conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
                 result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
                 return int(result.rowcount or 0) > 0
@@ -224,7 +229,7 @@ class StateStore:
                 )
 
     def get_session(self, token: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute(
                 "SELECT token, username, created_at, expires_at FROM sessions WHERE token = ?;",
                 (token,),
@@ -256,6 +261,7 @@ class StateStore:
         payload = json.dumps(options, sort_keys=True)
         with self._write_lock:
             with self._connect() as conn:
+                # Both inserts are in a single transaction (atomic).
                 conn.execute(
                     """
                     INSERT INTO runs(
@@ -278,7 +284,7 @@ class StateStore:
         return self.get_run(run_id) or {}
 
     def list_runs(self, limit: int = 100) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute(
                 """
                 SELECT run_id, task_id, status, options_json, created_at, started_at, finished_at,
@@ -292,7 +298,7 @@ class StateStore:
         return [self._row_to_run(row) for row in rows]
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute(
                 """
                 SELECT run_id, task_id, status, options_json, created_at, started_at, finished_at,
@@ -341,7 +347,7 @@ class StateStore:
                 )
 
     def list_task_policies(self) -> dict[str, dict[str, Any]]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute(
                 "SELECT task_id, allow_dangerous, updated_at FROM task_policies ORDER BY task_id ASC;"
             ).fetchall()
@@ -369,7 +375,7 @@ class StateStore:
                 )
 
     def list_schedules(self) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute(
                 """
                 SELECT schedule_id, name, task_id, schedule_kind, schedule_data_json, options_json, enabled,
@@ -397,7 +403,7 @@ class StateStore:
         return schedules
 
     def get_schedule(self, schedule_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             row = conn.execute(
                 """
                 SELECT schedule_id, name, task_id, schedule_kind, schedule_data_json, options_json, enabled,
@@ -510,7 +516,7 @@ class StateStore:
                 )
 
     def list_settings(self) -> dict[str, Any]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute("SELECT key, value_json FROM app_settings ORDER BY key ASC;").fetchall()
         payload: dict[str, Any] = {}
         for row in rows:
@@ -541,7 +547,7 @@ class StateStore:
                 conn.execute("DELETE FROM app_settings WHERE key = ?;", (key,))
 
     def list_encrypted_secrets(self) -> dict[str, str]:
-        with self._connect() as conn:
+        with self._connect(readonly=True) as conn:
             rows = conn.execute("SELECT key, encrypted_value FROM secrets ORDER BY key ASC;").fetchall()
         return {str(row["key"]): str(row["encrypted_value"]) for row in rows}
 

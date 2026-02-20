@@ -17,6 +17,8 @@ DEFAULT_BIND_PORT = 4820
 DEFAULT_SESSION_TTL_SECONDS = 43_200
 DEFAULT_BOOTSTRAP_USER = "admin"
 DEFAULT_COOKIE_NAME = "mo_webui_session"
+DEFAULT_MAX_LOG_FILES = 200
+_WEAK_MASTER_KEYS = frozenset({"replace-with-strong-master-key", "changeme", "secret", ""})
 
 
 @dataclass(frozen=True)
@@ -30,10 +32,12 @@ class WebUISettings:
     bootstrap_password: str
     fernet_key: str
     cookie_name: str
+    cookie_secure: bool
     static_dir: Path
     web_dist_dir: Path
     logs_dir: Path
     config_root: Path
+    max_log_files: int
 
 
 def _normalize_base_path(raw: str) -> str:
@@ -58,6 +62,12 @@ def _normalize_fernet_key(raw: str) -> str:
 def _load_master_key() -> str:
     value = os.environ.get("MO_WEBUI_MASTER_KEY", "").strip()
     if value:
+        if value.lower() in _WEAK_MASTER_KEYS:
+            print(
+                "[webui] WARNING: MO_WEBUI_MASTER_KEY is set to a weak default. "
+                "Replace it with a strong random value to protect encrypted secrets.",
+                flush=True,
+            )
         return _normalize_fernet_key(value)
 
     key_file = os.environ.get("MO_WEBUI_MASTER_KEY_FILE", "").strip()
@@ -104,6 +114,9 @@ def load_webui_settings() -> WebUISettings:
     bootstrap_user = os.environ.get("WEB_BOOTSTRAP_USER", DEFAULT_BOOTSTRAP_USER).strip() or DEFAULT_BOOTSTRAP_USER
     bootstrap_password = os.environ.get("WEB_BOOTSTRAP_PASSWORD", "").strip()
     cookie_name = os.environ.get("WEB_SESSION_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME
+    cookie_secure_raw = os.environ.get("WEB_COOKIE_SECURE", "").strip().lower()
+    cookie_secure = cookie_secure_raw not in {"0", "false", "no", "off"}
+    max_log_files = _int_env("WEB_MAX_LOG_FILES", DEFAULT_MAX_LOG_FILES)
 
     return WebUISettings(
         bind_host=bind_host,
@@ -115,8 +128,10 @@ def load_webui_settings() -> WebUISettings:
         bootstrap_password=bootstrap_password,
         fernet_key=_load_master_key(),
         cookie_name=cookie_name,
+        cookie_secure=cookie_secure,
         static_dir=static_dir,
         web_dist_dir=web_dist_dir,
         logs_dir=logs_dir,
         config_root=config_root,
+        max_log_files=max_log_files,
     )

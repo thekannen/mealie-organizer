@@ -7,27 +7,56 @@
 
 ## API Endpoints
 
-- `GET /cookdex/api/v1/health`
-- `POST /cookdex/api/v1/auth/login`
-- `POST /cookdex/api/v1/auth/logout`
-- `GET /cookdex/api/v1/auth/session`
-- `GET /cookdex/api/v1/tasks`
-- `POST /cookdex/api/v1/runs`
-- `GET /cookdex/api/v1/runs`
-- `GET /cookdex/api/v1/runs/{run_id}`
-- `GET /cookdex/api/v1/runs/{run_id}/log`
-- `POST /cookdex/api/v1/runs/{run_id}/cancel`
-- `GET /cookdex/api/v1/schedules`
-- `POST /cookdex/api/v1/schedules`
-- `PATCH /cookdex/api/v1/schedules/{schedule_id}`
-- `DELETE /cookdex/api/v1/schedules/{schedule_id}`
-- `GET /cookdex/api/v1/settings`
-- `PUT /cookdex/api/v1/settings`
-- `GET /cookdex/api/v1/policies`
-- `PUT /cookdex/api/v1/policies`
-- `GET /cookdex/api/v1/config/files`
-- `GET /cookdex/api/v1/config/files/{name}`
-- `PUT /cookdex/api/v1/config/files/{name}`
+**Auth**
+- `GET /auth/bootstrap-status`
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/session`
+
+**Tasks and Runs**
+- `GET /tasks`
+- `POST /runs`
+- `GET /runs`
+- `GET /runs/{run_id}`
+- `GET /runs/{run_id}/log`
+- `POST /runs/{run_id}/cancel`
+
+**Policies**
+- `GET /policies`
+- `PUT /policies`
+
+**Schedules**
+- `GET /schedules`
+- `POST /schedules`
+- `PATCH /schedules/{schedule_id}`
+- `DELETE /schedules/{schedule_id}`
+
+**Settings**
+- `GET /settings`
+- `PUT /settings`
+- `POST /settings/test/mealie`
+- `POST /settings/test/openai`
+- `POST /settings/test/ollama`
+
+**Users**
+- `GET /users`
+- `POST /users`
+- `POST /users/{username}/reset-password`
+- `DELETE /users/{username}`
+
+**Config Files**
+- `GET /config/files`
+- `GET /config/files/{name}`
+- `PUT /config/files/{name}`
+
+**Meta**
+- `GET /health`
+- `GET /metrics/overview`
+- `GET /about/meta`
+- `GET /help/docs`
+
+All endpoints above are prefixed with `/cookdex/api/v1`.
 
 ## Task IDs (Queue Runner)
 
@@ -44,7 +73,7 @@
 
 ## Environment Variable Management
 
-`.env`-style runtime values are managed in the Web UI through `GET/PUT /cookdex/api/v1/settings`.
+Runtime values are managed in the Web UI through `GET/PUT /settings`.
 
 - Non-secret keys are stored in app settings.
 - Secret keys are encrypted at rest.
@@ -52,4 +81,4 @@
 
 ## Safety Policies
 
-Dangerous options are blocked by default and unlocked per task via policy settings.
+Dangerous options are blocked by default and unlocked per task via `PUT /policies`.
