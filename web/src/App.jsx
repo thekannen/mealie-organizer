@@ -15,6 +15,8 @@ import {
   normalizeTaskOptions,
   normalizeUnitAliasEntries,
   parseAliasInput,
+  parseQueryFilter,
+  buildQueryFilter,
   parseIso,
   parseLineEditorContent,
   renderMarkdownDocument,
@@ -86,6 +88,7 @@ export default function App() {
     name: "",
     description: "",
     queryFilterString: "",
+    filterSelections: { categories: [], tags: [] },
     public: false,
     position: 1,
   });
@@ -104,6 +107,7 @@ export default function App() {
     openai: { loading: false, ok: null, detail: "" },
     ollama: { loading: false, ok: null, detail: "" },
   });
+  const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [] });
 
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
@@ -156,6 +160,7 @@ export default function App() {
   );
 
   const visibleEnvGroups = useMemo(() => {
+    const GROUP_ORDER = { Connection: 0, AI: 1 };
     const grouped = new Map();
     for (const item of envList) {
       const groupName = String(item.group || "General");
@@ -167,7 +172,9 @@ export default function App() {
       }
       grouped.get(groupName).push(item);
     }
-    return [...grouped.entries()];
+    return [...grouped.entries()].sort(
+      (a, b) => (GROUP_ORDER[a[0]] ?? 99) - (GROUP_ORDER[b[0]] ?? 99)
+    );
   }, [envList]);
 
   const runStats = useMemo(() => {
@@ -220,6 +227,19 @@ export default function App() {
       rows[name] = Array.isArray(content) ? content.length : 0;
     }
     return rows;
+  }, [taxonomyItemsByFile]);
+
+  const availableFilterOptions = useMemo(() => {
+    const extractNames = (items) => {
+      if (!Array.isArray(items)) return [];
+      return items
+        .map((item) => (typeof item === "string" ? item : item?.name || null))
+        .filter(Boolean);
+    };
+    return {
+      categories: extractNames(taxonomyItemsByFile.categories),
+      tags: extractNames(taxonomyItemsByFile.tags),
+    };
   }, [taxonomyItemsByFile]);
 
   const overviewTotals = useMemo(() => {
@@ -370,13 +390,21 @@ export default function App() {
     setActiveConfigMode(editor.mode);
     setActiveConfigListKind(editor.listKind);
     setActiveConfigItems(editor.mode === "line-pills" ? editor.items : []);
-    setActiveCookbookItems(editor.mode === "cookbook-cards" ? editor.items : []);
+    setActiveCookbookItems(
+      editor.mode === "cookbook-cards"
+        ? editor.items.map((item) => ({
+            ...item,
+            filterSelections: parseQueryFilter(item.queryFilterString),
+          }))
+        : []
+    );
     setActiveUnitAliasItems(editor.mode === "unit-aliases" ? editor.items : []);
     setConfigDraftItem("");
     setCookbookDraft({
       name: "",
       description: "",
       queryFilterString: "",
+      filterSelections: { categories: [], tags: [] },
       public: false,
       position: Math.max(1, (editor.mode === "cookbook-cards" ? editor.items.length : 0) + 1),
     });
@@ -538,6 +566,8 @@ export default function App() {
         if (ok) {
           if (!loadCachedData()) {
             await loadData();
+          } else {
+            loadTaxonomyContent();
           }
         }
       } catch (exc) {
@@ -766,7 +796,8 @@ export default function App() {
       {
         name,
         description: String(cookbookDraft.description || "").trim(),
-        queryFilterString: String(cookbookDraft.queryFilterString || "").trim(),
+        queryFilterString: cookbookDraft.queryFilterString,
+        filterSelections: { ...(cookbookDraft.filterSelections || { categories: [], tags: [] }) },
         public: Boolean(cookbookDraft.public),
         position: Number.isFinite(parsedPosition) && parsedPosition > 0 ? parsedPosition : prev.length + 1,
       },
@@ -776,9 +807,20 @@ export default function App() {
       name: "",
       description: "",
       queryFilterString: "",
+      filterSelections: { categories: [], tags: [] },
       public: false,
       position: nextPosition,
     }));
+  }
+
+  function updateCookbookFilterSelections(index, newSelections) {
+    setActiveCookbookItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? { ...item, filterSelections: newSelections, queryFilterString: buildQueryFilter(newSelections) }
+          : item
+      )
+    );
   }
 
   function removeCookbookEntry(index) {
@@ -979,6 +1021,21 @@ export default function App() {
     return value;
   }
 
+  async function fetchAvailableModels(kind) {
+    const body = {
+      openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
+      ollama_url: draftOverrideValue("OLLAMA_URL"),
+    };
+    try {
+      const result = await api(`/settings/models/${kind}`, { method: "POST", body });
+      if (Array.isArray(result.models)) {
+        setAvailableModels((prev) => ({ ...prev, [kind]: result.models }));
+      }
+    } catch (exc) {
+      console.warn(`Failed to fetch ${kind} models:`, exc?.message || exc);
+    }
+  }
+
   async function runConnectionTest(kind) {
     try {
       setConnectionChecks((prev) => ({
@@ -1008,6 +1065,10 @@ export default function App() {
           detail: String(result.detail || (result.ok ? "Connection validated." : "Connection failed.")),
         },
       }));
+
+      if (result.ok && (kind === "openai" || kind === "ollama")) {
+        fetchAvailableModels(kind);
+      }
     } catch (exc) {
       setConnectionChecks((prev) => ({
         ...prev,
@@ -1381,13 +1442,15 @@ export default function App() {
     );
   }
 
+  const GROUP_ICONS = { Connection: "link", AI: "wand" };
+
   function renderSettingsPage() {
     return (
-      <section className="page-grid recipe-grid">
+      <section className="page-grid settings-grid">
         <article className="card">
           <div className="card-head split">
             <div>
-              <h3>Live Environment Settings</h3>
+              <h3><Icon name="settings" /> Environment Settings</h3>
               <p>Manage connection and AI settings used by background tasks.</p>
             </div>
             <button className="ghost" onClick={loadData}>
@@ -1399,12 +1462,75 @@ export default function App() {
           <div className="settings-groups">
             {visibleEnvGroups.map(([group, items]) => (
               <section key={group} className="settings-group">
-                <h4>{group}</h4>
+                <h4><Icon name={GROUP_ICONS[group] || "settings"} /> {group}</h4>
                 <div className="settings-rows">
                   {items.map((item) => {
                     const key = String(item.key);
+                    const provider = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
+                    if (key !== "CATEGORIZER_PROVIDER" && provider === "none") return null;
+                    if (provider === "chatgpt" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
+                    if (provider === "ollama" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
                     const hasValue = Boolean(item.has_value);
                     const source = String(item.source || "unset");
+                    const draftValue = envDraft[key] ?? "";
+                    const onChangeDraft = (next) => {
+                      setEnvDraft((prev) => ({ ...prev, [key]: next }));
+                      if (item.secret && envClear[key]) {
+                        setEnvClear((prev) => ({ ...prev, [key]: false }));
+                      }
+                    };
+
+                    const modelKind = key === "OPENAI_MODEL" ? "openai" : key === "OLLAMA_MODEL" ? "ollama" : null;
+                    const modelList = modelKind ? availableModels[modelKind] || [] : [];
+
+                    let inputElement;
+                    if (key === "CATEGORIZER_PROVIDER") {
+                      inputElement = (
+                        <select value={draftValue || "chatgpt"} onChange={(e) => onChangeDraft(e.target.value)}>
+                          <option value="none">None (AI disabled)</option>
+                          <option value="chatgpt">ChatGPT (OpenAI)</option>
+                          <option value="ollama">Ollama (Local)</option>
+                        </select>
+                      );
+                    } else if (modelKind && modelList.length > 0) {
+                      inputElement = (
+                        <>
+                          <select value={draftValue} onChange={(e) => onChangeDraft(e.target.value)}>
+                            {!draftValue && <option value="">Select a model…</option>}
+                            {modelList.map((m) => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                          <button type="button" className="ghost small" onClick={() => fetchAvailableModels(modelKind)}>
+                            <Icon name="refresh" /> Refresh list
+                          </button>
+                        </>
+                      );
+                    } else if (modelKind) {
+                      inputElement = (
+                        <>
+                          <input
+                            type="text"
+                            value={draftValue}
+                            placeholder={item.default || ""}
+                            onChange={(e) => onChangeDraft(e.target.value)}
+                          />
+                          <button type="button" className="ghost small" onClick={() => fetchAvailableModels(modelKind)}>
+                            <Icon name="refresh" /> Load models
+                          </button>
+                        </>
+                      );
+                    } else {
+                      inputElement = (
+                        <input
+                          type={item.secret ? "password" : "text"}
+                          value={draftValue}
+                          placeholder={item.secret && hasValue ? "Stored secret" : ""}
+                          onChange={(e) => onChangeDraft(e.target.value)}
+                        />
+                      );
+                    }
+
                     return (
                       <div key={key} className="settings-row">
                         <div className="settings-labels">
@@ -1416,18 +1542,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="settings-input-wrap">
-                          <input
-                            type={item.secret ? "password" : "text"}
-                            value={envDraft[key] ?? ""}
-                            placeholder={item.secret && hasValue ? "Stored secret" : ""}
-                            onChange={(event) => {
-                              const next = event.target.value;
-                              setEnvDraft((prev) => ({ ...prev, [key]: next }));
-                              if (item.secret && envClear[key]) {
-                                setEnvClear((prev) => ({ ...prev, [key]: false }));
-                              }
-                            }}
-                          />
+                          {inputElement}
                           {item.secret ? (
                             <button
                               type="button"
@@ -1457,67 +1572,59 @@ export default function App() {
 
         <aside className="stacked-cards">
           <article className="card">
-            <h3>Connection Tests</h3>
+            <h3><Icon name="check-circle" /> Connection Tests</h3>
             <p className="muted">Validate saved or draft values before running long jobs.</p>
 
             <div className="connection-tests">
-              <button
-                className="ghost"
-                onClick={() => runConnectionTest("mealie")}
-                disabled={connectionChecks.mealie.loading}
-              >
-                {connectionChecks.mealie.loading ? "Testing..." : "Test Mealie"}
-              </button>
-              <p className={`tiny ${connectionChecks.mealie.ok === false ? "danger-text" : ""}`}>
-                {connectionChecks.mealie.detail || "Check Mealie URL/API key connectivity."}
-              </p>
-
-              <button
-                className="ghost"
-                onClick={() => runConnectionTest("openai")}
-                disabled={connectionChecks.openai.loading}
-              >
-                {connectionChecks.openai.loading ? "Testing..." : "Test OpenAI API Key"}
-              </button>
-              <p className={`tiny ${connectionChecks.openai.ok === false ? "danger-text" : ""}`}>
-                {connectionChecks.openai.detail || "Validate OpenAI key and selected model."}
-              </p>
-
-              <button
-                className="ghost"
-                onClick={() => runConnectionTest("ollama")}
-                disabled={connectionChecks.ollama.loading}
-              >
-                {connectionChecks.ollama.loading ? "Testing..." : "Test Ollama Connection"}
-              </button>
-              <p className={`tiny ${connectionChecks.ollama.ok === false ? "danger-text" : ""}`}>
-                {connectionChecks.ollama.detail || "Validate Ollama endpoint reachability."}
-              </p>
+              {[
+                { id: "mealie", label: "Test Mealie", hint: "Check Mealie URL/API key connectivity." },
+                { id: "openai", label: "Test OpenAI", hint: "Validate OpenAI key and selected model.", provider: "chatgpt" },
+                { id: "ollama", label: "Test Ollama", hint: "Validate Ollama endpoint reachability.", provider: "ollama" },
+              ].filter((test) => {
+                const p = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
+                return !test.provider || (p !== "none" && p === test.provider);
+              })
+              .map((test) => {
+                const state = connectionChecks[test.id] || {};
+                return (
+                  <div key={test.id} className="connection-test-item">
+                    <button
+                      className="ghost"
+                      onClick={() => runConnectionTest(test.id)}
+                      disabled={state.loading}
+                    >
+                      <Icon name={state.loading ? "refresh" : "zap"} />
+                      {state.loading ? "Testing\u2026" : test.label}
+                    </button>
+                    <p className={`tiny ${state.ok === false ? "danger-text" : state.ok === true ? "success-text" : ""}`}>
+                      {state.detail || test.hint}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </article>
 
           <article className="card">
-            <h3>Task Safety Policies</h3>
-            <p className="muted">Enable dangerous writes per task when you are ready to apply changes.</p>
-            <ul className="policy-list">
-              {tasks.map((task) => (
-                <li key={task.task_id}>
-                  <div>
-                    <strong>{task.title}</strong>
-                    <p className="tiny muted">{task.task_id}</p>
-                  </div>
-                  <label className="field-inline tiny-toggle">
-                    <span>Allow writes</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(task.policy?.allow_dangerous)}
-                      onChange={(event) => togglePolicy(task.task_id, event.target.checked)}
-                    />
-                  </label>
-                </li>
-              ))}
+            <h3><Icon name="info" /> About AI Integration</h3>
+            <p className="muted">AI is optional. The following tasks use the configured provider when enabled:</p>
+            <ul className="ai-task-list">
+              <li>
+                <strong>Categorize Recipes</strong>
+                <p className="tiny muted">Classifies recipes into categories, tags, and tools using AI prompts.</p>
+              </li>
+              <li>
+                <strong>Ingredient Parser</strong>
+                <p className="tiny muted">Falls back to OpenAI when the built-in NLP parser has low confidence.</p>
+              </li>
             </ul>
+            {(envDraft["CATEGORIZER_PROVIDER"] || "chatgpt") === "none" && (
+              <p className="tiny muted" style={{ marginTop: "0.4rem" }}>
+                AI is currently disabled. Tasks that require a provider will be skipped or use NLP-only parsing.
+              </p>
+            )}
           </article>
+
         </aside>
       </section>
     );
@@ -1538,8 +1645,7 @@ export default function App() {
     return (
       <section className="page-grid settings-grid">
         <article className="card">
-          <h3>Recipe Organization</h3>
-          <p className="muted">Edit taxonomy values using pill-style controls and save directly to JSON files.</p>
+          <p className="muted">Select a file below to add, edit, or reorder values.</p>
 
           <div className="taxonomy-pills">
             {TAXONOMY_FILE_NAMES.map((name) => (
@@ -1617,129 +1723,269 @@ export default function App() {
                   </li>
                 ))}
               </ul>
-              <p className="muted tiny">Drag items to reorder. Use advanced mode only if needed.</p>
+              <p className="muted tiny">Drag items to reorder.</p>
             </section>
           ) : activeConfigMode === "cookbook-cards" ? (
             <section className="structured-editor">
-              <div className="structured-toolbar cookbook-toolbar">
-                <label className="field">
-                  <span>Name</span>
-                  <input
-                    value={cookbookDraft.name}
-                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="Weeknight Dinner"
-                  />
-                </label>
-                <label className="field">
-                  <span>Description</span>
-                  <input
-                    value={cookbookDraft.description}
-                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, description: event.target.value }))}
-                    placeholder="Quick and reliable evening meals."
-                  />
-                </label>
-                <label className="field">
-                  <span>Query Filter</span>
-                  <input
-                    value={cookbookDraft.queryFilterString}
-                    onChange={(event) =>
-                      setCookbookDraft((prev) => ({ ...prev, queryFilterString: event.target.value }))
-                    }
-                    placeholder='tags.name IN ["Weeknight"]'
-                  />
-                </label>
-                <label className="field">
-                  <span>Position</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={cookbookDraft.position}
-                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, position: event.target.value }))}
-                  />
-                </label>
-                <label className="field field-inline">
-                  <span>Public</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(cookbookDraft.public)}
-                    onChange={(event) => setCookbookDraft((prev) => ({ ...prev, public: event.target.checked }))}
-                  />
-                </label>
-                <button className="ghost" type="button" onClick={addCookbookEntry}>
-                  Add Cookbook
-                </button>
-              </div>
+              <article className="card">
+                <div className="card-head">
+                  <h4>Add Cookbook</h4>
+                </div>
+                <div className="cookbook-add-form">
+                  <div className="cookbook-add-fields">
+                    <label className="field">
+                      <span>Name</span>
+                      <input
+                        value={cookbookDraft.name}
+                        onChange={(event) => setCookbookDraft((prev) => ({ ...prev, name: event.target.value }))}
+                        placeholder="Weeknight Dinner"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Description</span>
+                      <input
+                        value={cookbookDraft.description}
+                        onChange={(event) =>
+                          setCookbookDraft((prev) => ({ ...prev, description: event.target.value }))
+                        }
+                        placeholder="Quick and reliable evening meals."
+                      />
+                    </label>
+                  </div>
 
-              <ul className="structured-list">
-                {activeCookbookItems.map((item, index) => (
-                  <li key={`${activeConfig}-${index}`} className="structured-item">
-                    <div className="structured-item-grid cookbook-fields">
-                      <label className="field">
-                        <span>Name</span>
-                        <input
-                          value={item.name}
-                          onChange={(event) => updateCookbookEntry(index, "name", event.target.value)}
-                        />
+                  {[
+                    { key: "categories", label: "Categories" },
+                    { key: "tags", label: "Tags" },
+                  ].map((group) => {
+                    const selected = cookbookDraft.filterSelections[group.key] || [];
+                    const options = (availableFilterOptions[group.key] || []).filter(
+                      (v) => !selected.includes(v)
+                    );
+                    return (
+                      <label key={group.key} className="field">
+                        <span>{group.label}</span>
+                        <div className="filter-select-row">
+                          <select
+                            value=""
+                            onChange={(event) => {
+                              const val = event.target.value;
+                              if (!val) return;
+                              setCookbookDraft((prev) => {
+                                const newSelections = {
+                                  ...prev.filterSelections,
+                                  [group.key]: [...(prev.filterSelections[group.key] || []), val],
+                                };
+                                return {
+                                  ...prev,
+                                  filterSelections: newSelections,
+                                  queryFilterString: buildQueryFilter(newSelections),
+                                };
+                              });
+                            }}
+                          >
+                            <option value="">Select {group.label.toLowerCase()}...</option>
+                            {options.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          {selected.length > 0 && (
+                            <div className="filter-chips">
+                              {selected.map((val) => (
+                                <span key={val} className="filter-chip">
+                                  {val}
+                                  <button
+                                    type="button"
+                                    className="chip-remove"
+                                    onClick={() => {
+                                      setCookbookDraft((prev) => {
+                                        const newSelections = {
+                                          ...prev.filterSelections,
+                                          [group.key]: (prev.filterSelections[group.key] || []).filter(
+                                            (v) => v !== val
+                                          ),
+                                        };
+                                        return {
+                                          ...prev,
+                                          filterSelections: newSelections,
+                                          queryFilterString: buildQueryFilter(newSelections),
+                                        };
+                                      });
+                                    }}
+                                  >
+                                    <Icon name="x" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </label>
-                      <label className="field">
-                        <span>Description</span>
-                        <input
-                          value={item.description}
-                          onChange={(event) => updateCookbookEntry(index, "description", event.target.value)}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Query Filter</span>
-                        <input
-                          value={item.queryFilterString}
-                          onChange={(event) => updateCookbookEntry(index, "queryFilterString", event.target.value)}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Position</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.position}
-                          onChange={(event) => updateCookbookEntry(index, "position", event.target.value)}
-                        />
-                      </label>
-                      <label className="field field-inline">
-                        <span>Public</span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(item.public)}
-                          onChange={(event) => updateCookbookEntry(index, "public", event.target.checked)}
-                        />
-                      </label>
-                    </div>
-                    <div className="line-actions">
-                      <button
-                        type="button"
-                        className="ghost small"
-                        onClick={() => moveCookbookEntry(index, Math.max(index - 1, 0))}
-                        disabled={index === 0}
-                      >
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost small"
-                        onClick={() => moveCookbookEntry(index, Math.min(index + 1, activeCookbookItems.length - 1))}
-                        disabled={index === activeCookbookItems.length - 1}
-                      >
-                        Down
-                      </button>
-                      <button type="button" className="ghost small" onClick={() => removeCookbookEntry(index)}>
-                        Remove
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <p className="muted tiny">
-                Cookbook rows stay structured with filters, descriptions, visibility, and ordering.
-              </p>
+                    );
+                  })}
+
+                  <div className="cookbook-add-actions">
+                    <label className="field">
+                      <span>Position</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={cookbookDraft.position}
+                        onChange={(event) =>
+                          setCookbookDraft((prev) => ({ ...prev, position: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="field field-inline">
+                      <span>Public</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(cookbookDraft.public)}
+                        onChange={(event) =>
+                          setCookbookDraft((prev) => ({ ...prev, public: event.target.checked }))
+                        }
+                      />
+                    </label>
+                    <button className="ghost" type="button" onClick={addCookbookEntry}>
+                      Add Cookbook
+                    </button>
+                  </div>
+                </div>
+              </article>
+
+              {activeCookbookItems.length > 0 && (
+                <article className="card">
+                  <div className="card-head">
+                    <h4>Cookbooks ({activeCookbookItems.length})</h4>
+                  </div>
+                  <ul className="structured-list">
+                    {activeCookbookItems.map((item, index) => (
+                      <li key={`${activeConfig}-${index}`} className="structured-item">
+                        <div className="structured-item-grid cookbook-fields">
+                          <label className="field">
+                            <span>Name</span>
+                            <input
+                              value={item.name}
+                              onChange={(event) => updateCookbookEntry(index, "name", event.target.value)}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Description</span>
+                            <input
+                              value={item.description}
+                              onChange={(event) => updateCookbookEntry(index, "description", event.target.value)}
+                            />
+                          </label>
+                        </div>
+
+                        {[
+                          { key: "categories", label: "Categories" },
+                          { key: "tags", label: "Tags" },
+                        ].map((group) => {
+                          const sel = (item.filterSelections || {})[group.key] || [];
+                          const opts = (availableFilterOptions[group.key] || []).filter(
+                            (v) => !sel.includes(v)
+                          );
+                          return (
+                            <label key={group.key} className="field">
+                              <span>{group.label}</span>
+                              <div className="filter-select-row">
+                                <select
+                                  value=""
+                                  onChange={(event) => {
+                                    const val = event.target.value;
+                                    if (!val) return;
+                                    updateCookbookFilterSelections(index, {
+                                      ...(item.filterSelections || { categories: [], tags: [] }),
+                                      [group.key]: [...sel, val],
+                                    });
+                                  }}
+                                >
+                                  <option value="">Select {group.label.toLowerCase()}...</option>
+                                  {opts.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                                {sel.length > 0 && (
+                                  <div className="filter-chips">
+                                    {sel.map((val) => (
+                                      <span key={val} className="filter-chip">
+                                        {val}
+                                        <button
+                                          type="button"
+                                          className="chip-remove"
+                                          onClick={() => {
+                                            updateCookbookFilterSelections(index, {
+                                              ...(item.filterSelections || { categories: [], tags: [] }),
+                                              [group.key]: sel.filter((v) => v !== val),
+                                            });
+                                          }}
+                                        >
+                                          <Icon name="x" />
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+
+                        <div className="cookbook-item-footer">
+                          <label className="field">
+                            <span>Position</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.position}
+                              onChange={(event) => updateCookbookEntry(index, "position", event.target.value)}
+                            />
+                          </label>
+                          <label className="field field-inline">
+                            <span>Public</span>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.public)}
+                              onChange={(event) => updateCookbookEntry(index, "public", event.target.checked)}
+                            />
+                          </label>
+                          <div className="line-actions">
+                            <button
+                              type="button"
+                              className="ghost small"
+                              onClick={() => moveCookbookEntry(index, Math.max(index - 1, 0))}
+                              disabled={index === 0}
+                            >
+                              Up
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost small"
+                              onClick={() =>
+                                moveCookbookEntry(index, Math.min(index + 1, activeCookbookItems.length - 1))
+                              }
+                              disabled={index === activeCookbookItems.length - 1}
+                            >
+                              Down
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost small"
+                              onClick={() => removeCookbookEntry(index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              )}
             </section>
           ) : activeConfigMode === "unit-aliases" ? (
             <section className="structured-editor">
@@ -1808,11 +2054,11 @@ export default function App() {
                   </li>
                 ))}
               </ul>
-              <p className="muted tiny">Maintain canonical units and aliases without switching to raw JSON.</p>
+              <p className="muted tiny">Define units and their aliases.</p>
             </section>
           ) : (
             <section>
-              <p className="muted tiny">Advanced mode: this file requires full JSON editing.</p>
+              <p className="muted tiny">This file uses a structured format. Edit the JSON directly below.</p>
               <textarea
                 rows={18}
                 value={activeConfigBody}
@@ -1845,8 +2091,8 @@ export default function App() {
 
         <aside className="stacked-cards">
           <article className="card">
-            <h3>Import from JSON</h3>
-            <p className="muted">Upload JSON to add or replace recipe organization values.</p>
+            <h3><Icon name="upload" /> Import from JSON</h3>
+            <p className="muted">Drop a .json file, browse for one, or paste JSON below.</p>
 
             <label className="field">
               <span>Target File</span>
@@ -1859,21 +2105,47 @@ export default function App() {
               </select>
             </label>
 
-            <label className="field">
-              <span>JSON Payload</span>
+            <div
+              className={`drop-zone ${importJsonText ? "has-content" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }}
+              onDragLeave={(e) => { e.currentTarget.classList.remove("drag-over"); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove("drag-over");
+                const file = e.dataTransfer.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = () => setImportJsonText(reader.result);
+                  reader.readAsText(file);
+                }
+              }}
+            >
               <textarea
-                rows={12}
+                rows={8}
                 value={importJsonText}
                 onChange={(event) => setImportJsonText(event.target.value)}
-                placeholder='[ {"name": "One"}, {"name": "Two"} ]'
+                placeholder='Drop a .json file here or paste JSON content&#10;&#10;[ {"name": "One"}, {"name": "Two"} ]'
               />
-            </label>
+              {!importJsonText && (
+                <div className="drop-zone-hint">
+                  <Icon name="upload" />
+                  <span>Drop .json file or <label className="link-text">browse<input type="file" accept=".json,application/json" hidden onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => setImportJsonText(reader.result);
+                      reader.readAsText(file);
+                    }
+                    e.target.value = "";
+                  }} /></label></span>
+                </div>
+              )}
+            </div>
 
-            <button className="primary" onClick={importTaxonomyJson}>
+            <button className="primary" onClick={importTaxonomyJson} disabled={!importJsonText.trim()}>
               <Icon name="upload" />
               Import JSON
             </button>
-            <p className="muted tiny">Supports categories, cookbooks, labels, tags, tools, and units.</p>
           </article>
         </aside>
       </section>

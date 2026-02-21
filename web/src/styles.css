@@ -468,6 +468,10 @@ textarea {
   font-size: 0.9rem;
 }
 
+select {
+  cursor: pointer;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -695,6 +699,7 @@ tbody tr:hover {
   font-size: 0.79rem;
 }
 
+.ai-task-list,
 .schedule-list ul,
 .kv-list,
 .config-shortcuts,
@@ -706,6 +711,7 @@ tbody tr:hover {
   gap: 0.42rem;
 }
 
+.ai-task-list li,
 .schedule-list li,
 .config-shortcuts li,
 .policy-list li {
@@ -1050,9 +1056,77 @@ button.danger {
   justify-self: start;
 }
 
+.settings-groups {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.settings-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+}
+
 .connection-tests {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.55rem;
+}
+
+.connection-test-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  padding: 0.48rem 0.56rem;
+}
+
+.connection-test-item button {
+  margin-bottom: 0.2rem;
+}
+
+.success-text {
+  color: var(--accent);
+}
+
+.drop-zone {
+  position: relative;
+}
+
+.drop-zone textarea {
+  width: 100%;
+}
+
+.drop-zone-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  pointer-events: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.drop-zone-hint .ui-icon {
+  width: 1.6rem;
+  height: 1.6rem;
+  opacity: 0.5;
+}
+
+.drop-zone-hint .link-text {
+  color: var(--accent);
+  cursor: pointer;
+  pointer-events: auto;
+  text-decoration: underline;
+}
+
+.drop-zone.drag-over textarea {
+  border-color: var(--accent);
+  background: rgba(244, 122, 42, 0.06);
 }
 
 .taxonomy-pills {
@@ -1109,6 +1183,92 @@ button.danger {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.cookbook-add-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.cookbook-add-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.cookbook-add-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.cookbook-add-actions .field {
+  min-width: 80px;
+  max-width: 100px;
+}
+
+.cookbook-item-footer {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.cookbook-item-footer .field {
+  min-width: 80px;
+  max-width: 100px;
+}
+
+.cookbook-item-footer .line-actions {
+  margin-left: auto;
+}
+
+.filter-select-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: var(--text);
+  padding: 0.15rem 0.2rem 0.15rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+}
+
+.chip-remove:hover {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+
+.chip-remove .ui-icon {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
 .structured-toolbar > button {
   justify-self: start;
   align-self: end;
@@ -1138,7 +1298,7 @@ button.danger {
 }
 
 .structured-item-grid.cookbook-fields {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .pill-input-row {
@@ -1556,6 +1716,7 @@ button.danger {
   .option-grid.two,
   .structured-toolbar,
   .cookbook-toolbar,
+  .cookbook-add-fields,
   .structured-item-grid,
   .structured-item-grid.cookbook-fields,
   .metric-grid,
@@ -1564,6 +1725,11 @@ button.danger {
   .password-row,
   .user-row-body .password-row {
     grid-template-columns: 1fr;
+  }
+
+  .cookbook-add-actions,
+  .cookbook-item-footer {
+    flex-wrap: wrap;
   }
 
   .search-box {

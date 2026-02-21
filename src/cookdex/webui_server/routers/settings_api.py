@@ -129,6 +129,86 @@ async def put_settings(
     return await get_settings(_session, services)
 
 
+# Recommended chat-capable models for recipe categorization tasks.
+# Kept as an ordered list: best value first. The API response is
+# cross-referenced so only models the key can actually access appear.
+_OPENAI_RECOMMENDED = (
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4.1-nano",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "gpt-4-turbo",
+    "o4-mini",
+    "o3-mini",
+    "gpt-3.5-turbo",
+)
+
+
+def _list_openai_models(api_key: str) -> list[str]:
+    if not api_key:
+        return []
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=12)
+        response.raise_for_status()
+        data = response.json()
+        available = {str(m.get("id", "")) for m in (data.get("data") or []) if isinstance(m, dict)}
+        return [m for m in _OPENAI_RECOMMENDED if m in available]
+    except requests.RequestException:
+        return []
+
+
+def _list_ollama_models(url: str) -> list[str]:
+    base_url = (url or "").strip().rstrip("/")
+    if not base_url:
+        return []
+    if base_url.endswith("/api"):
+        tags_url = f"{base_url}/tags"
+    elif base_url.endswith("/api/tags"):
+        tags_url = base_url
+    else:
+        tags_url = f"{base_url}/api/tags"
+    try:
+        response = requests.get(tags_url, timeout=12)
+        response.raise_for_status()
+        payload = response.json()
+        models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(models, list):
+            return []
+        return sorted(
+            str(m.get("name", ""))
+            for m in models
+            if isinstance(m, dict) and m.get("name")
+        )
+    except requests.RequestException:
+        return []
+
+
+@router.post("/settings/models/openai")
+async def list_openai_models(
+    payload: ProviderConnectionTestRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    api_key = resolve_runtime_value(runtime_env, "OPENAI_API_KEY", payload.openai_api_key)
+    models = _list_openai_models(api_key)
+    return {"ok": bool(models), "models": models}
+
+
+@router.post("/settings/models/ollama")
+async def list_ollama_models(
+    payload: ProviderConnectionTestRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    ollama_url = resolve_runtime_value(runtime_env, "OLLAMA_URL", payload.ollama_url)
+    models = _list_ollama_models(ollama_url)
+    return {"ok": bool(models), "models": models}
+
+
 @router.post("/settings/test/mealie")
 async def test_mealie_settings(
     payload: ProviderConnectionTestRequest,

@@ -522,6 +522,55 @@ export function fieldFromOption(option, value, onChange) {
   );
 }
 
+function parseFilterValueList(raw) {
+  try {
+    const parsed = JSON.parse(`[${raw}]`);
+    return parsed.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim());
+  } catch {
+    return raw
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
+}
+
+export function parseQueryFilter(queryFilterString) {
+  const result = { categories: [], tags: [] };
+  const raw = String(queryFilterString || "").trim();
+  if (!raw) return result;
+
+  const clauses = raw.split(/\s+AND\s+/i);
+  const categoryPattern =
+    /^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.name\s+(?:IN|CONTAINS[_ ]?ANY)\s*\[([^\]]*)\]\s*$/i;
+  const tagPattern = /^\s*tags\.name\s+(?:IN|CONTAINS[_ ]?ANY)\s*\[([^\]]*)\]\s*$/i;
+
+  for (const clause of clauses) {
+    let match = clause.match(categoryPattern);
+    if (match) {
+      result.categories = parseFilterValueList(match[1]);
+      continue;
+    }
+    match = clause.match(tagPattern);
+    if (match) {
+      result.tags = parseFilterValueList(match[1]);
+    }
+  }
+  return result;
+}
+
+export function buildQueryFilter(selections) {
+  const clauses = [];
+  if (selections.categories?.length > 0) {
+    const list = selections.categories.map((v) => `"${v}"`).join(", ");
+    clauses.push(`recipeCategory.name IN [${list}]`);
+  }
+  if (selections.tags?.length > 0) {
+    const list = selections.tags.map((v) => `"${v}"`).join(", ");
+    clauses.push(`tags.name IN [${list}]`);
+  }
+  return clauses.join(" AND ");
+}
+
 export function normalizeTaskOptions(task, values) {
   const payload = {};
   for (const option of task?.options || []) {

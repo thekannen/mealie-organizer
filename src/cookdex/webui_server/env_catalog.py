@@ -36,7 +36,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         group="AI",
         default="chatgpt",
         secret=False,
-        description="Default provider for categorization tasks: chatgpt or ollama.",
+        description="AI provider for categorization tasks: chatgpt, ollama, or none to disable.",
     ),
     EnvVarSpec(
         key="OPENAI_MODEL",
