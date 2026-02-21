@@ -17,6 +17,8 @@ import {
   parseAliasInput,
   parseQueryFilter,
   buildQueryFilter,
+  FILTER_FIELDS,
+  FILTER_OPERATORS,
   parseIso,
   parseLineEditorContent,
   renderMarkdownDocument,
@@ -88,7 +90,7 @@ export default function App() {
     name: "",
     description: "",
     queryFilterString: "",
-    filterSelections: { categories: [], tags: [] },
+    filterRows: [],
     public: false,
     position: 1,
   });
@@ -239,6 +241,7 @@ export default function App() {
     return {
       categories: extractNames(taxonomyItemsByFile.categories),
       tags: extractNames(taxonomyItemsByFile.tags),
+      tools: extractNames(taxonomyItemsByFile.tools),
     };
   }, [taxonomyItemsByFile]);
 
@@ -394,7 +397,7 @@ export default function App() {
       editor.mode === "cookbook-cards"
         ? editor.items.map((item) => ({
             ...item,
-            filterSelections: parseQueryFilter(item.queryFilterString),
+            filterRows: parseQueryFilter(item.queryFilterString),
           }))
         : []
     );
@@ -404,7 +407,7 @@ export default function App() {
       name: "",
       description: "",
       queryFilterString: "",
-      filterSelections: { categories: [], tags: [] },
+      filterRows: [],
       public: false,
       position: Math.max(1, (editor.mode === "cookbook-cards" ? editor.items.length : 0) + 1),
     });
@@ -797,7 +800,7 @@ export default function App() {
         name,
         description: String(cookbookDraft.description || "").trim(),
         queryFilterString: cookbookDraft.queryFilterString,
-        filterSelections: { ...(cookbookDraft.filterSelections || { categories: [], tags: [] }) },
+        filterRows: [...(cookbookDraft.filterRows || [])],
         public: Boolean(cookbookDraft.public),
         position: Number.isFinite(parsedPosition) && parsedPosition > 0 ? parsedPosition : prev.length + 1,
       },
@@ -807,17 +810,17 @@ export default function App() {
       name: "",
       description: "",
       queryFilterString: "",
-      filterSelections: { categories: [], tags: [] },
+      filterRows: [],
       public: false,
       position: nextPosition,
     }));
   }
 
-  function updateCookbookFilterSelections(index, newSelections) {
+  function updateCookbookFilterRows(index, newRows) {
     setActiveCookbookItems((prev) =>
       prev.map((item, i) =>
         i === index
-          ? { ...item, filterSelections: newSelections, queryFilterString: buildQueryFilter(newSelections) }
+          ? { ...item, filterRows: newRows, queryFilterString: buildQueryFilter(newRows) }
           : item
       )
     );
@@ -1753,46 +1756,82 @@ export default function App() {
                     </label>
                   </div>
 
-                  {[
-                    { key: "categories", label: "Categories" },
-                    { key: "tags", label: "Tags" },
-                  ].map((group) => {
-                    const selected = cookbookDraft.filterSelections[group.key] || [];
-                    const options = (availableFilterOptions[group.key] || []).filter(
-                      (v) => !selected.includes(v)
-                    );
+                  {(cookbookDraft.filterRows || []).map((row, rowIdx) => {
+                    const fieldDef = FILTER_FIELDS.find((f) => f.key === row.field);
+                    const hasDropdown = Boolean(availableFilterOptions[row.field]);
+                    const valueOptions = hasDropdown
+                      ? (availableFilterOptions[row.field] || []).filter((v) => !(row.values || []).includes(v))
+                      : [];
                     return (
-                      <label key={group.key} className="field">
-                        <span>{group.label}</span>
-                        <div className="filter-select-row">
-                          <select
-                            value=""
-                            onChange={(event) => {
-                              const val = event.target.value;
-                              if (!val) return;
-                              setCookbookDraft((prev) => {
-                                const newSelections = {
-                                  ...prev.filterSelections,
-                                  [group.key]: [...(prev.filterSelections[group.key] || []), val],
-                                };
-                                return {
-                                  ...prev,
-                                  filterSelections: newSelections,
-                                  queryFilterString: buildQueryFilter(newSelections),
-                                };
-                              });
-                            }}
-                          >
-                            <option value="">Select {group.label.toLowerCase()}...</option>
-                            {options.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-                          {selected.length > 0 && (
+                      <div key={rowIdx} className="filter-row">
+                        <select
+                          value={row.field}
+                          onChange={(event) => {
+                            setCookbookDraft((prev) => {
+                              const next = [...(prev.filterRows || [])];
+                              next[rowIdx] = { ...next[rowIdx], field: event.target.value, values: [] };
+                              return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
+                            });
+                          }}
+                        >
+                          {FILTER_FIELDS.map((f) => (
+                            <option key={f.key} value={f.key}>{f.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={row.operator || "IN"}
+                          onChange={(event) => {
+                            setCookbookDraft((prev) => {
+                              const next = [...(prev.filterRows || [])];
+                              next[rowIdx] = { ...next[rowIdx], operator: event.target.value };
+                              return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
+                            });
+                          }}
+                        >
+                          {FILTER_OPERATORS.map((op) => (
+                            <option key={op.value} value={op.value}>{op.label}</option>
+                          ))}
+                        </select>
+                        <div className="filter-value-area">
+                          {hasDropdown ? (
+                            <select
+                              value=""
+                              onChange={(event) => {
+                                const val = event.target.value;
+                                if (!val) return;
+                                setCookbookDraft((prev) => {
+                                  const next = [...(prev.filterRows || [])];
+                                  next[rowIdx] = { ...next[rowIdx], values: [...(next[rowIdx].values || []), val] };
+                                  return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
+                                });
+                              }}
+                            >
+                              <option value="">Select {fieldDef?.label.toLowerCase() || "value"}...</option>
+                              {valueOptions.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder={`Type name, press Enter`}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter") return;
+                                event.preventDefault();
+                                const val = event.target.value.trim();
+                                if (!val || (row.values || []).includes(val)) return;
+                                event.target.value = "";
+                                setCookbookDraft((prev) => {
+                                  const next = [...(prev.filterRows || [])];
+                                  next[rowIdx] = { ...next[rowIdx], values: [...(next[rowIdx].values || []), val] };
+                                  return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
+                                });
+                              }}
+                            />
+                          )}
+                          {(row.values || []).length > 0 && (
                             <div className="filter-chips">
-                              {selected.map((val) => (
+                              {row.values.map((val) => (
                                 <span key={val} className="filter-chip">
                                   {val}
                                   <button
@@ -1800,17 +1839,9 @@ export default function App() {
                                     className="chip-remove"
                                     onClick={() => {
                                       setCookbookDraft((prev) => {
-                                        const newSelections = {
-                                          ...prev.filterSelections,
-                                          [group.key]: (prev.filterSelections[group.key] || []).filter(
-                                            (v) => v !== val
-                                          ),
-                                        };
-                                        return {
-                                          ...prev,
-                                          filterSelections: newSelections,
-                                          queryFilterString: buildQueryFilter(newSelections),
-                                        };
+                                        const next = [...(prev.filterRows || [])];
+                                        next[rowIdx] = { ...next[rowIdx], values: (next[rowIdx].values || []).filter((v) => v !== val) };
+                                        return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
                                       });
                                     }}
                                   >
@@ -1821,9 +1852,35 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                      </label>
+                        <button
+                          type="button"
+                          className="ghost filter-remove-btn"
+                          onClick={() => {
+                            setCookbookDraft((prev) => {
+                              const next = (prev.filterRows || []).filter((_, i) => i !== rowIdx);
+                              return { ...prev, filterRows: next, queryFilterString: buildQueryFilter(next) };
+                            });
+                          }}
+                        >
+                          <Icon name="x" />
+                        </button>
+                      </div>
                     );
                   })}
+                  <button
+                    type="button"
+                    className="ghost filter-add-btn"
+                    onClick={() => {
+                      setCookbookDraft((prev) => {
+                        const usedFields = (prev.filterRows || []).map((r) => r.field);
+                        const nextField = FILTER_FIELDS.find((f) => !usedFields.includes(f.key))?.key || "categories";
+                        const next = [...(prev.filterRows || []), { field: nextField, operator: "IN", values: [] }];
+                        return { ...prev, filterRows: next };
+                      });
+                    }}
+                  >
+                    + Add Filter
+                  </button>
 
                   <div className="cookbook-add-actions">
                     <label className="field">
@@ -1879,49 +1936,83 @@ export default function App() {
                           </label>
                         </div>
 
-                        {[
-                          { key: "categories", label: "Categories" },
-                          { key: "tags", label: "Tags" },
-                        ].map((group) => {
-                          const sel = (item.filterSelections || {})[group.key] || [];
-                          const opts = (availableFilterOptions[group.key] || []).filter(
-                            (v) => !sel.includes(v)
-                          );
+                        {(item.filterRows || []).map((row, rowIdx) => {
+                          const fieldDef = FILTER_FIELDS.find((f) => f.key === row.field);
+                          const hasDropdown = Boolean(availableFilterOptions[row.field]);
+                          const valueOptions = hasDropdown
+                            ? (availableFilterOptions[row.field] || []).filter((v) => !(row.values || []).includes(v))
+                            : [];
                           return (
-                            <label key={group.key} className="field">
-                              <span>{group.label}</span>
-                              <div className="filter-select-row">
-                                <select
-                                  value=""
-                                  onChange={(event) => {
-                                    const val = event.target.value;
-                                    if (!val) return;
-                                    updateCookbookFilterSelections(index, {
-                                      ...(item.filterSelections || { categories: [], tags: [] }),
-                                      [group.key]: [...sel, val],
-                                    });
-                                  }}
-                                >
-                                  <option value="">Select {group.label.toLowerCase()}...</option>
-                                  {opts.map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                                {sel.length > 0 && (
+                            <div key={rowIdx} className="filter-row">
+                              <select
+                                value={row.field}
+                                onChange={(event) => {
+                                  const next = [...(item.filterRows || [])];
+                                  next[rowIdx] = { ...next[rowIdx], field: event.target.value, values: [] };
+                                  updateCookbookFilterRows(index, next);
+                                }}
+                              >
+                                {FILTER_FIELDS.map((f) => (
+                                  <option key={f.key} value={f.key}>{f.label}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={row.operator || "IN"}
+                                onChange={(event) => {
+                                  const next = [...(item.filterRows || [])];
+                                  next[rowIdx] = { ...next[rowIdx], operator: event.target.value };
+                                  updateCookbookFilterRows(index, next);
+                                }}
+                              >
+                                {FILTER_OPERATORS.map((op) => (
+                                  <option key={op.value} value={op.value}>{op.label}</option>
+                                ))}
+                              </select>
+                              <div className="filter-value-area">
+                                {hasDropdown ? (
+                                  <select
+                                    value=""
+                                    onChange={(event) => {
+                                      const val = event.target.value;
+                                      if (!val) return;
+                                      const next = [...(item.filterRows || [])];
+                                      next[rowIdx] = { ...next[rowIdx], values: [...(next[rowIdx].values || []), val] };
+                                      updateCookbookFilterRows(index, next);
+                                    }}
+                                  >
+                                    <option value="">Select {fieldDef?.label.toLowerCase() || "value"}...</option>
+                                    {valueOptions.map((opt) => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    placeholder="Type name, press Enter"
+                                    onKeyDown={(event) => {
+                                      if (event.key !== "Enter") return;
+                                      event.preventDefault();
+                                      const val = event.target.value.trim();
+                                      if (!val || (row.values || []).includes(val)) return;
+                                      event.target.value = "";
+                                      const next = [...(item.filterRows || [])];
+                                      next[rowIdx] = { ...next[rowIdx], values: [...(next[rowIdx].values || []), val] };
+                                      updateCookbookFilterRows(index, next);
+                                    }}
+                                  />
+                                )}
+                                {(row.values || []).length > 0 && (
                                   <div className="filter-chips">
-                                    {sel.map((val) => (
+                                    {row.values.map((val) => (
                                       <span key={val} className="filter-chip">
                                         {val}
                                         <button
                                           type="button"
                                           className="chip-remove"
                                           onClick={() => {
-                                            updateCookbookFilterSelections(index, {
-                                              ...(item.filterSelections || { categories: [], tags: [] }),
-                                              [group.key]: sel.filter((v) => v !== val),
-                                            });
+                                            const next = [...(item.filterRows || [])];
+                                            next[rowIdx] = { ...next[rowIdx], values: (next[rowIdx].values || []).filter((v) => v !== val) };
+                                            updateCookbookFilterRows(index, next);
                                           }}
                                         >
                                           <Icon name="x" />
@@ -1931,9 +2022,31 @@ export default function App() {
                                   </div>
                                 )}
                               </div>
-                            </label>
+                              <button
+                                type="button"
+                                className="ghost filter-remove-btn"
+                                onClick={() => {
+                                  const next = (item.filterRows || []).filter((_, i) => i !== rowIdx);
+                                  updateCookbookFilterRows(index, next);
+                                }}
+                              >
+                                <Icon name="x" />
+                              </button>
+                            </div>
                           );
                         })}
+                        <button
+                          type="button"
+                          className="ghost filter-add-btn"
+                          onClick={() => {
+                            const usedFields = (item.filterRows || []).map((r) => r.field);
+                            const nextField = FILTER_FIELDS.find((f) => !usedFields.includes(f.key))?.key || "categories";
+                            const next = [...(item.filterRows || []), { field: nextField, operator: "IN", values: [] }];
+                            updateCookbookFilterRows(index, next);
+                          }}
+                        >
+                          + Add Filter
+                        </button>
 
                         <div className="cookbook-item-footer">
                           <label className="field">

@@ -534,39 +534,58 @@ function parseFilterValueList(raw) {
   }
 }
 
-export function parseQueryFilter(queryFilterString) {
-  const result = { categories: [], tags: [] };
-  const raw = String(queryFilterString || "").trim();
-  if (!raw) return result;
+export const FILTER_FIELDS = [
+  { key: "categories", label: "Categories", pattern: /^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.name\s+/i, attr: "recipeCategory.name" },
+  { key: "tags", label: "Tags", pattern: /^\s*tags\.name\s+/i, attr: "tags.name" },
+  { key: "tools", label: "Tools", pattern: /^\s*tools\.name\s+/i, attr: "tools.name" },
+  { key: "foods", label: "Foods", pattern: /^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.name\s+/i, attr: "recipeIngredient.food.name" },
+];
 
-  const clauses = raw.split(/\s+AND\s+/i);
-  const categoryPattern =
-    /^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.name\s+(?:IN|CONTAINS[_ ]?ANY)\s*\[([^\]]*)\]\s*$/i;
-  const tagPattern = /^\s*tags\.name\s+(?:IN|CONTAINS[_ ]?ANY)\s*\[([^\]]*)\]\s*$/i;
+export const FILTER_OPERATORS = [
+  { value: "IN", label: "is one of" },
+  { value: "NOT IN", label: "is not one of" },
+  { value: "CONTAINS ALL", label: "contains all of" },
+];
 
-  for (const clause of clauses) {
-    let match = clause.match(categoryPattern);
-    if (match) {
-      result.categories = parseFilterValueList(match[1]);
-      continue;
-    }
-    match = clause.match(tagPattern);
-    if (match) {
-      result.tags = parseFilterValueList(match[1]);
-    }
-  }
-  return result;
+function normalizeOperator(raw) {
+  const upper = String(raw || "").trim().toUpperCase().replace(/\s+/g, " ");
+  if (upper === "NOT IN") return "NOT IN";
+  if (upper === "CONTAINS ALL") return "CONTAINS ALL";
+  return "IN";
 }
 
-export function buildQueryFilter(selections) {
-  const clauses = [];
-  if (selections.categories?.length > 0) {
-    const list = selections.categories.map((v) => `"${v}"`).join(", ");
-    clauses.push(`recipeCategory.name IN [${list}]`);
+export function parseQueryFilter(queryFilterString) {
+  const rows = [];
+  const raw = String(queryFilterString || "").trim();
+  if (!raw) return rows;
+
+  const clauses = raw.split(/\s+AND\s+/i);
+  for (const clause of clauses) {
+    for (const { key, pattern } of FILTER_FIELDS) {
+      if (!pattern.test(clause)) continue;
+      const opMatch = clause.match(/\b(NOT\s+IN|CONTAINS\s+ALL|IN)\s*\[([^\]]*)\]/i);
+      if (opMatch) {
+        rows.push({
+          field: key,
+          operator: normalizeOperator(opMatch[1]),
+          values: parseFilterValueList(opMatch[2]),
+        });
+      }
+      break;
+    }
   }
-  if (selections.tags?.length > 0) {
-    const list = selections.tags.map((v) => `"${v}"`).join(", ");
-    clauses.push(`tags.name IN [${list}]`);
+  return rows;
+}
+
+export function buildQueryFilter(filterRows) {
+  if (!Array.isArray(filterRows)) return "";
+  const clauses = [];
+  for (const row of filterRows) {
+    if (!row.values || row.values.length === 0) continue;
+    const fieldDef = FILTER_FIELDS.find((f) => f.key === row.field);
+    if (!fieldDef) continue;
+    const list = row.values.map((v) => `"${v}"`).join(", ");
+    clauses.push(`${fieldDef.attr} ${row.operator || "IN"} [${list}]`);
   }
   return clauses.join(" AND ");
 }

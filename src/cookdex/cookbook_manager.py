@@ -122,9 +122,10 @@ class MealieCookbookManager:
             return data
         return []
 
-    def build_name_id_maps(self) -> tuple[dict[str, str], dict[str, str]]:
+    def build_name_id_maps(self) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
         categories = self.get_items("categories")
         tags = self.get_items("tags")
+        tools = self.get_items("tools")
 
         category_ids_by_name = {
             str(item.get("name", "")).strip().lower(): str(item.get("id"))
@@ -136,7 +137,12 @@ class MealieCookbookManager:
             for item in tags
             if item.get("name") and item.get("id")
         }
-        return category_ids_by_name, tag_ids_by_name
+        tool_ids_by_name = {
+            str(item.get("name", "")).strip().lower(): str(item.get("id"))
+            for item in tools
+            if item.get("name") and item.get("id")
+        }
+        return category_ids_by_name, tag_ids_by_name, tool_ids_by_name
 
     @staticmethod
     def parse_filter_values(raw_values: str) -> list[str] | None:
@@ -197,22 +203,32 @@ class MealieCookbookManager:
         query_filter: str,
         category_ids_by_name: dict[str, str],
         tag_ids_by_name: dict[str, str],
+        tool_ids_by_name: dict[str, str] | None = None,
     ) -> str:
+        op_pattern = r"(?:NOT\s+IN|IN|CONTAINS\s+ALL)"
         compiled = normalize_query_filter_string(query_filter)
         compiled = self.replace_name_filter_with_ids(
             compiled,
-            r"\b(?:recipe_category|recipeCategory)\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            rf"\b(?:recipe_category|recipeCategory)\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
             "recipe_category.id",
             category_ids_by_name,
             "category",
         )
         compiled = self.replace_name_filter_with_ids(
             compiled,
-            r"\btags\.name\s+(?P<op>IN|CONTAINS\s+ALL)\s*\[(?P<vals>[^\]]*)\]",
+            rf"\btags\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
             "tags.id",
             tag_ids_by_name,
             "tag",
         )
+        if tool_ids_by_name:
+            compiled = self.replace_name_filter_with_ids(
+                compiled,
+                rf"\btools\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
+                "tools.id",
+                tool_ids_by_name,
+                "tool",
+            )
         compiled = re.sub(r"\brecipeCategory\.id\b", "recipe_category.id", compiled, flags=re.IGNORECASE)
         return normalize_query_filter_string(compiled)
 
@@ -221,6 +237,7 @@ class MealieCookbookManager:
         item: dict,
         category_ids_by_name: dict[str, str],
         tag_ids_by_name: dict[str, str],
+        tool_ids_by_name: dict[str, str] | None = None,
     ) -> dict:
         payload = dict(item)
         query_filter = str(payload.get("queryFilterString", ""))
@@ -228,6 +245,7 @@ class MealieCookbookManager:
             query_filter,
             category_ids_by_name,
             tag_ids_by_name,
+            tool_ids_by_name,
         )
         return payload
 
@@ -244,13 +262,14 @@ class MealieCookbookManager:
     def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int, int]:
         category_ids_by_name: dict[str, str] = {}
         tag_ids_by_name: dict[str, str] = {}
+        tool_ids_by_name: dict[str, str] = {}
         try:
-            category_ids_by_name, tag_ids_by_name = self.build_name_id_maps()
+            category_ids_by_name, tag_ids_by_name, tool_ids_by_name = self.build_name_id_maps()
         except Exception as exc:
             print(f"[warn] Could not build organizer id maps for cookbook filters: {exc}")
 
         prepared_desired = [
-            self.prepare_cookbook_payload(item, category_ids_by_name, tag_ids_by_name)
+            self.prepare_cookbook_payload(item, category_ids_by_name, tag_ids_by_name, tool_ids_by_name)
             for item in desired
         ]
 

@@ -47,6 +47,7 @@ const REQUIRED_MARKERS = [
   "recipe:import-json",
   "recipe:cookbook-add-form",
   "recipe:cookbook-filter-select",
+  "recipe:cookbook-filter-operator",
   "recipe:cookbook-add",
   "recipe:cookbook-remove",
   "recipe:cookbook-existing-card",
@@ -974,16 +975,21 @@ async function main() {
             const descInput = firstItem.locator('.cookbook-fields label:has-text("Description") input').first();
             await expectVisible(descInput, "Cookbook item Description input missing.");
 
-            // Verify filter dropdowns exist on existing items
-            const itemFilterSelects = firstItem.locator(".filter-select-row select");
-            if ((await itemFilterSelects.count()) >= 2) {
-              markInteraction("recipe", "cookbook-item-filter-selects", "visible");
-            }
+            // Verify filter rows exist on existing items (parsed from queryFilterString)
+            const itemFilterRows = firstItem.locator(".filter-row");
+            const filterRowCount = await itemFilterRows.count();
+            markInteraction("recipe", "cookbook-item-filter-rows", `count:${filterRowCount}`);
 
-            // Verify existing chips on items (if any filters are set)
+            // Verify existing chips on items (if any filter values are set)
             const existingChips = firstItem.locator(".filter-chip");
             const chipCount = await existingChips.count();
             markInteraction("recipe", "cookbook-item-chips", `count:${chipCount}`);
+
+            // Verify Add Filter button exists on existing items
+            const itemAddFilterBtn = firstItem.locator("button:has-text('+ Add Filter')").first();
+            if (await itemAddFilterBtn.isVisible().catch(() => false)) {
+              markInteraction("recipe", "cookbook-item-add-filter", "visible");
+            }
           }
 
           // Test the Add Cookbook form with filter builder
@@ -994,50 +1000,68 @@ async function main() {
           const addDescInput = addCard.locator('label:has-text("Description") input').first();
           await addDescInput.fill("QA test cookbook.");
 
-          // Test filter builder: select a category from dropdown
-          const catSelect = addCard.locator('label:has-text("Categories") select').first();
-          if (await catSelect.isVisible().catch(() => false)) {
-            const catOptions = await catSelect.evaluate((select) =>
-              Array.from(select.options).map((opt) => opt.value).filter(Boolean)
-            );
-            if (catOptions.length > 0) {
-              await catSelect.selectOption(catOptions[0]);
-              markControl("recipe", "recipe:cookbook-filter-select");
-              await page.waitForTimeout(200);
+          // Test row-based filter builder: click + Add Filter
+          const addFilterBtn = addCard.locator("button:has-text('+ Add Filter')").first();
+          if (await addFilterBtn.isVisible().catch(() => false)) {
+            await addFilterBtn.click();
+            await page.waitForTimeout(200);
 
-              // Verify chip appeared
-              const newChip = addCard.locator(".filter-chip").first();
-              await expectVisible(newChip, "Filter chip did not appear after selecting a category.");
-              markInteraction("recipe", "cookbook-chip-appeared", catOptions[0]);
+            // A filter row should appear with 3 selects (field, operator, value) and a remove btn
+            const filterRow = addCard.locator(".filter-row").first();
+            await expectVisible(filterRow, "Filter row did not appear after clicking + Add Filter.");
 
-              // Test chip removal
-              const chipRemoveBtn = newChip.locator(".chip-remove").first();
-              if (await chipRemoveBtn.isVisible().catch(() => false)) {
-                await chipRemoveBtn.click();
-                await page.waitForTimeout(150);
-                markInteraction("recipe", "cookbook-chip-removed", catOptions[0]);
-              }
+            // Filter row has: field select (idx 0), operator select (idx 1), value select (idx 2 in filter-value-area)
+            const fieldSelect = filterRow.locator("select").nth(0);
+            const operatorSelect = filterRow.locator("select").nth(1);
+            const valueSelect = filterRow.locator(".filter-value-area select").first();
 
-              // Re-select for the add test
-              await catSelect.selectOption(catOptions[0]);
-              await page.waitForTimeout(150);
+            // Test operator change
+            if (await operatorSelect.isVisible().catch(() => false)) {
+              await operatorSelect.selectOption("CONTAINS ALL");
+              markControl("recipe", "recipe:cookbook-filter-operator");
+              await page.waitForTimeout(100);
+              await operatorSelect.selectOption("IN");
+              await page.waitForTimeout(100);
             }
-          }
 
-          // Test filter builder: select a tag from dropdown
-          const tagSelect = addCard.locator('label:has-text("Tags") select').first();
-          if (await tagSelect.isVisible().catch(() => false)) {
-            const tagOptions = await tagSelect.evaluate((select) =>
-              Array.from(select.options).map((opt) => opt.value).filter(Boolean)
-            );
-            if (tagOptions.length > 0) {
-              await tagSelect.selectOption(tagOptions[0]);
-              await page.waitForTimeout(200);
-              markInteraction("recipe", "cookbook-tag-selected", tagOptions[0]);
-              if (!markerHits.has("recipe:cookbook-filter-select")) {
+            // Test value selection (categories is default field)
+            if (await valueSelect.isVisible().catch(() => false)) {
+              const catOptions = await valueSelect.evaluate((sel) =>
+                Array.from(sel.options).map((o) => o.value).filter(Boolean)
+              );
+              if (catOptions.length > 0) {
+                await valueSelect.selectOption(catOptions[0]);
                 markControl("recipe", "recipe:cookbook-filter-select");
+                await page.waitForTimeout(200);
+
+                // Verify chip appeared
+                const newChip = filterRow.locator(".filter-chip").first();
+                await expectVisible(newChip, "Filter chip did not appear after selecting a value.");
+                markInteraction("recipe", "cookbook-chip-appeared", catOptions[0]);
+
+                // Test chip removal
+                const chipRemoveBtn = newChip.locator(".chip-remove").first();
+                if (await chipRemoveBtn.isVisible().catch(() => false)) {
+                  await chipRemoveBtn.click();
+                  await page.waitForTimeout(150);
+                  markInteraction("recipe", "cookbook-chip-removed", catOptions[0]);
+                }
+
+                // Re-select for the add test
+                await valueSelect.selectOption(catOptions[0]);
+                await page.waitForTimeout(150);
               }
             }
+
+            // Test removing the filter row
+            const removeBtn = filterRow.locator(".filter-remove-btn").first();
+            if (await removeBtn.isVisible().catch(() => false)) {
+              markInteraction("recipe", "cookbook-filter-row-remove", "visible");
+            }
+
+            // Add a second filter row (tags) to test multi-row
+            await addFilterBtn.click();
+            await page.waitForTimeout(200);
           }
 
           // Click Add Cookbook button

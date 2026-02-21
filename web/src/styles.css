@@ -1220,9 +1220,27 @@ button.danger {
   margin-left: auto;
 }
 
-.filter-select-row {
+.filter-row {
   display: grid;
+  grid-template-columns: auto auto 1fr auto;
   gap: 0.35rem;
+  align-items: start;
+}
+.filter-row > select {
+  font-size: 0.82rem;
+}
+.filter-value-area {
+  display: grid;
+  gap: 0.3rem;
+}
+.filter-remove-btn {
+  padding: 0.25rem;
+  align-self: center;
+}
+.filter-add-btn {
+  justify-self: start;
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
 }
 
 .filter-chips {
