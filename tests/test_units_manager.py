@@ -12,7 +12,7 @@ class FakeUnitsClient:
     def list_units(self, per_page=1000):
         return list(self._units)
 
-    def create_unit(self, name, abbreviation=""):
+    def create_unit(self, name, abbreviation="", **kwargs):
         self.created.append(name)
         created = {"id": f"new-{len(self.created)}", "name": name}
         self._units.append(created)

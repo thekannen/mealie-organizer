@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,28 +17,46 @@ def normalize_name(name: str) -> str:
     return text
 
 
-def load_label_names(file_path: Path) -> list[str]:
+@dataclass
+class LabelEntry:
+    name: str
+    color: str = "#959595"
+
+
+def load_label_entries(file_path: Path) -> list[LabelEntry]:
     if not file_path.exists():
         raise FileNotFoundError(f"Labels file not found: {file_path}")
     raw = json.loads(file_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
-        raise ValueError("Labels file must be a JSON array of names.")
-    names: list[str] = []
+        raise ValueError("Labels file must be a JSON array.")
+    entries: list[LabelEntry] = []
     for item in raw:
-        text = str(item or "").strip()
-        if text:
-            names.append(text)
-    if not names:
-        raise ValueError("Labels file contains no valid names.")
-    deduped: list[str] = []
-    seen = set()
-    for name in names:
-        norm = normalize_name(name)
+        if isinstance(item, str):
+            name = item.strip()
+            color = "#959595"
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            color = str(item.get("color") or "#959595").strip()
+        else:
+            continue
+        if name:
+            entries.append(LabelEntry(name=name, color=color))
+    if not entries:
+        raise ValueError("Labels file contains no valid entries.")
+    deduped: list[LabelEntry] = []
+    seen: set[str] = set()
+    for entry in entries:
+        norm = normalize_name(entry.name)
         if norm in seen:
             continue
         seen.add(norm)
-        deduped.append(name)
+        deduped.append(entry)
     return deduped
+
+
+def load_label_names(file_path: Path) -> list[str]:
+    """Backward-compatible wrapper that returns just names."""
+    return [entry.name for entry in load_label_entries(file_path)]
 
 
 class LabelsSyncManager:
@@ -57,7 +76,8 @@ class LabelsSyncManager:
         self.file_path = Path(file_path)
 
     def run(self) -> dict[str, Any]:
-        desired_names = load_label_names(self.file_path)
+        desired = load_label_entries(self.file_path)
+        desired_names = [entry.name for entry in desired]
         existing = self.client.list_labels(per_page=1000)
         existing_by_norm = {
             normalize_name(str(item.get("name") or "")): item
@@ -66,34 +86,34 @@ class LabelsSyncManager:
         }
 
         executable = self.apply and not self.dry_run
-        print(f"[start] Syncing {len(desired_names)} label(s) from {self.file_path}", flush=True)
+        print(f"[start] Syncing {len(desired)} label(s) from {self.file_path}", flush=True)
         created = 0
         skipped = 0
         deleted = 0
         failed = 0
         actions: list[dict[str, Any]] = []
 
-        for name in desired_names:
-            norm = normalize_name(name)
+        for entry in desired:
+            norm = normalize_name(entry.name)
             if norm in existing_by_norm:
                 skipped += 1
-                actions.append({"action": "skip", "name": name, "reason": "exists"})
-                print(f"[skip] Label unchanged: {name}", flush=True)
+                actions.append({"action": "skip", "name": entry.name, "reason": "exists"})
+                print(f"[skip] Label unchanged: {entry.name}", flush=True)
                 continue
             if executable:
                 try:
-                    created_item = self.client.create_label(name)
+                    created_item = self.client.create_label(entry.name, color=entry.color)
                     created += 1
                     existing_by_norm[norm] = created_item
-                    actions.append({"action": "create", "name": name, "status": "created"})
-                    print(f"[ok] Created label: {name}", flush=True)
+                    actions.append({"action": "create", "name": entry.name, "status": "created"})
+                    print(f"[ok] Created label: {entry.name}", flush=True)
                 except Exception as exc:
                     failed += 1
-                    actions.append({"action": "create", "name": name, "status": "failed", "error": str(exc)})
-                    print(f"[error] Create label failed '{name}': {exc}", flush=True)
+                    actions.append({"action": "create", "name": entry.name, "status": "failed", "error": str(exc)})
+                    print(f"[error] Create label failed '{entry.name}': {exc}", flush=True)
             else:
-                actions.append({"action": "create", "name": name, "status": "planned"})
-                print(f"[plan] Create label: {name}", flush=True)
+                actions.append({"action": "create", "name": entry.name, "status": "planned"})
+                print(f"[plan] Create label: {entry.name}", flush=True)
 
         if self.replace:
             desired_norms = {normalize_name(name) for name in desired_names}

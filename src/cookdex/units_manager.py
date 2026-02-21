@@ -53,12 +53,19 @@ class UnitsCleanupManager:
         text = " ".join(text.strip().casefold().split())
         return text
 
-    def load_aliases(self) -> tuple[dict[str, str], dict[str, str]]:
+    def load_aliases(self) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
+        """Load unit entries and return (canonical_display, alias_to_canonical, unit_metadata).
+
+        Supports both legacy format (``{canonical, aliases}``) and new Mealie-aligned
+        format (``{name, pluralName, abbreviation, ...}``).  The ``name`` field is used
+        as the canonical name when present; falls back to ``canonical``.
+        """
         if not self.alias_file.exists():
             raise FileNotFoundError(f"Units alias file not found: {self.alias_file}")
         raw = json.loads(self.alias_file.read_text(encoding="utf-8"))
         canonical_display: dict[str, str] = {}
         alias_to_canonical: dict[str, str] = {}
+        unit_metadata: dict[str, dict[str, Any]] = {}
 
         entries: list[dict[str, Any]] = []
         if isinstance(raw, dict):
@@ -70,11 +77,25 @@ class UnitsCleanupManager:
             raise ValueError("Units alias file must be an object or array of objects.")
 
         for entry in entries:
-            canonical = str(entry.get("canonical") or "").strip()
+            # Support both "name" (new) and "canonical" (legacy) as the primary key
+            canonical = str(entry.get("name") or entry.get("canonical") or "").strip()
             if not canonical:
-                raise ValueError("Each alias entry must include non-empty 'canonical'.")
+                raise ValueError("Each unit entry must include non-empty 'name' or 'canonical'.")
             canonical_norm = self.normalize_name(canonical)
             canonical_display.setdefault(canonical_norm, canonical)
+
+            # Capture extended Mealie metadata for create_unit calls
+            meta: dict[str, Any] = {}
+            for field in ("pluralName", "abbreviation", "pluralAbbreviation", "description"):
+                val = str(entry.get(field) or "").strip()
+                if val:
+                    meta[field] = val
+            if "fraction" in entry:
+                meta["fraction"] = bool(entry["fraction"])
+            if "useAbbreviation" in entry:
+                meta["useAbbreviation"] = bool(entry["useAbbreviation"])
+            if meta:
+                unit_metadata[canonical_norm] = meta
 
             aliases = entry.get("aliases") or []
             if not isinstance(aliases, list):
@@ -91,7 +112,7 @@ class UnitsCleanupManager:
                         f"'{canonical_display[existing]}' and '{canonical}'."
                     )
                 alias_to_canonical[alias_norm] = canonical_norm
-        return canonical_display, alias_to_canonical
+        return canonical_display, alias_to_canonical, unit_metadata
 
     def load_checkpoint(self) -> set[str]:
         if not self.checkpoint_path.exists():
@@ -113,7 +134,7 @@ class UnitsCleanupManager:
         )
 
     def run(self) -> dict[str, Any]:
-        canonical_display, alias_to_canonical = self.load_aliases()
+        canonical_display, alias_to_canonical, unit_metadata = self.load_aliases()
         units = self.client.list_units(per_page=1000)
 
         units_by_norm: dict[str, list[dict[str, Any]]] = {}
@@ -140,7 +161,16 @@ class UnitsCleanupManager:
                 canonical_id_by_norm[canonical_norm] = sorted(str(item.get("id")) for item in existing)[0]
                 continue
             if executable:
-                created = self.client.create_unit(display)
+                meta = unit_metadata.get(canonical_norm, {})
+                created = self.client.create_unit(
+                    display,
+                    abbreviation=meta.get("abbreviation", ""),
+                    plural_name=meta.get("pluralName", ""),
+                    plural_abbreviation=meta.get("pluralAbbreviation", ""),
+                    description=meta.get("description", ""),
+                    fraction=meta.get("fraction", True),
+                    use_abbreviation=meta.get("useAbbreviation", False),
+                )
                 created_id = str(created.get("id") or "").strip()
                 if created_id:
                     canonical_id_by_norm[canonical_norm] = created_id

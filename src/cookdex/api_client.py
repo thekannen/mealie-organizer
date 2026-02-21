@@ -237,10 +237,30 @@ class MealieApiClient:
     def list_units(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         return self.get_paginated("/units", per_page=per_page, timeout=60)
 
-    def create_unit(self, name: str, abbreviation: str = "") -> dict[str, Any]:
-        payload: dict[str, Any] = {"name": name}
+    def create_unit(
+        self,
+        name: str,
+        abbreviation: str = "",
+        *,
+        plural_name: str = "",
+        plural_abbreviation: str = "",
+        description: str = "",
+        fraction: bool = True,
+        use_abbreviation: bool = False,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "name": name,
+            "fraction": fraction,
+            "useAbbreviation": use_abbreviation,
+        }
         if abbreviation:
             payload["abbreviation"] = abbreviation
+        if plural_name:
+            payload["pluralName"] = plural_name
+        if plural_abbreviation:
+            payload["pluralAbbreviation"] = plural_abbreviation
+        if description:
+            payload["description"] = description
         data = self.request_json("POST", "/units", json=payload, timeout=60)
         if isinstance(data, dict):
             return data
@@ -252,8 +272,9 @@ class MealieApiClient:
     def list_labels(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         return self.get_paginated("/groups/labels", per_page=per_page, timeout=60)
 
-    def create_label(self, name: str) -> dict[str, Any]:
-        data = self.request_json("POST", "/groups/labels", json={"name": name}, timeout=60)
+    def create_label(self, name: str, *, color: str = "#959595") -> dict[str, Any]:
+        payload: dict[str, Any] = {"name": name, "color": color}
+        data = self.request_json("POST", "/groups/labels", json=payload, timeout=60)
         if isinstance(data, dict):
             return data
         return {}

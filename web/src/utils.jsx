@@ -65,22 +65,50 @@ export function normalizeCookbookEntries(content) {
     .filter((item) => item.name);
 }
 
-export function normalizeUnitAliasEntries(content) {
-  if (!Array.isArray(content)) {
-    return [];
-  }
+export function normalizeUnitEntries(content) {
+  if (!Array.isArray(content)) return [];
   return content
-    .filter((item) => isPlainObject(item) && typeof item.canonical === "string")
+    .filter((item) => isPlainObject(item) && (typeof item.name === "string" || typeof item.canonical === "string"))
     .map((item) => {
       const aliases = Array.isArray(item.aliases)
-        ? item.aliases.map((alias) => String(alias).trim()).filter(Boolean)
+        ? item.aliases.map((a) => String(a).trim()).filter(Boolean)
         : parseAliasInput(item.aliases);
       return {
-        canonical: String(item.canonical || "").trim(),
+        name: String(item.name || item.canonical || "").trim(),
+        pluralName: String(item.pluralName || "").trim(),
+        abbreviation: String(item.abbreviation || "").trim(),
+        pluralAbbreviation: String(item.pluralAbbreviation || "").trim(),
+        description: String(item.description || "").trim(),
+        fraction: item.fraction !== undefined ? Boolean(item.fraction) : true,
+        useAbbreviation: Boolean(item.useAbbreviation),
         aliases,
       };
     })
-    .filter((item) => item.canonical);
+    .filter((item) => item.name);
+}
+
+export function normalizeToolEntries(content) {
+  if (!Array.isArray(content)) return [];
+  return content
+    .map((item) => {
+      if (typeof item === "string") return { name: item.trim(), onHand: false };
+      if (isPlainObject(item) && typeof item.name === "string")
+        return { name: String(item.name).trim(), onHand: Boolean(item.onHand) };
+      return null;
+    })
+    .filter((item) => item && item.name);
+}
+
+export function normalizeLabelEntries(content) {
+  if (!Array.isArray(content)) return [];
+  return content
+    .map((item) => {
+      if (typeof item === "string") return { name: item.trim(), color: "#959595" };
+      if (isPlainObject(item) && typeof item.name === "string")
+        return { name: String(item.name).trim(), color: String(item.color || "#959595").trim() };
+      return null;
+    })
+    .filter((item) => item && item.name);
 }
 
 export function parseLineEditorContent(content, configName = "") {
@@ -89,59 +117,57 @@ export function parseLineEditorContent(content, configName = "") {
   }
 
   const normalizedConfigName = String(configName || "").trim();
-  const allStrings = content.every((item) => typeof item === "string");
-  if (allStrings) {
-    return {
-      mode: "line-pills",
-      listKind: "string",
-      items: content.map((item) => String(item)),
-    };
+
+  // Tools: objects with onHand, or plain strings for tools config
+  const isToolConfig = normalizedConfigName === "tools";
+  if (isToolConfig) {
+    return { mode: "tool-cards", listKind: "tool_object", items: normalizeToolEntries(content) };
   }
 
-  const allNameObjects = content.every(
+  // Labels: objects with color, or plain strings for labels config
+  const isLabelConfig = normalizedConfigName === "labels";
+  if (isLabelConfig) {
+    return { mode: "label-cards", listKind: "label_object", items: normalizeLabelEntries(content) };
+  }
+
+  // Units: objects with name/pluralName/abbreviation/aliases
+  const isUnitConfig = normalizedConfigName === "units_aliases";
+  const hasUnitShape = content.some(
     (item) =>
-      item &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      typeof item.name === "string" &&
-      Object.keys(item).length === 1
+      isPlainObject(item) &&
+      (Object.prototype.hasOwnProperty.call(item, "aliases") ||
+        Object.prototype.hasOwnProperty.call(item, "canonical") ||
+        Object.prototype.hasOwnProperty.call(item, "abbreviation"))
   );
-
-  if (allNameObjects) {
-    return {
-      mode: "line-pills",
-      listKind: "name_object",
-      items: content.map((item) => String(item.name)),
-    };
+  if (hasUnitShape || isUnitConfig) {
+    return { mode: "unit-cards", listKind: "unit_object", items: normalizeUnitEntries(content) };
   }
 
+  // Cookbooks
   const allCookbookObjects = content.every((item) => isPlainObject(item) && typeof item.name === "string");
   const hasCookbookShape = content.some(
     (item) =>
       isPlainObject(item) &&
       (Object.prototype.hasOwnProperty.call(item, "queryFilterString") ||
-        Object.prototype.hasOwnProperty.call(item, "description") ||
         Object.prototype.hasOwnProperty.call(item, "public") ||
         Object.prototype.hasOwnProperty.call(item, "position"))
   );
   if (allCookbookObjects && (hasCookbookShape || normalizedConfigName === "cookbooks")) {
-    return {
-      mode: "cookbook-cards",
-      listKind: "cookbook_object",
-      items: normalizeCookbookEntries(content),
-    };
+    return { mode: "cookbook-cards", listKind: "cookbook_object", items: normalizeCookbookEntries(content) };
   }
 
-  const allUnitAliasObjects = content.every((item) => isPlainObject(item) && typeof item.canonical === "string");
-  const hasUnitAliasShape = content.some(
-    (item) => isPlainObject(item) && Object.prototype.hasOwnProperty.call(item, "aliases")
+  // Plain strings
+  const allStrings = content.every((item) => typeof item === "string");
+  if (allStrings) {
+    return { mode: "line-pills", listKind: "string", items: content.map((item) => String(item)) };
+  }
+
+  // Name-only objects
+  const allNameObjects = content.every(
+    (item) => isPlainObject(item) && typeof item.name === "string" && Object.keys(item).length === 1
   );
-  if (allUnitAliasObjects && (hasUnitAliasShape || normalizedConfigName === "units_aliases")) {
-    return {
-      mode: "unit-aliases",
-      listKind: "unit_alias_object",
-      items: normalizeUnitAliasEntries(content),
-    };
+  if (allNameObjects) {
+    return { mode: "line-pills", listKind: "name_object", items: content.map((item) => String(item.name)) };
   }
 
   return { mode: "json", listKind: "", items: [] };

@@ -1,10 +1,10 @@
 [
-  "Batch Cook",
-  "Family Favorite",
-  "Leftovers",
-  "Meal Prep",
-  "New Recipe",
-  "Quick Win",
-  "Seasonal",
-  "Test Kitchen"
+  {"name": "Batch Cook", "color": "#959595"},
+  {"name": "Family Favorite", "color": "#959595"},
+  {"name": "Leftovers", "color": "#959595"},
+  {"name": "Meal Prep", "color": "#959595"},
+  {"name": "New Recipe", "color": "#959595"},
+  {"name": "Quick Win", "color": "#959595"},
+  {"name": "Seasonal", "color": "#959595"},
+  {"name": "Test Kitchen", "color": "#959595"}
 ]

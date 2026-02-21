@@ -12,8 +12,10 @@ import {
   moveArrayItem,
   normalizeCookbookEntries,
   normalizeErrorMessage,
+  normalizeLabelEntries,
   normalizeTaskOptions,
-  normalizeUnitAliasEntries,
+  normalizeToolEntries,
+  normalizeUnitEntries,
   parseAliasInput,
   parseQueryFilter,
   buildQueryFilter,
@@ -84,7 +86,9 @@ export default function App() {
   const [activeConfigListKind, setActiveConfigListKind] = useState("name_object");
   const [activeConfigItems, setActiveConfigItems] = useState([]);
   const [activeCookbookItems, setActiveCookbookItems] = useState([]);
-  const [activeUnitAliasItems, setActiveUnitAliasItems] = useState([]);
+  const [activeToolItems, setActiveToolItems] = useState([]);
+  const [activeLabelItems, setActiveLabelItems] = useState([]);
+  const [activeUnitItems, setActiveUnitItems] = useState([]);
   const [configDraftItem, setConfigDraftItem] = useState("");
   const [cookbookDraft, setCookbookDraft] = useState({
     name: "",
@@ -94,8 +98,6 @@ export default function App() {
     public: false,
     position: 1,
   });
-  const [unitDraftCanonical, setUnitDraftCanonical] = useState("");
-  const [unitDraftAliases, setUnitDraftAliases] = useState("");
   const [dragIndex, setDragIndex] = useState(null);
 
   const [importTarget, setImportTarget] = useState("categories");
@@ -401,7 +403,9 @@ export default function App() {
           }))
         : []
     );
-    setActiveUnitAliasItems(editor.mode === "unit-aliases" ? editor.items : []);
+    setActiveToolItems(editor.mode === "tool-cards" ? editor.items : []);
+    setActiveLabelItems(editor.mode === "label-cards" ? editor.items : []);
+    setActiveUnitItems(editor.mode === "unit-cards" ? editor.items : []);
     setConfigDraftItem("");
     setCookbookDraft({
       name: "",
@@ -411,8 +415,6 @@ export default function App() {
       public: false,
       position: Math.max(1, (editor.mode === "cookbook-cards" ? editor.items.length : 0) + 1),
     });
-    setUnitDraftCanonical("");
-    setUnitDraftAliases("");
     setDragIndex(null);
     setActiveConfigBody(`${JSON.stringify(content, null, 2)}\n`);
   }
@@ -834,36 +836,62 @@ export default function App() {
     setActiveCookbookItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
   }
 
-  function updateUnitAliasEntry(index, key, value) {
+  // --- Tool card helpers ---
+  function addToolEntry() {
+    setActiveToolItems((prev) => [...prev, { name: "", onHand: false }]);
+  }
+  function updateToolEntry(index, key, value) {
+    setActiveToolItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [key]: value } : item))
+    );
+  }
+  function removeToolEntry(index) {
+    setActiveToolItems((prev) => prev.filter((_, i) => i !== index));
+  }
+  function moveToolEntry(from, to) {
+    setActiveToolItems((prev) => moveArrayItem(prev, from, to));
+  }
+
+  // --- Label card helpers ---
+  function addLabelEntry() {
+    setActiveLabelItems((prev) => [...prev, { name: "", color: "#959595" }]);
+  }
+  function updateLabelEntry(index, key, value) {
+    setActiveLabelItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [key]: value } : item))
+    );
+  }
+  function removeLabelEntry(index) {
+    setActiveLabelItems((prev) => prev.filter((_, i) => i !== index));
+  }
+  function moveLabelEntry(from, to) {
+    setActiveLabelItems((prev) => moveArrayItem(prev, from, to));
+  }
+
+  // --- Unit card helpers ---
+  function addUnitEntry() {
+    setActiveUnitItems((prev) => [
+      ...prev,
+      { name: "", pluralName: "", abbreviation: "", pluralAbbreviation: "", description: "", fraction: true, useAbbreviation: false, aliases: [] },
+    ]);
+  }
+  function updateUnitEntry(index, key, value) {
     if (key === "aliases") {
       const aliases = Array.isArray(value) ? value : parseAliasInput(value);
-      setActiveUnitAliasItems((prev) =>
-        prev.map((item, rowIndex) => (rowIndex === index ? { ...item, aliases } : item))
+      setActiveUnitItems((prev) =>
+        prev.map((item, i) => (i === index ? { ...item, aliases } : item))
       );
       return;
     }
-    setActiveUnitAliasItems((prev) =>
-      prev.map((item, rowIndex) => (rowIndex === index ? { ...item, [key]: value } : item))
+    setActiveUnitItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [key]: value } : item))
     );
   }
-
-  function addUnitAliasEntry() {
-    const canonical = String(unitDraftCanonical || "").trim();
-    if (!canonical) {
-      return;
-    }
-    const aliases = parseAliasInput(unitDraftAliases);
-    setActiveUnitAliasItems((prev) => [...prev, { canonical, aliases }]);
-    setUnitDraftCanonical("");
-    setUnitDraftAliases("");
+  function removeUnitEntry(index) {
+    setActiveUnitItems((prev) => prev.filter((_, i) => i !== index));
   }
-
-  function removeUnitAliasEntry(index) {
-    setActiveUnitAliasItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index));
-  }
-
-  function moveUnitAliasEntry(fromIndex, toIndex) {
-    setActiveUnitAliasItems((prev) => moveArrayItem(prev, fromIndex, toIndex));
+  function moveUnitEntry(from, to) {
+    setActiveUnitItems((prev) => moveArrayItem(prev, from, to));
   }
 
   async function openConfig(name) {
@@ -897,8 +925,12 @@ export default function App() {
         }
       } else if (activeConfigMode === "cookbook-cards") {
         content = normalizeCookbookEntries(activeCookbookItems);
-      } else if (activeConfigMode === "unit-aliases") {
-        content = normalizeUnitAliasEntries(activeUnitAliasItems);
+      } else if (activeConfigMode === "tool-cards") {
+        content = normalizeToolEntries(activeToolItems);
+      } else if (activeConfigMode === "label-cards") {
+        content = normalizeLabelEntries(activeLabelItems);
+      } else if (activeConfigMode === "unit-cards") {
+        content = normalizeUnitEntries(activeUnitItems);
       } else {
         const parsed = JSON.parse(activeConfigBody);
         content = parsed;
@@ -1637,8 +1669,12 @@ export default function App() {
     const activeContentCount =
       activeConfigMode === "cookbook-cards"
         ? activeCookbookItems.length
-        : activeConfigMode === "unit-aliases"
-        ? activeUnitAliasItems.length
+        : activeConfigMode === "tool-cards"
+        ? activeToolItems.length
+        : activeConfigMode === "label-cards"
+        ? activeLabelItems.length
+        : activeConfigMode === "unit-cards"
+        ? activeUnitItems.length
         : activeConfigMode === "line-pills"
         ? activeConfigItems.length
         : Array.isArray(taxonomyItemsByFile[activeConfig])
@@ -2100,74 +2136,148 @@ export default function App() {
                 </article>
               )}
             </section>
-          ) : activeConfigMode === "unit-aliases" ? (
+          ) : activeConfigMode === "tool-cards" ? (
             <section className="structured-editor">
               <div className="structured-toolbar">
-                <label className="field">
-                  <span>Canonical Unit</span>
-                  <input
-                    value={unitDraftCanonical}
-                    onChange={(event) => setUnitDraftCanonical(event.target.value)}
-                    placeholder="Teaspoon"
-                  />
-                </label>
-                <label className="field">
-                  <span>Aliases (comma separated)</span>
-                  <input
-                    value={unitDraftAliases}
-                    onChange={(event) => setUnitDraftAliases(event.target.value)}
-                    placeholder="t, tsp, tsp."
-                  />
-                </label>
-                <button className="ghost" type="button" onClick={addUnitAliasEntry}>
-                  Add Unit
+                <button className="ghost" type="button" onClick={addToolEntry}>
+                  <Icon name="plus" /> Add Tool
                 </button>
               </div>
-
               <ul className="structured-list">
-                {activeUnitAliasItems.map((item, index) => (
-                  <li key={`${activeConfig}-${index}`} className="structured-item">
-                    <div className="structured-item-grid">
+                {activeToolItems.map((item, index) => (
+                  <li key={`tool-${index}`} className="structured-item">
+                    <div className="structured-item-grid tool-fields">
                       <label className="field">
-                        <span>Canonical Unit</span>
+                        <span>Name</span>
                         <input
-                          value={item.canonical}
-                          onChange={(event) => updateUnitAliasEntry(index, "canonical", event.target.value)}
+                          value={item.name}
+                          onChange={(e) => updateToolEntry(index, "name", e.target.value)}
+                          placeholder="Air Fryer"
                         />
                       </label>
-                      <label className="field">
-                        <span>Aliases (comma separated)</span>
+                      <label className="field-inline">
                         <input
-                          value={item.aliases.join(", ")}
-                          onChange={(event) => updateUnitAliasEntry(index, "aliases", event.target.value)}
+                          type="checkbox"
+                          checked={item.onHand}
+                          onChange={(e) => updateToolEntry(index, "onHand", e.target.checked)}
                         />
+                        <span>On Hand</span>
                       </label>
                     </div>
                     <div className="line-actions">
-                      <button
-                        type="button"
-                        className="ghost small"
-                        onClick={() => moveUnitAliasEntry(index, Math.max(index - 1, 0))}
-                        disabled={index === 0}
-                      >
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost small"
-                        onClick={() => moveUnitAliasEntry(index, Math.min(index + 1, activeUnitAliasItems.length - 1))}
-                        disabled={index === activeUnitAliasItems.length - 1}
-                      >
-                        Down
-                      </button>
-                      <button type="button" className="ghost small" onClick={() => removeUnitAliasEntry(index)}>
-                        Remove
-                      </button>
+                      <button type="button" className="ghost small" onClick={() => moveToolEntry(index, Math.max(index - 1, 0))} disabled={index === 0}>Up</button>
+                      <button type="button" className="ghost small" onClick={() => moveToolEntry(index, Math.min(index + 1, activeToolItems.length - 1))} disabled={index === activeToolItems.length - 1}>Down</button>
+                      <button type="button" className="ghost small" onClick={() => removeToolEntry(index)}>Remove</button>
                     </div>
                   </li>
                 ))}
               </ul>
-              <p className="muted tiny">Define units and their aliases.</p>
+              <p className="muted tiny">Define kitchen tools. Check "On Hand" for tools you own.</p>
+            </section>
+          ) : activeConfigMode === "label-cards" ? (
+            <section className="structured-editor">
+              <div className="structured-toolbar">
+                <button className="ghost" type="button" onClick={addLabelEntry}>
+                  <Icon name="plus" /> Add Label
+                </button>
+              </div>
+              <ul className="structured-list">
+                {activeLabelItems.map((item, index) => (
+                  <li key={`label-${index}`} className="structured-item">
+                    <div className="structured-item-grid label-fields">
+                      <label className="field">
+                        <span>Name</span>
+                        <input
+                          value={item.name}
+                          onChange={(e) => updateLabelEntry(index, "name", e.target.value)}
+                          placeholder="Meal Prep"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Color</span>
+                        <div className="color-field">
+                          <input
+                            type="color"
+                            value={item.color || "#959595"}
+                            onChange={(e) => updateLabelEntry(index, "color", e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            value={item.color || "#959595"}
+                            onChange={(e) => updateLabelEntry(index, "color", e.target.value)}
+                            placeholder="#959595"
+                            className="color-hex"
+                          />
+                        </div>
+                      </label>
+                    </div>
+                    <div className="line-actions">
+                      <button type="button" className="ghost small" onClick={() => moveLabelEntry(index, Math.max(index - 1, 0))} disabled={index === 0}>Up</button>
+                      <button type="button" className="ghost small" onClick={() => moveLabelEntry(index, Math.min(index + 1, activeLabelItems.length - 1))} disabled={index === activeLabelItems.length - 1}>Down</button>
+                      <button type="button" className="ghost small" onClick={() => removeLabelEntry(index)}>Remove</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted tiny">Define labels with colors for organizing recipes and shopping lists.</p>
+            </section>
+          ) : activeConfigMode === "unit-cards" ? (
+            <section className="structured-editor">
+              <div className="structured-toolbar">
+                <button className="ghost" type="button" onClick={addUnitEntry}>
+                  <Icon name="plus" /> Add Unit
+                </button>
+              </div>
+              <ul className="structured-list">
+                {activeUnitItems.map((item, index) => (
+                  <li key={`unit-${index}`} className="structured-item">
+                    <div className="structured-item-grid unit-fields">
+                      <label className="field">
+                        <span>Name</span>
+                        <input value={item.name} onChange={(e) => updateUnitEntry(index, "name", e.target.value)} placeholder="Teaspoon" />
+                      </label>
+                      <label className="field">
+                        <span>Plural Name</span>
+                        <input value={item.pluralName} onChange={(e) => updateUnitEntry(index, "pluralName", e.target.value)} placeholder="Teaspoons" />
+                      </label>
+                      <label className="field">
+                        <span>Abbreviation</span>
+                        <input value={item.abbreviation} onChange={(e) => updateUnitEntry(index, "abbreviation", e.target.value)} placeholder="tsp" />
+                      </label>
+                      <label className="field">
+                        <span>Plural Abbreviation</span>
+                        <input value={item.pluralAbbreviation} onChange={(e) => updateUnitEntry(index, "pluralAbbreviation", e.target.value)} placeholder="tsps" />
+                      </label>
+                      <label className="field" style={{ gridColumn: "1 / -1" }}>
+                        <span>Description</span>
+                        <input value={item.description} onChange={(e) => updateUnitEntry(index, "description", e.target.value)} placeholder="Optional description" />
+                      </label>
+                      <label className="field" style={{ gridColumn: "1 / -1" }}>
+                        <span>Aliases (comma separated)</span>
+                        <input
+                          value={item.aliases.join(", ")}
+                          onChange={(e) => updateUnitEntry(index, "aliases", e.target.value)}
+                          placeholder="t, tsp, tsp."
+                        />
+                      </label>
+                      <label className="field-inline">
+                        <input type="checkbox" checked={item.fraction} onChange={(e) => updateUnitEntry(index, "fraction", e.target.checked)} />
+                        <span>Display as Fraction</span>
+                      </label>
+                      <label className="field-inline">
+                        <input type="checkbox" checked={item.useAbbreviation} onChange={(e) => updateUnitEntry(index, "useAbbreviation", e.target.checked)} />
+                        <span>Use Abbreviation</span>
+                      </label>
+                    </div>
+                    <div className="line-actions">
+                      <button type="button" className="ghost small" onClick={() => moveUnitEntry(index, Math.max(index - 1, 0))} disabled={index === 0}>Up</button>
+                      <button type="button" className="ghost small" onClick={() => moveUnitEntry(index, Math.min(index + 1, activeUnitItems.length - 1))} disabled={index === activeUnitItems.length - 1}>Down</button>
+                      <button type="button" className="ghost small" onClick={() => removeUnitEntry(index)}>Remove</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted tiny">Define ingredient units with abbreviations and aliases for recipe parsing.</p>
             </section>
           ) : (
             <section>

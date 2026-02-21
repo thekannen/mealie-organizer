@@ -1,42 +1,102 @@
 [
   {
-    "canonical": "Teaspoon",
+    "name": "Teaspoon",
+    "pluralName": "Teaspoons",
+    "abbreviation": "tsp",
+    "pluralAbbreviation": "tsps",
+    "description": "",
+    "fraction": true,
+    "useAbbreviation": false,
     "aliases": ["t", "t.", "teaspoons", "tsp", "tsp."]
   },
   {
-    "canonical": "Tablespoon",
+    "name": "Tablespoon",
+    "pluralName": "Tablespoons",
+    "abbreviation": "tbsp",
+    "pluralAbbreviation": "tbsps",
+    "description": "",
+    "fraction": true,
+    "useAbbreviation": false,
     "aliases": ["T", "T.", "tablespoons", "tbsp", "tbsp."]
   },
   {
-    "canonical": "Cup",
+    "name": "Cup",
+    "pluralName": "Cups",
+    "abbreviation": "c",
+    "pluralAbbreviation": "c",
+    "description": "",
+    "fraction": true,
+    "useAbbreviation": false,
     "aliases": ["cups", "c", "c."]
   },
   {
-    "canonical": "Ounce",
+    "name": "Ounce",
+    "pluralName": "Ounces",
+    "abbreviation": "oz",
+    "pluralAbbreviation": "oz",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["ounces", "oz", "oz."]
   },
   {
-    "canonical": "Pound",
+    "name": "Pound",
+    "pluralName": "Pounds",
+    "abbreviation": "lb",
+    "pluralAbbreviation": "lbs",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["pounds", "lb", "lb.", "lbs", "lbs."]
   },
   {
-    "canonical": "Gram",
+    "name": "Gram",
+    "pluralName": "Grams",
+    "abbreviation": "g",
+    "pluralAbbreviation": "g",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["grams", "g", "g."]
   },
   {
-    "canonical": "Kilogram",
+    "name": "Kilogram",
+    "pluralName": "Kilograms",
+    "abbreviation": "kg",
+    "pluralAbbreviation": "kg",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["kilograms", "kg", "kg."]
   },
   {
-    "canonical": "Milliliter",
+    "name": "Milliliter",
+    "pluralName": "Milliliters",
+    "abbreviation": "ml",
+    "pluralAbbreviation": "ml",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["milliliters", "ml", "ml."]
   },
   {
-    "canonical": "Liter",
+    "name": "Liter",
+    "pluralName": "Liters",
+    "abbreviation": "L",
+    "pluralAbbreviation": "L",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": true,
     "aliases": ["liters", "l", "l."]
   },
   {
-    "canonical": "Pinch",
+    "name": "Pinch",
+    "pluralName": "Pinches",
+    "abbreviation": "",
+    "pluralAbbreviation": "",
+    "description": "",
+    "fraction": false,
+    "useAbbreviation": false,
     "aliases": ["pinches"]
   }
 ]

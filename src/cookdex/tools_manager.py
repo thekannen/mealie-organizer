@@ -25,28 +25,46 @@ def normalize_name(name: str) -> str:
     return text
 
 
-def load_tool_names(file_path: Path) -> list[str]:
+@dataclass
+class ToolEntry:
+    name: str
+    on_hand: bool = False
+
+
+def load_tool_entries(file_path: Path) -> list[ToolEntry]:
     if not file_path.exists():
         raise FileNotFoundError(f"Tools file not found: {file_path}")
     raw = json.loads(file_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
-        raise ValueError("Tools file must be a JSON array of names.")
-    names: list[str] = []
+        raise ValueError("Tools file must be a JSON array.")
+    entries: list[ToolEntry] = []
     for item in raw:
-        text = str(item or "").strip()
-        if text:
-            names.append(text)
-    if not names:
-        raise ValueError("Tools file contains no valid names.")
-    deduped: list[str] = []
-    seen = set()
-    for name in names:
-        norm = normalize_name(name)
+        if isinstance(item, str):
+            name = item.strip()
+            on_hand = False
+        elif isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            on_hand = bool(item.get("onHand", False))
+        else:
+            continue
+        if name:
+            entries.append(ToolEntry(name=name, on_hand=on_hand))
+    if not entries:
+        raise ValueError("Tools file contains no valid entries.")
+    deduped: list[ToolEntry] = []
+    seen: set[str] = set()
+    for entry in entries:
+        norm = normalize_name(entry.name)
         if norm in seen:
             continue
         seen.add(norm)
-        deduped.append(name)
+        deduped.append(entry)
     return deduped
+
+
+def load_tool_names(file_path: Path) -> list[str]:
+    """Backward-compatible wrapper that returns just names."""
+    return [entry.name for entry in load_tool_entries(file_path)]
 
 
 @dataclass

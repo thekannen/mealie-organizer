@@ -13,7 +13,7 @@ class FakeLabelsClient:
     def list_labels(self, per_page=1000):
         return list(self.labels)
 
-    def create_label(self, name):
+    def create_label(self, name, **kwargs):
         self.created.append(name)
         created = {"id": f"new-{len(self.created)}", "name": name}
         self.labels.append(created)
