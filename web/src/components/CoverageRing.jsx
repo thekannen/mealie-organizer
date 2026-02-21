@@ -13,7 +13,7 @@ export default function CoverageRing({ label, value, helper, detail, tone = "acc
         <span>{percent}%</span>
       </div>
       <h4>{label}</h4>
-      <p>{helper}</p>
+      {helper ? <p>{helper}</p> : null}
       {detail ? <p className="tiny muted">{detail}</p> : null}
     </div>
   );

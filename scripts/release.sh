@@ -3,87 +3,73 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION_FILE="$REPO_ROOT/VERSION"
 
 usage() {
   cat <<USAGE
-Usage: $(basename "$0") <patch|minor|major|x.y.z> [--tag]
+Usage: $(basename "$0") [--tag] [--set x.y.z] [--dry-run]
+
+Bumps the CalVer version (year.month.build) and optionally creates a git tag.
+
+Options:
+  --tag       Create a git tag for the new version
+  --set X.Y.Z Force a specific version instead of auto-incrementing
+  --dry-run   Preview the version bump without writing
 
 Examples:
-  scripts/release.sh patch
-  scripts/release.sh minor --tag
-  scripts/release.sh 1.4.0 --tag
+  scripts/release.sh                # auto-bump build number
+  scripts/release.sh --tag          # bump + tag
+  scripts/release.sh --set 2026.3.1 # force version
 USAGE
 }
 
-if [ $# -lt 1 ]; then
-  usage
-  exit 1
-fi
-
-BUMP_TARGET="$1"
+BUMP_ARGS=()
 CREATE_TAG=false
-if [ "${2:-}" = "--tag" ]; then
-  CREATE_TAG=true
-elif [ $# -gt 1 ]; then
-  echo "[error] Unknown option: $2"
-  usage
-  exit 1
-fi
 
-if [ ! -f "$VERSION_FILE" ]; then
-  echo "[error] VERSION file not found: $VERSION_FILE"
-  exit 1
-fi
-
-if ! command -v git >/dev/null 2>&1; then
-  echo "[error] git is required"
-  exit 1
-fi
-
-CURRENT="$(tr -d '[:space:]' < "$VERSION_FILE")"
-if ! [[ "$CURRENT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-  echo "[error] VERSION must be SemVer (x.y.z). Found: $CURRENT"
-  exit 1
-fi
-
-major="${BASH_REMATCH[1]}"
-minor="${BASH_REMATCH[2]}"
-patch="${BASH_REMATCH[3]}"
-
-case "$BUMP_TARGET" in
-  patch)
-    patch=$((patch + 1))
-    ;;
-  minor)
-    minor=$((minor + 1))
-    patch=0
-    ;;
-  major)
-    major=$((major + 1))
-    minor=0
-    patch=0
-    ;;
-  *)
-    if [[ "$BUMP_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      NEW_VERSION="$BUMP_TARGET"
-    else
-      echo "[error] Invalid target '$BUMP_TARGET'. Use patch|minor|major|x.y.z"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tag)
+      CREATE_TAG=true
+      shift
+      ;;
+    --set)
+      BUMP_ARGS+=(--set "$2")
+      shift 2
+      ;;
+    --dry-run)
+      BUMP_ARGS+=(--dry-run)
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[error] Unknown option: $1"
+      usage
       exit 1
-    fi
-    ;;
-esac
+      ;;
+  esac
+done
 
-NEW_VERSION="${NEW_VERSION:-$major.$minor.$patch}"
+OUTPUT=$(python3 "$SCRIPT_DIR/bump_version.py" "${BUMP_ARGS[@]}")
+echo "$OUTPUT"
 
-echo "$NEW_VERSION" > "$VERSION_FILE"
+# Extract the new version from bump_version.py output
+if echo "$OUTPUT" | grep -q "dry run"; then
+  exit 0
+fi
 
-echo "[ok] Version bumped: $CURRENT -> $NEW_VERSION"
-echo "[next] Commit and push changes:"
-echo "       git add VERSION pyproject.toml src/cookdex/__init__.py"
+NEW_VERSION=$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")
+
+echo "[next] Commit and push:"
+echo "       git add VERSION web/package.json"
 echo "       git commit -m 'chore(release): v$NEW_VERSION'"
 
 if [ "$CREATE_TAG" = true ]; then
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[error] git is required for tagging"
+    exit 1
+  fi
   if git rev-parse "v$NEW_VERSION" >/dev/null 2>&1; then
     echo "[error] Tag v$NEW_VERSION already exists"
     exit 1

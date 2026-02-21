@@ -418,6 +418,9 @@ function errorMessageFromPayload(payload, status) {
     if (typeof detail === "string" && detail.trim()) {
       return detail;
     }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
+    }
     return `Request failed (${status})`;
   }
   return `Request failed (${status})`;

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -67,11 +67,19 @@ class MealieApiClient:
         return retry_count
 
     @staticmethod
+    def _strip_none_params(url: str) -> str:
+        """Remove query params whose value is the literal string 'None'."""
+        parts = urlsplit(url)
+        params = parse_qs(parts.query, keep_blank_values=True)
+        cleaned = {k: v for k, v in params.items() if v != ["None"]}
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(cleaned, doseq=True), parts.fragment))
+
+    @staticmethod
     def _resolve_next_url(current_url: str, next_link: Any) -> str | None:
         if not isinstance(next_link, str) or not next_link:
             return None
         if next_link.lower().startswith(("http://", "https://")):
-            return next_link
+            return MealieApiClient._strip_none_params(next_link)
 
         if next_link.startswith("/"):
             base = urlsplit(current_url)
@@ -80,9 +88,11 @@ class MealieApiClient:
             # Mealie may return '/recipes?...' even when requests target '/api/recipes?...'.
             if base.path.startswith("/api/") and not path.startswith("/api/"):
                 path = f"/api{path}"
-            return urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+            return MealieApiClient._strip_none_params(
+                urlunsplit((base.scheme, base.netloc, path, rel.query, rel.fragment))
+            )
 
-        return urljoin(current_url, next_link)
+        return MealieApiClient._strip_none_params(urljoin(current_url, next_link))
 
     def _make_url(self, path_or_url: str) -> str:
         if path_or_url.lower().startswith(("http://", "https://")):

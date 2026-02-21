@@ -8,7 +8,7 @@ import requests
 
 from fastapi import APIRouter, Depends
 
-from ... import __version__
+from ... import _read_version
 from ..deps import Services, build_runtime_env, require_services, require_session
 
 router = APIRouter(tags=["meta"])
@@ -94,6 +94,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
         tools = client.list_tools()
         foods = client.list_foods()
         units = client.list_units()
+        labels = client.list_labels()
     except requests.RequestException as exc:
         payload["reason"] = f"Unable to fetch Mealie metrics: {exc}"
         return payload
@@ -144,7 +145,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
         "tools": len(tools),
         "categories": len(categories),
         "tags": len(tags),
-        "labels": 0,
+        "labels": len(labels),
         "units": len(units),
     }
     payload["coverage"] = {
@@ -162,7 +163,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
 
 @router.get("/health")
 async def health(services: Services = Depends(require_services)) -> dict[str, Any]:
-    return {"ok": True, "base_path": services.settings.base_path, "version": __version__}
+    return {"ok": True, "base_path": services.settings.base_path, "version": _read_version()}
 
 
 @router.get("/metrics/overview")
@@ -179,8 +180,8 @@ async def get_about_meta(
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {
-        "app_version": __version__,
-        "webui_version": "1.0",
+        "app_version": _read_version(),
+        "webui_version": _read_version(),
         "counts": {
             "tasks": len(services.registry.task_ids),
             "users": len(services.state.list_users()),

@@ -81,11 +81,21 @@ def normalize_username(raw: str) -> str:
 
 
 def build_runtime_env(state: StateStore, cipher: SecretCipher) -> dict[str, str]:
+    from .env_catalog import ENV_VAR_SPECS
+
+    # Start with os.environ values for known env-catalog keys
     env: dict[str, str] = {}
+    for spec in ENV_VAR_SPECS:
+        raw = os.environ.get(spec.key, "").strip()
+        if raw:
+            env[spec.key] = raw
+
+    # UI-saved settings override os.environ
     for key, value in state.list_settings().items():
         if _ENV_KEY_RE.match(key):
             env[key] = str(value)
 
+    # UI-saved encrypted secrets override everything
     encrypted = state.list_encrypted_secrets()
     for key, encrypted_value in encrypted.items():
         if not _ENV_KEY_RE.match(key):

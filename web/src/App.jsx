@@ -45,8 +45,11 @@ export default function App() {
     return "light";
   });
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activePage, setActivePage] = useState("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("cookdex_sidebar") === "collapsed");
+  const [activePage, setActivePage] = useState(() => {
+    const stored = window.localStorage.getItem("cookdex_page");
+    return stored || "overview";
+  });
 
   const [tasks, setTasks] = useState([]);
   const [runs, setRuns] = useState([]);
@@ -60,7 +63,6 @@ export default function App() {
   const [runLog, setRunLog] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
 
-  const [scheduleSearch, setScheduleSearch] = useState("");
   const [scheduleForm, setScheduleForm] = useState({
     name: "",
     task_id: "",
@@ -104,11 +106,13 @@ export default function App() {
   });
 
   const [newUserUsername, setNewUserUsername] = useState("");
-  const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
   const [newUserPassword, setNewUserPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [resetPasswords, setResetPasswords] = useState({});
+  const [expandedUser, setExpandedUser] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const [taxonomyItemsByFile, setTaxonomyItemsByFile] = useState({});
   const [helpDocs, setHelpDocs] = useState([]);
@@ -116,6 +120,7 @@ export default function App() {
   const [aboutMeta, setAboutMeta] = useState(null);
   const [healthMeta, setHealthMeta] = useState(null);
   const [lastLoadedAt, setLastLoadedAt] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
@@ -195,19 +200,6 @@ export default function App() {
       return fields.includes(query);
     });
   }, [runs, runSearch, runTypeFilter, taskTitleById]);
-
-  const filteredScheduledRuns = useMemo(() => {
-    const source = runs.filter((run) => Boolean(run.schedule_id));
-    const query = scheduleSearch.trim().toLowerCase();
-    if (!query) {
-      return source;
-    }
-    return source.filter((run) => {
-      const taskLabel = taskTitleById.get(run.task_id) || run.task_id;
-      const fields = [taskLabel, run.task_id, run.status, run.schedule_id || ""].join(" ").toLowerCase();
-      return fields.includes(query);
-    });
-  }, [runs, scheduleSearch, taskTitleById]);
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase();
@@ -338,6 +330,14 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    window.localStorage.setItem("cookdex_page", activePage);
+  }, [activePage]);
+
+  useEffect(() => {
+    window.localStorage.setItem("cookdex_sidebar", sidebarCollapsed ? "collapsed" : "expanded");
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     setTaskValues(buildDefaultOptionValues(selectedTaskDef));
   }, [selectedTaskDef]);
 
@@ -345,13 +345,23 @@ export default function App() {
     setScheduleOptionValues(buildDefaultOptionValues(scheduleTaskDef));
   }, [scheduleTaskDef]);
 
+  const bannerTimer = React.useRef(null);
+
   function clearBanners() {
     setError("");
     setNotice("");
+    clearTimeout(bannerTimer.current);
+  }
+
+  function showNotice(msg, ms = 5000) {
+    setNotice(msg);
+    clearTimeout(bannerTimer.current);
+    if (msg) bannerTimer.current = setTimeout(() => { setNotice(""); }, ms);
   }
 
   function handleError(exc) {
     setNotice("");
+    clearTimeout(bannerTimer.current);
     setError(normalizeErrorMessage(exc?.message || exc));
   }
 
@@ -410,19 +420,69 @@ export default function App() {
     }
   }
 
+  const CACHE_KEY = "cookdex_data_cache";
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const staleTimer = React.useRef(null);
+
+  function applyData(data) {
+    const nextTasks = data.tasks?.items || [];
+    const nextRuns = data.runs?.items || [];
+    const nextSchedules = data.schedules?.items || [];
+
+    setTasks(nextTasks);
+    setRuns(nextRuns);
+    setSchedules(nextSchedules);
+    setConfigFiles(data.config?.items || []);
+    setUsers(data.users?.items || []);
+    setHelpDocs(data.help?.items || []);
+    setOverviewMetrics(data.metrics);
+    setAboutMeta(data.about);
+    setHealthMeta(data.health);
+    setLastLoadedAt(data.timestamp);
+
+    const nextSpecs = data.settings?.env || {};
+    setEnvSpecs(nextSpecs);
+    const nextDraft = {};
+    for (const [key, item] of Object.entries(nextSpecs)) {
+      nextDraft[key] = item.secret ? "" : String(item.value ?? "");
+    }
+    setEnvDraft(nextDraft);
+    setEnvClear({});
+
+    if (!selectedTask && nextTasks.length > 0) {
+      setSelectedTask(nextTasks[0].task_id);
+    }
+    if (!scheduleForm.task_id && nextTasks.length > 0) {
+      setScheduleForm((prev) => ({ ...prev, task_id: nextTasks[0].task_id }));
+    }
+  }
+
+  function scheduleAutoRefresh() {
+    clearTimeout(staleTimer.current);
+    staleTimer.current = setTimeout(() => { loadData(); }, CACHE_TTL);
+  }
+
+  function loadCachedData() {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return false;
+      const cached = JSON.parse(raw);
+      if (Date.now() - cached.savedAt > CACHE_TTL) return false;
+      applyData(cached);
+      scheduleAutoRefresh();
+      return true;
+    } catch { return false; }
+  }
+
   async function loadData() {
+    if (isLoading) return;
+    setIsLoading(true);
+    showNotice("Refreshing data\u2026", 30000);
     try {
       const [
-        taskPayload,
-        runPayload,
-        schedulePayload,
-        settingsPayload,
-        configPayload,
-        usersPayload,
-        helpPayload,
-        metricsPayload,
-        aboutPayload,
-        healthPayload,
+        taskPayload, runPayload, schedulePayload, settingsPayload,
+        configPayload, usersPayload, helpPayload,
+        metricsPayload, aboutPayload, healthPayload,
       ] = await Promise.all([
         api("/tasks"),
         api("/runs"),
@@ -436,41 +496,24 @@ export default function App() {
         api("/health").catch(() => null),
       ]);
 
-      const nextTasks = taskPayload.items || [];
-      const nextRuns = runPayload.items || [];
-      const nextSchedules = schedulePayload.items || [];
+      const data = {
+        tasks: taskPayload, runs: runPayload, schedules: schedulePayload,
+        settings: settingsPayload, config: configPayload, users: usersPayload,
+        help: helpPayload, metrics: metricsPayload, about: aboutPayload,
+        health: healthPayload, timestamp: new Date().toISOString(), savedAt: Date.now(),
+      };
 
-      setTasks(nextTasks);
-      setRuns(nextRuns);
-      setSchedules(nextSchedules);
-      setConfigFiles(configPayload.items || []);
-      setUsers(usersPayload.items || []);
-      setHelpDocs(helpPayload.items || []);
-      setOverviewMetrics(metricsPayload);
-      setAboutMeta(aboutPayload);
-      setHealthMeta(healthPayload);
-      setLastLoadedAt(new Date().toISOString());
+      applyData(data);
 
-      const nextSpecs = settingsPayload.env || {};
-      setEnvSpecs(nextSpecs);
-      const nextDraft = {};
-      for (const [key, item] of Object.entries(nextSpecs)) {
-        nextDraft[key] = item.secret ? "" : String(item.value ?? "");
-      }
-      setEnvDraft(nextDraft);
-      setEnvClear({});
-
-      if (!selectedTask && nextTasks.length > 0) {
-        setSelectedTask(nextTasks[0].task_id);
-      }
-
-      if (!scheduleForm.task_id && nextTasks.length > 0) {
-        setScheduleForm((prev) => ({ ...prev, task_id: nextTasks[0].task_id }));
-      }
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
 
       await loadTaxonomyContent();
+      clearBanners();
+      scheduleAutoRefresh();
     } catch (exc) {
       handleError(exc);
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -493,7 +536,9 @@ export default function App() {
 
         const ok = await refreshSession();
         if (ok) {
-          await loadData();
+          if (!loadCachedData()) {
+            await loadData();
+          }
         }
       } catch (exc) {
         if (active) {
@@ -523,7 +568,7 @@ export default function App() {
       setSetupRequired(false);
       await refreshSession();
       await loadData();
-      setNotice("Admin account created.");
+      showNotice("Admin account created.");
     } catch (exc) {
       handleError(exc);
     }
@@ -537,7 +582,7 @@ export default function App() {
       setPassword("");
       await refreshSession();
       await loadData();
-      setNotice("Signed in successfully.");
+      showNotice("Signed in successfully.");
     } catch (exc) {
       handleError(exc);
     }
@@ -568,7 +613,7 @@ export default function App() {
         body: { task_id: selectedTaskDef.task_id, options },
       });
       await loadData();
-      setNotice("Run queued.");
+      showNotice("Run queued.");
     } catch (exc) {
       handleError(exc);
     }
@@ -593,7 +638,7 @@ export default function App() {
         body: { policies: { [taskId]: { allow_dangerous: value } } },
       });
       await loadData();
-      setNotice("Task policy updated.");
+      showNotice("Task policy updated.");
     } catch (exc) {
       handleError(exc);
     }
@@ -622,7 +667,7 @@ export default function App() {
         },
       });
       await loadData();
-      setNotice("Schedule saved.");
+      showNotice("Schedule saved.");
     } catch (exc) {
       handleError(exc);
     }
@@ -633,7 +678,7 @@ export default function App() {
       clearBanners();
       await api(`/schedules/${scheduleId}`, { method: "DELETE" });
       await loadData();
-      setNotice("Schedule removed.");
+      showNotice("Schedule removed.");
     } catch (exc) {
       handleError(exc);
     }
@@ -666,7 +711,7 @@ export default function App() {
       }
 
       if (Object.keys(env).length === 0) {
-        setNotice("No setting changes to save.");
+        showNotice("No setting changes to save.");
         return;
       }
 
@@ -676,7 +721,7 @@ export default function App() {
       });
 
       await loadData();
-      setNotice("Settings updated.");
+      showNotice("Settings updated.");
     } catch (exc) {
       handleError(exc);
     }
@@ -825,7 +870,7 @@ export default function App() {
 
       setConfigEditorState(content, activeConfig);
       await loadData();
-      setNotice(`${CONFIG_LABELS[activeConfig] || activeConfig} saved.`);
+      showNotice(`${CONFIG_LABELS[activeConfig] || activeConfig} saved.`);
     } catch (exc) {
       handleError(exc);
     }
@@ -851,19 +896,26 @@ export default function App() {
         setConfigEditorState(payload, target);
       }
       await loadData();
-      setNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
+      showNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
     } catch (exc) {
       handleError(exc);
     }
   }
 
   function generateTemporaryPassword() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-    let value = "";
-    for (let index = 0; index < 14; index += 1) {
-      value += chars[Math.floor(Math.random() * chars.length)];
+    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lower = "abcdefghijkmnopqrstuvwxyz";
+    const digits = "23456789";
+    const all = upper + lower + digits + "!@#$%";
+    const pick = (s) => s[Math.floor(Math.random() * s.length)];
+    const required = [pick(upper), pick(lower), pick(digits)];
+    for (let i = required.length; i < 14; i += 1) required.push(pick(all));
+    for (let i = required.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [required[i], required[j]] = [required[j], required[i]];
     }
-    setNewUserPassword(value);
+    setNewUserPassword(required.join(""));
+    setShowPassword(true);
   }
 
   async function createUser(event) {
@@ -875,11 +927,10 @@ export default function App() {
         body: { username: newUserUsername, password: newUserPassword },
       });
       setNewUserUsername("");
-      setNewUserEmail("");
       setNewUserRole("Editor");
       setNewUserPassword("");
       await loadData();
-      setNotice("User created.");
+      showNotice("User created.");
     } catch (exc) {
       handleError(exc);
     }
@@ -898,21 +949,26 @@ export default function App() {
         body: { password: nextPassword },
       });
       setResetPasswords((prev) => ({ ...prev, [usernameValue]: "" }));
-      setNotice(`Password reset for ${usernameValue}.`);
+      showNotice(`Password reset for ${usernameValue}.`);
     } catch (exc) {
       handleError(exc);
     }
   }
 
-  async function deleteUser(usernameValue) {
-    try {
-      clearBanners();
-      await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });
-      await loadData();
-      setNotice(`Removed ${usernameValue}.`);
-    } catch (exc) {
-      handleError(exc);
-    }
+  function deleteUser(usernameValue) {
+    setConfirmModal({
+      message: `Remove user "${usernameValue}"? This cannot be undone.`,
+      action: async () => {
+        try {
+          clearBanners();
+          await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });
+          await loadData();
+          showNotice(`Removed ${usernameValue}.`);
+        } catch (exc) {
+          handleError(exc);
+        }
+      },
+    });
   }
 
   function draftOverrideValue(key) {
@@ -965,23 +1021,15 @@ export default function App() {
   }
 
   function renderOverviewPage() {
-    const recipeTotal = Math.max(1, Number(overviewTotals.recipes) || 0);
-    const unitsCoverage = Math.max(
-      0,
-      Math.min(100, Math.round(((overviewTotals.units || 0) / Math.max(overviewTotals.ingredients || 1, 1)) * 100))
-    );
-    const progressRows = [
-      { key: "categories", label: "Categories", value: overviewCoverage.categories || 0 },
-      { key: "tags", label: "Tags", value: overviewCoverage.tags || 0 },
-      { key: "tools", label: "Tools", value: overviewCoverage.tools || 0 },
-      { key: "units", label: "Units Normalized", value: unitsCoverage },
-    ];
-
     return (
       <section className="page-grid overview-grid">
         <article className="card tone-soft intro-card">
           <h3>Good morning. Your organizer is healthy and ready.</h3>
-          <p>No failed runs in the latest window. {upcomingScheduleCount} schedules are due in the next 24 hours.</p>
+          <div className="status-row">
+            <span className="status-pill success">Queued {runStats.queued}</span>
+            <span className="status-pill neutral">Scheduled {upcomingScheduleCount}</span>
+            {runStats.failed > 0 && <span className="status-pill error">Failed {runStats.failed}</span>}
+          </div>
           {!overviewMetrics?.ok && overviewMetrics?.reason ? (
             <p className="muted tiny">{overviewMetrics.reason}</p>
           ) : null}
@@ -1007,56 +1055,16 @@ export default function App() {
         </section>
 
         <article className="card chart-panel">
-          <div className="card-head">
-            <h3>Recipe Organization Results</h3>
-            <p>How categorizer changes are being applied across your recipe library.</p>
-          </div>
-
+          <h3>Coverage</h3>
           <div className="coverage-grid">
-            <CoverageRing
-              label="Categories Applied"
-              value={overviewCoverage.categories}
-              helper={`${Math.round(overviewCoverage.categories || 0)}% categorized`}
-              detail={`${Math.round((recipeTotal * (overviewCoverage.categories || 0)) / 100)} of ${recipeTotal} recipes`}
-              tone="accent"
-            />
-            <CoverageRing
-              label="Tags Applied"
-              value={overviewCoverage.tags}
-              helper={`${Math.round(overviewCoverage.tags || 0)}% tagged`}
-              detail={`${Math.round((recipeTotal * (overviewCoverage.tags || 0)) / 100)} of ${recipeTotal} recipes`}
-              tone="olive"
-            />
-            <CoverageRing
-              label="Tools Assigned"
-              value={overviewCoverage.tools}
-              helper={`${Math.round(overviewCoverage.tools || 0)}% with tools`}
-              detail={`${Math.round((recipeTotal * (overviewCoverage.tools || 0)) / 100)} of ${recipeTotal} recipes`}
-              tone="terracotta"
-            />
+            <CoverageRing label="Categories" value={overviewCoverage.categories} tone="accent" />
+            <CoverageRing label="Tags" value={overviewCoverage.tags} tone="olive" />
+            <CoverageRing label="Tools" value={overviewCoverage.tools} tone="terracotta" />
           </div>
-
-          <h4>Coverage by Taxonomy Field</h4>
-          <div className="progress-list">
-            {progressRows.map((row) => {
-              const percent = Math.max(0, Math.min(100, Math.round(Number(row.value) || 0)));
-              return (
-                <div className="progress-row" key={row.key}>
-                  <span>{row.label}</span>
-                  <div className="progress-track">
-                    <div className="progress-fill" style={{ width: `${percent}%` }} />
-                  </div>
-                  <span>{percent}%</span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="muted tiny">Source: latest categorizer task and Mealie metadata sync.</p>
         </article>
 
         <article className="card quick-view">
-          <h3>Quick View Data</h3>
-          <p className="muted">High-signal operational data without leaving Overview.</p>
+          <h3>Activity</h3>
           <ul className="kv-list">
             <li>
               <span>Upcoming schedules (24h)</span>
@@ -1096,66 +1104,205 @@ export default function App() {
             </ul>
           </div>
         </article>
+
+        <article className="card library-metrics">
+          <h3>Library</h3>
+          <div className="metric-grid">
+            <article><span>Recipes</span><strong>{overviewTotals.recipes}</strong></article>
+            <article><span>Ingredients</span><strong>{overviewTotals.ingredients}</strong></article>
+            <article><span>Tools</span><strong>{overviewTotals.tools}</strong></article>
+            <article><span>Categories</span><strong>{overviewTotals.categories}</strong></article>
+            <article><span>Cookbooks</span><strong>{taxonomyCounts.cookbooks || 0}</strong></article>
+            <article><span>Tags</span><strong>{overviewTotals.tags}</strong></article>
+            <article><span>Labels</span><strong>{overviewTotals.labels}</strong></article>
+            <article><span>Units</span><strong>{overviewTotals.units}</strong></article>
+          </div>
+          {!overviewMetrics?.ok && overviewMetrics?.reason ? (
+            <p className="banner error"><span>{overviewMetrics.reason}</span></p>
+          ) : null}
+        </article>
       </section>
     );
   }
 
-  function renderRunsPage() {
+  function renderTasksPage() {
     const selectedRun = runs.find((item) => item.run_id === selectedRunId) || null;
 
+    function formatScheduleTiming(schedule) {
+      if (schedule.kind === "cron") return `Cron ${schedule.cron || ""}`;
+      const secs = Number(schedule.seconds || 0);
+      if (secs >= 3600) return `Every ${Math.round(secs / 3600)}h`;
+      if (secs >= 60) return `Every ${Math.round(secs / 60)}m`;
+      return `Every ${secs}s`;
+    }
+
     return (
-      <section className="page-grid runs-page">
-        <article className="card run-builder-card">
-          <h3>Start a Run</h3>
-          <p className="muted">Queue one-off tasks for immediate execution.</p>
+      <section className="page-grid tasks-grid">
+        <div className="stacked-cards">
+          <article className="card">
+            <h3>Start a Run</h3>
+            <p className="muted">Queue one-off tasks for immediate execution.</p>
 
-          <div className="run-form">
-            <label className="field">
-              <span>Task</span>
-              <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
-                <option value="">Choose task</option>
-                {tasks.map((task) => (
-                  <option key={task.task_id} value={task.task_id}>
-                    {task.title}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="run-form">
+              <label className="field">
+                <span>Task</span>
+                <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
+                  <option value="">Choose task</option>
+                  {tasks.map((task) => (
+                    <option key={task.task_id} value={task.task_id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            {(selectedTaskDef?.options || []).length > 0 ? (
-              <div className="option-grid">
-                {(selectedTaskDef?.options || []).map((option) =>
-                  fieldFromOption(option, taskValues[option.key], (key, value) =>
-                    setTaskValues((prev) => ({ ...prev, [key]: value }))
-                  )
-                )}
-              </div>
-            ) : (
+              {(selectedTaskDef?.options || []).length > 0 ? (
+                <div className="option-grid">
+                  {(selectedTaskDef?.options || []).map((option) =>
+                    fieldFromOption(option, taskValues[option.key], (key, value) =>
+                      setTaskValues((prev) => ({ ...prev, [key]: value }))
+                    )
+                  )}
+                </div>
+              ) : (
                 <p className="muted tiny">This task has no additional options.</p>
               )}
 
-            <button type="button" className="primary" onClick={triggerRun}>
-              <Icon name="play" />
-              Queue Run
-            </button>
-          </div>
-        </article>
+              <button type="button" className="primary" onClick={triggerRun}>
+                <Icon name="play" />
+                Queue Run
+              </button>
+            </div>
+          </article>
 
-        <article className="card runs-history-card">
+          {schedules.length > 0 ? (
+            <article className="card">
+              <h3>Saved Schedules</h3>
+              <p className="muted">{schedules.length} schedule{schedules.length !== 1 ? "s" : ""} configured.</p>
+              <ul className="schedule-list">
+                {schedules.map((schedule) => (
+                  <li key={schedule.schedule_id}>
+                    <div>
+                      <strong>{schedule.name || schedule.schedule_id}</strong>
+                      <p className="tiny muted">
+                        {taskTitleById.get(schedule.task_id) || schedule.task_id} · {formatScheduleTiming(schedule)}
+                      </p>
+                    </div>
+                    <div className="schedule-item-actions">
+                      <span className={`status-pill ${schedule.enabled !== false ? "success" : "neutral"}`}>
+                        {schedule.enabled !== false ? "Enabled" : "Disabled"}
+                      </span>
+                      <button className="ghost small" onClick={() => deleteSchedule(schedule.schedule_id)}>
+                        <Icon name="x" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
+
+          <article className="card">
+            <h3>New Schedule</h3>
+            <form className="run-form" onSubmit={createSchedule}>
+              <label className="field">
+                <span>Schedule Name</span>
+                <input
+                  value={scheduleForm.name}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="Morning cleanup"
+                />
+              </label>
+
+              <label className="field">
+                <span>Task</span>
+                <select
+                  value={scheduleForm.task_id}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, task_id: event.target.value }))}
+                >
+                  <option value="">Select task</option>
+                  {tasks.map((task) => (
+                    <option key={task.task_id} value={task.task_id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="option-grid two">
+                <label className="field">
+                  <span>Type</span>
+                  <select
+                    value={scheduleForm.kind}
+                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
+                  >
+                    <option value="interval">Interval</option>
+                    <option value="cron">Cron</option>
+                  </select>
+                </label>
+
+                {scheduleForm.kind === "interval" ? (
+                  <label className="field">
+                    <span>Seconds</span>
+                    <input
+                      type="number"
+                      value={scheduleForm.seconds}
+                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, seconds: event.target.value }))}
+                    />
+                  </label>
+                ) : (
+                  <label className="field">
+                    <span>Cron Expression</span>
+                    <input
+                      value={scheduleForm.cron}
+                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, cron: event.target.value }))}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {(scheduleTaskDef?.options || []).length > 0 ? (
+                <div className="option-grid">
+                  {(scheduleTaskDef?.options || []).map((option) =>
+                    fieldFromOption(option, scheduleOptionValues[option.key], (key, value) =>
+                      setScheduleOptionValues((prev) => ({ ...prev, [key]: value }))
+                    )
+                  )}
+                </div>
+              ) : null}
+
+              <label className="field field-inline">
+                <span>Enabled</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(scheduleForm.enabled)}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                />
+              </label>
+
+              <button type="submit" className="primary">
+                <Icon name="save" />
+                Save Schedule
+              </button>
+            </form>
+          </article>
+        </div>
+
+        <article className="card">
           <div className="card-head split">
             <div>
-              <h3>All Runs</h3>
-              <p>Manual and scheduled runs are shown together.</p>
+              <h3>All Activity</h3>
+              <p>Manual and scheduled runs shown together.</p>
             </div>
             <label className="search-box">
               <Icon name="search" />
-                <input
-                  value={runSearch}
-                  onChange={(event) => setRunSearch(event.target.value)}
-                  placeholder="Search task, type, or status"
-                />
-              </label>
-            </div>
+              <input
+                value={runSearch}
+                onChange={(event) => setRunSearch(event.target.value)}
+                placeholder="Search task, type, or status"
+              />
+            </label>
+          </div>
 
           <div className="run-type-filters">
             <button
@@ -1228,166 +1375,6 @@ export default function App() {
               </span>
             </div>
             <pre className="log-viewer">{runLog || "Select any row above to inspect its full formatted output."}</pre>
-          </div>
-        </article>
-      </section>
-    );
-  }
-
-  function renderSchedulesPage() {
-    const selectedScheduleRun =
-      runs.find((item) => item.run_id === selectedRunId && item.schedule_id) || filteredScheduledRuns[0] || null;
-
-    return (
-      <section className="page-grid schedules-page">
-        <article className="card run-builder-card">
-          <h3>Create Schedule</h3>
-          <form className="run-form" onSubmit={createSchedule}>
-            <label className="field">
-              <span>Schedule Name</span>
-              <input
-                value={scheduleForm.name}
-                onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="Morning cleanup"
-              />
-            </label>
-
-            <label className="field">
-              <span>Task</span>
-              <select
-                value={scheduleForm.task_id}
-                onChange={(event) => setScheduleForm((prev) => ({ ...prev, task_id: event.target.value }))}
-              >
-                <option value="">Select task</option>
-                {tasks.map((task) => (
-                  <option key={task.task_id} value={task.task_id}>
-                    {task.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="option-grid two">
-              <label className="field">
-                <span>Type</span>
-                <select
-                  value={scheduleForm.kind}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
-                >
-                  <option value="interval">Interval</option>
-                  <option value="cron">Cron</option>
-                </select>
-              </label>
-
-              {scheduleForm.kind === "interval" ? (
-                <label className="field">
-                  <span>Seconds</span>
-                  <input
-                    type="number"
-                    value={scheduleForm.seconds}
-                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, seconds: event.target.value }))}
-                  />
-                </label>
-              ) : (
-                <label className="field">
-                  <span>Cron Expression</span>
-                  <input
-                    value={scheduleForm.cron}
-                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, cron: event.target.value }))}
-                  />
-                </label>
-              )}
-            </div>
-
-            {(scheduleTaskDef?.options || []).length > 0 ? (
-              <div className="option-grid">
-                {(scheduleTaskDef?.options || []).map((option) =>
-                  fieldFromOption(option, scheduleOptionValues[option.key], (key, value) =>
-                    setScheduleOptionValues((prev) => ({ ...prev, [key]: value }))
-                  )
-                )}
-              </div>
-            ) : null}
-
-            <label className="field field-inline">
-              <span>Enabled</span>
-              <input
-                type="checkbox"
-                checked={Boolean(scheduleForm.enabled)}
-                onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-              />
-            </label>
-
-            <button type="submit" className="primary">
-              <Icon name="save" />
-              Save Schedule
-            </button>
-          </form>
-        </article>
-
-        <article className="card runs-history-card">
-          <div className="card-head split">
-            <div>
-              <h3>Schedule Activity</h3>
-              <p>Recent schedule-triggered runs and outcomes.</p>
-            </div>
-            <label className="search-box">
-              <Icon name="search" />
-                <input
-                  value={scheduleSearch}
-                  onChange={(event) => setScheduleSearch(event.target.value)}
-                  placeholder="Search task or status"
-                />
-              </label>
-            </div>
-
-          <div className="table-wrap">
-            <table className="users-table">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Run Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredScheduledRuns.length === 0 ? (
-                  <tr>
-                    <td colSpan={4}>No scheduled runs found.</td>
-                  </tr>
-                ) : (
-                  filteredScheduledRuns.map((run) => (
-                    <tr
-                      key={run.run_id}
-                      className={selectedRunId === run.run_id ? "selected-row" : ""}
-                      onClick={() => fetchLog(run.run_id)}
-                    >
-                      <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
-                      <td>{runTypeLabel(run)}</td>
-                      <td>
-                        <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
-                      </td>
-                      <td>{formatRunTime(run)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="log-section">
-            <div className="log-head">
-              <h4>Latest log preview</h4>
-              <span className="muted tiny">
-                {selectedScheduleRun
-                  ? `${taskTitleById.get(selectedScheduleRun.task_id) || selectedScheduleRun.task_id} | ${formatRunTime(
-                      selectedScheduleRun
-                    )}`
-                  : "Select a scheduled run to preview output."}
-              </span>
-            </div>
-            <pre className="log-viewer">{runLog || "Select a scheduled run to preview output."}</pre>
           </div>
         </article>
       </section>
@@ -1898,7 +1885,6 @@ export default function App() {
       <section className="page-grid settings-grid users-grid">
         <article className="card">
           <h3>Create User</h3>
-          <p className="muted">Create accounts for household members or shared kitchen devices.</p>
 
           <form className="run-form" onSubmit={createUser}>
             <label className="field">
@@ -1907,15 +1893,6 @@ export default function App() {
                 value={newUserUsername}
                 onChange={(event) => setNewUserUsername(event.target.value)}
                 placeholder="kitchen-tablet"
-              />
-            </label>
-
-            <label className="field">
-              <span>Email (optional)</span>
-              <input
-                value={newUserEmail}
-                onChange={(event) => setNewUserEmail(event.target.value)}
-                placeholder="tablet@kitchen.local"
               />
             </label>
 
@@ -1932,21 +1909,19 @@ export default function App() {
               <span>Temporary Password</span>
               <div className="password-row">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={newUserPassword}
                   onChange={(event) => setNewUserPassword(event.target.value)}
                   placeholder="At least 8 characters"
                 />
+                <button type="button" className="ghost icon-btn" onClick={() => setShowPassword((v) => !v)} title={showPassword ? "Hide password" : "Show password"}>
+                  <Icon name={showPassword ? "eye-off" : "eye"} />
+                </button>
                 <button type="button" className="ghost" onClick={generateTemporaryPassword}>
                   Generate
                 </button>
               </div>
             </label>
-
-            <div className="password-helper">
-              <Icon name="shield" />
-              <span>Use a strong temporary password and rotate after first login.</span>
-            </div>
 
             <button type="submit" className="primary">
               <Icon name="users" />
@@ -1957,57 +1932,46 @@ export default function App() {
 
         <article className="card">
           <div className="card-head split">
-            <div>
-              <h3>Current Users</h3>
-              <p>Reset passwords and remove inactive accounts.</p>
-            </div>
+            <h3>Current Users</h3>
             <label className="search-box">
               <Icon name="search" />
               <input
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
-                placeholder="Search username or role"
+                placeholder="Search"
               />
             </label>
           </div>
 
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Last Active</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>No users found.</td>
-                  </tr>
-                ) : (
-                  filteredUsers.map((item) => (
-                    <tr key={item.username}>
-                      <td>
+          <ul className="user-list">
+            {filteredUsers.length === 0 ? (
+              <li className="muted">No users found.</li>
+            ) : (
+              filteredUsers.map((item) => {
+                const isMe = session?.username === item.username;
+                const isOpen = expandedUser === item.username;
+                return (
+                  <li key={item.username} className={`user-row${isOpen ? " open" : ""}`}>
+                    <div className="user-row-header">
+                      <button type="button" className="user-row-toggle" onClick={() => setExpandedUser(isOpen ? null : item.username)}>
                         <strong>{item.username}</strong>
-                      </td>
-                      <td>
-                        <span className="nowrap">{userRoleLabel(item.username, session?.username)}</span>
-                      </td>
-                      <td>
-                        <span className="status-pill success">
-                          {session?.username === item.username ? "Active Session" : "Active"}
+                        <span className="user-row-meta">
+                          <span className="status-pill neutral">{userRoleLabel(item.username, session?.username)}</span>
+                          {isMe && <span className="status-pill success">You</span>}
                         </span>
-                      </td>
-                      <td>
-                        <span className="nowrap">{formatDateTime(item.created_at)}</span>
-                      </td>
-                      <td className="users-actions-cell">
-                        <div className="user-actions">
+                        <Icon name="chevron" className={`row-chevron${isOpen ? " rotated" : ""}`} />
+                      </button>
+                      {!isMe && (
+                        <button type="button" className="ghost danger-text icon-btn" title="Remove user" onClick={() => deleteUser(item.username)}>
+                          <Icon name="trash" />
+                        </button>
+                      )}
+                    </div>
+                    {isOpen && (
+                      <div className="user-row-body">
+                        <div className="password-row">
                           <input
-                            type="password"
+                            type="text"
                             placeholder="New password"
                             value={resetPasswords[item.username] || ""}
                             onChange={(event) =>
@@ -2015,27 +1979,18 @@ export default function App() {
                             }
                           />
                           <button className="ghost" onClick={() => resetUserPassword(item.username)}>
-                            Reset
+                            Reset Password
                           </button>
-                          {session?.username !== item.username ? (
-                            <button className="ghost" onClick={() => deleteUser(item.username)}>
-                              Remove
-                            </button>
-                          ) : (
-                            <span className="muted tiny">Cannot remove current account</span>
-                          )}
                         </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })
+            )}
+          </ul>
 
-          <p className="muted tiny">
-            {users.length} users total | {users.length} active | 0 disabled
-          </p>
+          <p className="muted tiny">{users.length} user{users.length !== 1 ? "s" : ""}</p>
         </article>
       </section>
     );
@@ -2123,92 +2078,39 @@ export default function App() {
     const lastSyncLabel = lastLoadedAt ? formatDateTime(lastLoadedAt) : "-";
 
     return (
-      <section className="page-grid settings-grid about-grid">
-        <article className="card">
-          <h3>Library Metrics</h3>
-          <p className="muted">Current Mealie library and managed taxonomy counts.</p>
-
-          <div className="metric-grid">
-            <article>
-              <span>Recipes</span>
-              <strong>{overviewTotals.recipes}</strong>
-            </article>
-            <article>
-              <span>Ingredients</span>
-              <strong>{overviewTotals.ingredients}</strong>
-            </article>
-            <article>
-              <span>Tools</span>
-              <strong>{overviewTotals.tools}</strong>
-            </article>
-            <article>
-              <span>Categories</span>
-              <strong>{overviewTotals.categories}</strong>
-            </article>
-            <article>
-              <span>Cookbooks</span>
-              <strong>{taxonomyCounts.cookbooks || 0}</strong>
-            </article>
-            <article>
-              <span>Tags</span>
-              <strong>{overviewTotals.tags}</strong>
-            </article>
-            <article>
-              <span>Labels</span>
-              <strong>{overviewTotals.labels}</strong>
-            </article>
-            <article>
-              <span>Units</span>
-              <strong>{overviewTotals.units}</strong>
-            </article>
-          </div>
-
-          <div className="about-actions">
-            <button className="primary" onClick={loadData}>
-              <Icon name="refresh" />
-              Refresh Metrics
-            </button>
-            <span className="muted tiny">Metrics refresh from local state and Mealie API.</span>
-          </div>
-        </article>
-
-        <article className="card">
-          <h3>Automation Activity</h3>
-          <p className="muted">
-            Last run:{" "}
-            {latestRun ? `${formatDateTime(latestRun.finished_at || latestRun.started_at || latestRun.created_at)}` : "-"} |{" "}
-            {latestRun ? `${taskTitleById.get(latestRun.task_id) || latestRun.task_id}` : "No runs yet"} |{" "}
-            {latestRun ? `${latestRun.status}` : "n/a"}
-          </p>
-          <div className="about-actions">
-            <button className="ghost" onClick={loadData}>
-              <Icon name="refresh" />
-              Run Health Check
-            </button>
-            <button className="ghost" onClick={() => setActivePage("runs")}>
-              <Icon name="play" />
-              View Run History
-            </button>
-          </div>
-        </article>
-
-        <aside className="stacked-cards">
+      <section className="page-grid about-grid">
           <article className="card">
-            <h3>Version</h3>
-            <p className="muted">CookDex {appVersion}</p>
-            <p className="tiny muted">Web UI runtime version: {aboutMeta?.webui_version || "-"}</p>
+            <h3><Icon name="info" /> CookDex v{appVersion}</h3>
+            <ul className="kv-list">
+              <li>
+                <span>Backend</span>
+                <strong>{backendStatus}</strong>
+              </li>
+              <li>
+                <span>Last Sync</span>
+                <strong>{lastSyncLabel}</strong>
+              </li>
+              <li>
+                <span>License</span>
+                <strong>MIT</strong>
+              </li>
+              <li>
+                <span>Environment</span>
+                <strong>Self-hosted</strong>
+              </li>
+            </ul>
           </article>
 
           <article className="card">
-            <h3>Project Links</h3>
+            <h3><Icon name="external" /> Project Links</h3>
             <a
               className="link-btn"
               href={aboutMeta?.links?.github || "https://github.com/thekannen/cookdex"}
               target="_blank"
               rel="noreferrer"
             >
-              <Icon name="external" />
-              Open GitHub Repository
+              <Icon name="github" />
+              GitHub Repository
             </a>
             <a
               className="link-btn"
@@ -2216,52 +2118,24 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
             >
-              <Icon name="external" />
+              <Icon name="heart" />
               Sponsor the Project
             </a>
           </article>
 
           <article className="card">
-            <h3>Application Details</h3>
-            <ul className="kv-list">
-              <li>
-                <span>License</span>
-                <strong>MIT</strong>
-              </li>
-              <li>
-                <span>Build Channel</span>
-                <strong>Stable</strong>
-              </li>
-              <li>
-                <span>Backend</span>
-                <strong>{backendStatus}</strong>
-              </li>
-              <li>
-                <span>Environment</span>
-                <strong>Self-hosted</strong>
-              </li>
-              <li>
-                <span>Last Sync</span>
-                <strong>{lastSyncLabel}</strong>
-              </li>
-            </ul>
-          </article>
-
-          <article className="card">
-            <h3>Why this app exists</h3>
+            <h3><Icon name="help" /> Why this app exists</h3>
             <p className="muted">
               CookDex is designed for home server users who want powerful cleanup and organization workflows without
               command-line complexity.
             </p>
           </article>
-        </aside>
       </section>
     );
   }
 
   function renderPage() {
-    if (activePage === "runs") return renderRunsPage();
-    if (activePage === "schedules") return renderSchedulesPage();
+    if (activePage === "tasks") return renderTasksPage();
     if (activePage === "settings") return renderSettingsPage();
     if (activePage === "recipe-organization") return renderRecipeOrganizationPage();
     if (activePage === "users") return renderUsersPage();
@@ -2358,8 +2232,8 @@ export default function App() {
     );
   }
 
-  const showHeaderBreadcrumb = activePage === "overview";
-  const showHeaderRefresh = activePage === "overview";
+  const showHeaderBreadcrumb = false;
+  const showHeaderRefresh = false;
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -2400,21 +2274,21 @@ export default function App() {
 
           <div className="sidebar-actions">
             <div className="sidebar-actions-row">
-              <button className="ghost" onClick={loadData} title="Refresh data">
-                <Icon name="refresh" />
-                <span>Refresh</span>
+              <button className="ghost" onClick={loadData} title="Refresh data" disabled={isLoading}>
+                <Icon name="refresh" className={isLoading ? "spin" : ""} />
+                <span>{isLoading ? "Loading\u2026" : "Refresh"}</span>
               </button>
               <button
                 className="ghost"
                 onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
                 title="Toggle theme"
               >
-                <Icon name="settings" />
+                <Icon name="contrast" />
                 <span>Theme</span>
               </button>
             </div>
             <button className="ghost" onClick={doLogout} title="Log out">
-              <Icon name="x" />
+              <Icon name="logout" />
               <span>Log Out</span>
             </button>
           </div>
@@ -2436,11 +2310,23 @@ export default function App() {
           ) : null}
         </header>
 
-        {error ? <div className="banner error">{error}</div> : null}
-        {!error && notice ? <div className="banner info">{notice}</div> : null}
+        {error ? <div className="banner error"><span>{error}</span><button className="banner-close" onClick={() => setError("")}><Icon name="x" /></button></div> : null}
+        {!error && notice ? <div className="banner info"><span>{notice}</span><button className="banner-close" onClick={clearBanners}><Icon name="x" /></button></div> : null}
 
         {renderPage()}
       </section>
+
+      {confirmModal && (
+        <div className="modal-backdrop" onClick={() => setConfirmModal(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <p>{confirmModal.message}</p>
+            <div className="modal-actions">
+              <button className="ghost" onClick={() => setConfirmModal(null)}>Cancel</button>
+              <button className="primary danger" onClick={() => { setConfirmModal(null); confirmModal.action(); }}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

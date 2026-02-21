@@ -1,10 +1,9 @@
 export const NAV_ITEMS = [
   { id: "overview", label: "Overview", icon: "home" },
-  { id: "runs", label: "Runs", icon: "folder" },
-  { id: "schedules", label: "Schedules", icon: "calendar" },
-  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "tasks", label: "Tasks", icon: "folder" },
   { id: "recipe-organization", label: "Recipe Organization", icon: "book-open" },
   { id: "users", label: "Users", icon: "user" },
+  { id: "settings", label: "Settings", icon: "settings" },
   { id: "help", label: "Help", icon: "life-buoy" },
   { id: "about", label: "About", icon: "info" },
 ];
@@ -12,15 +11,11 @@ export const NAV_ITEMS = [
 export const PAGE_META = {
   overview: {
     title: "System Overview",
-    subtitle: "Live summary of recipe organization coverage, run health, and Mealie metrics.",
+    subtitle: "",
   },
-  runs: {
-    title: "Runs",
-    subtitle: "Run one-off tasks and review output from manual and scheduled executions.",
-  },
-  schedules: {
-    title: "Schedules",
-    subtitle: "Set recurring runs with interval or cron schedules and monitor schedule activity.",
+  tasks: {
+    title: "Tasks",
+    subtitle: "Run, schedule, and monitor automation tasks.",
   },
   settings: {
     title: "Settings",
@@ -79,7 +74,7 @@ export const HELP_FAQ = [
     question: "How do I schedule recurring tasks?",
     icon: "calendar",
     answer:
-      "Open the Schedules page, pick a task, choose interval or cron timing, and save. Scheduled runs appear in the activity table and their logs are accessible from the Runs page.",
+      "Open the Tasks page, pick a task, choose interval or cron timing, and save. Scheduled runs appear in the activity table alongside manual runs.",
   },
 ];
 

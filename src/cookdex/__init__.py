@@ -1,18 +1,17 @@
-from importlib.metadata import PackageNotFoundError, version
-
 from .config import REPO_ROOT
 
 
-def _version_from_file() -> str:
+def _read_version() -> str:
     version_file = REPO_ROOT / "VERSION"
     if version_file.exists():
         return version_file.read_text(encoding="utf-8").strip()
-    return "0.0.0"
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("cookdex")
+    except PackageNotFoundError:
+        return "0.0.0"
 
 
-try:
-    __version__ = version("cookdex")
-except PackageNotFoundError:
-    __version__ = _version_from_file()
+__version__ = _read_version()
 
-__all__ = ["REPO_ROOT", "__version__"]
+__all__ = ["REPO_ROOT", "__version__", "_read_version"]

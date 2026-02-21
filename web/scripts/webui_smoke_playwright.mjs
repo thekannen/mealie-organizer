@@ -6,11 +6,10 @@ import { chromium } from "playwright";
 
 const NAV_LABELS = [
   "Overview",
-  "Runs",
-  "Schedules",
-  "Settings",
+  "Tasks",
   "Recipe Organization",
   "Users",
+  "Settings",
   "Help",
   "About",
 ];
@@ -23,14 +22,14 @@ const REQUIRED_MARKERS = [
   "global:sidebar-logout",
   "auth:login-submit",
   "overview:header-refresh",
-  "runs:queue-run",
-  "runs:queue-all-discovered",
-  "runs:filter-all",
-  "runs:filter-manual",
-  "runs:filter-scheduled",
-  "runs:row-select",
-  "schedules:save-interval",
-  "schedules:save-cron",
+  "tasks:queue-run",
+  "tasks:queue-all-discovered",
+  "tasks:filter-all",
+  "tasks:filter-manual",
+  "tasks:filter-scheduled",
+  "tasks:row-select",
+  "tasks:save-interval",
+  "tasks:save-cron",
   "settings:reload",
   "settings:apply",
   "settings:test-mealie",
@@ -52,9 +51,8 @@ const REQUIRED_MARKERS = [
   "users:remove-user",
   "help:faq-open",
   "help:docs-open",
-  "about:refresh-metrics",
-  "about:run-health-check",
-  "about:view-run-history",
+  "about:version-visible",
+  "about:links-visible",
   "api:queue-all-tasks",
   "api:schedule-create-delete",
   "api:user-create-reset-delete",
@@ -522,7 +520,7 @@ async function main() {
         continue;
       }
       await entry.row.click();
-      markControl("runs", "runs:row-select");
+      markControl("tasks", "tasks:row-select");
       await page.waitForTimeout(220);
       return true;
     }
@@ -688,11 +686,11 @@ async function main() {
     await screenshot("overview");
   });
 
-  await check("runs-page-comprehensive", async () => {
-    await clickNav("Runs");
-    await expectVisible(page.getByRole("heading", { name: /^runs$/i }), "Runs page header missing.");
+  await check("tasks-page-runs", async () => {
+    await clickNav("Tasks");
+    await expectVisible(page.getByRole("heading", { name: /tasks/i }).first(), "Tasks page header missing.");
     const taskSelect = page.locator('label:has-text("Task") select').first();
-    await expectVisible(taskSelect, "Runs task selector missing.");
+    await expectVisible(taskSelect, "Tasks task selector missing.");
 
     const taskOptions = await taskSelect.evaluate((select) =>
       Array.from(select.options).map((opt) => ({ value: opt.value, label: (opt.textContent || "").trim() }))
@@ -702,15 +700,15 @@ async function main() {
       await taskSelect.selectOption(item.value);
       await page.waitForTimeout(140);
       await configureOptionFields(page.locator(".run-builder-card"));
-      await clickButtonByRole("runs", "Queue Run", "runs:queue-run");
+      await clickButtonByRole("tasks", "Queue Run", "tasks:queue-run");
       await ensureNoErrorBanner(`Run queue failed: ${item.label}`);
       report.coverage.tasksQueuedViaUi += 1;
-      markInteraction("runs", "queued-task", item.label);
+      markInteraction("tasks", "queued-task", item.label);
       await page.waitForTimeout(280);
     }
 
     if (queueTargets.length > 0 && report.coverage.tasksQueuedViaUi >= queueTargets.length) {
-      markControl("runs", "runs:queue-all-discovered");
+      markControl("tasks", "tasks:queue-all-discovered");
     }
 
     const searchInput = page.locator(".runs-history-card .search-box input").first();
@@ -719,27 +717,35 @@ async function main() {
       await searchInput.fill("");
     }
 
-    await clickButtonByRole("runs", "All", "runs:filter-all");
-    await clickButtonByRole("runs", "Manual", "runs:filter-manual");
-    await clickButtonByRole("runs", "Scheduled", "runs:filter-scheduled");
-    await clickButtonByRole("runs", "All", "runs:filter-all");
+    // Refresh data so queued runs appear in the history
+    await clickSidebarAction("Refresh", "global:sidebar-refresh");
+    await page.waitForTimeout(2000);
 
-    const selected = await ensureRunRowSelection();
+    await clickButtonByRole("tasks", "All", "tasks:filter-all");
+    await clickButtonByRole("tasks", "Manual", "tasks:filter-manual");
+    await clickButtonByRole("tasks", "Scheduled", "tasks:filter-scheduled");
+    await clickButtonByRole("tasks", "All", "tasks:filter-all");
+
+    let selected = await ensureRunRowSelection();
+    if (!selected) {
+      // Retry: refresh data and wait for runs to appear
+      await clickSidebarAction("Refresh", "global:sidebar-refresh");
+      await page.waitForTimeout(3000);
+      selected = await ensureRunRowSelection();
+    }
     if (!selected) {
       report.warnings.push("No run row available to select after queueing runs.");
     }
 
     await expectVisible(page.locator(".log-viewer"), "Run output viewer not rendered.");
-    await registerVisibleButtons("runs");
-    await screenshot("runs");
+    await registerVisibleButtons("tasks");
+    await screenshot("tasks-runs");
   });
 
-  await check("schedules-page-comprehensive", async () => {
-    await clickNav("Schedules");
-    await expectVisible(page.getByRole("heading", { name: /schedules/i }).first(), "Schedules header missing.");
-
+  await check("tasks-page-schedules", async () => {
+    await clickNav("Tasks");
     const taskSelect = page.locator('label:has-text("Task") select').first();
-    await expectVisible(taskSelect, "Schedules task selector missing.");
+    await expectVisible(taskSelect, "Tasks task selector missing.");
     const taskOptions = await taskSelect.evaluate((select) =>
       Array.from(select.options).map((option) => ({ value: option.value, label: (option.textContent || "").trim() }))
     );
@@ -754,7 +760,7 @@ async function main() {
     await page.locator('label:has-text("Type") select').first().selectOption("interval");
     await fillFirstVisible(page.locator('label:has-text("Seconds") input'), "1800");
     await configureOptionFields(page.locator(".run-builder-card"));
-    await clickButtonByRole("schedules", "Save Schedule", "schedules:save-interval");
+    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
     await ensureNoErrorBanner("Interval schedule save failed");
     await page.waitForTimeout(500);
 
@@ -763,7 +769,7 @@ async function main() {
     await page.locator('label:has-text("Type") select').first().selectOption("cron");
     await fillFirstVisible(page.locator('label:has-text("Cron Expression") input'), "*/30 * * * *");
     await configureOptionFields(page.locator(".run-builder-card"));
-    await clickButtonByRole("schedules", "Save Schedule", "schedules:save-cron");
+    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-cron");
     await ensureNoErrorBanner("Cron schedule save failed");
     await page.waitForTimeout(500);
 
@@ -778,24 +784,8 @@ async function main() {
     }
     report.coverage.schedulesCreatedViaUi += created.length;
 
-    const scheduleSearch = page.locator(".runs-history-card .search-box input").first();
-    if (await scheduleSearch.isVisible().catch(() => false)) {
-      await scheduleSearch.fill("categorize");
-      await scheduleSearch.fill("");
-    }
-
-    const firstRow = page.locator(".runs-history-card tbody tr").first();
-    if (await firstRow.isVisible().catch(() => false)) {
-      const firstText = normalizeText(await firstRow.innerText());
-      if (!firstText.toLowerCase().includes("no scheduled runs found")) {
-        await firstRow.click();
-        markInteraction("schedules", "select-run-row", firstText.slice(0, 120));
-      }
-    }
-
-    await expectVisible(page.locator(".log-viewer"), "Schedules log viewer not rendered.");
-    await registerVisibleButtons("schedules");
-    await screenshot("schedules");
+    await registerVisibleButtons("tasks");
+    await screenshot("tasks-schedules");
   });
 
   await check("settings-page-comprehensive", async () => {
@@ -988,39 +978,56 @@ async function main() {
 
     const tempUser = `qaui${Date.now().toString().slice(-6)}`;
     const resetPassword = "QaUiResetPass#1";
+    // Wait for any in-flight loadData to finish before interacting with the form
+    await page.waitForTimeout(2000);
+    // Fill username
+    const usernameInput = page.locator('input[placeholder="kitchen-tablet"]').first();
+    await expectVisible(usernameInput, "Username input not visible on Users page.");
+    await usernameInput.click();
+    await usernameInput.fill(tempUser);
+    // Generate password (guarantees uppercase+lowercase+digit)
     await clickButtonByRole("users", "Generate", "users:generate-password");
-    await fillFirstVisible(page.locator('label:has-text("Username") input').first(), tempUser);
+    await page.waitForTimeout(300);
+    // Submit the create user form
     await clickButtonByRole("users", "Create User", "users:create-user");
+    // Wait for the API call + loadData() to complete
+    await page.waitForTimeout(3000);
     await ensureNoErrorBanner("User create failed");
     cleanupState.usernames.add(tempUser);
     report.coverage.usersCreatedViaUi += 1;
 
-    const row = page.locator("tr", { hasText: tempUser }).first();
-    await expectVisible(row, "Created user row was not found.");
-    const createdUserRowText = normalizeText(await row.innerText().catch(() => ""));
-    if (!createdUserRowText.toLowerCase().includes(tempUser.toLowerCase())) {
-      throw new Error("Created user row appears visually wrapped/truncated and username is not readable.");
-    }
-    await row.locator('input[placeholder="New password"]').fill(resetPassword);
-    await row.getByRole("button", { name: /^reset$/i }).first().click();
+    // Find the user in the accordion list and expand it
+    const userRow = page.locator(".user-row", { hasText: tempUser }).first();
+    await expectVisible(userRow, "Created user row was not found in user list.");
+    const toggleButton = userRow.locator(".user-row-toggle").first();
+    await toggleButton.click();
+    await page.waitForTimeout(200);
+
+    // Reset password via expanded row
+    const passwordInput = userRow.locator('input[placeholder="New password"]').first();
+    await expectVisible(passwordInput, "Password reset input not visible after expanding user row.");
+    await passwordInput.fill(resetPassword);
+    await userRow.getByRole("button", { name: /reset password/i }).first().click();
     markControl("users", "users:reset-password");
     await page.waitForTimeout(650);
     await ensureNoErrorBanner("User reset password failed");
 
-    const userSearchInput = page.locator(".search-box input").first();
-    if (await userSearchInput.isVisible().catch(() => false)) {
-      await userSearchInput.fill(tempUser);
-      await userSearchInput.fill("");
-    }
+    // Delete user via trash icon (triggers confirmation modal)
+    const trashButton = userRow.locator('button[title="Remove user"]').first();
+    await expectVisible(trashButton, "Trash/delete button missing for created user.");
+    await trashButton.click();
+    await page.waitForTimeout(200);
 
-    const removeButton = row.getByRole("button", { name: /^remove$/i }).first();
-    await expectVisible(removeButton, "Remove button missing for created user.");
-    await removeButton.click();
+    // Confirm deletion in modal
+    const modal = page.locator(".modal-card").first();
+    await expectVisible(modal, "Confirmation modal did not appear after clicking delete.");
+    const confirmButton = modal.getByRole("button", { name: /remove/i }).first();
+    await confirmButton.click();
     markControl("users", "users:remove-user");
     await page.waitForTimeout(800);
     await ensureNoErrorBanner("User remove failed");
 
-    const stillExists = await page.locator("tr", { hasText: tempUser }).count();
+    const stillExists = await page.locator(".user-row", { hasText: tempUser }).count();
     if (stillExists === 0) {
       cleanupState.usernames.delete(tempUser);
     }
@@ -1034,7 +1041,7 @@ async function main() {
     await expectVisible(page.getByRole("heading", { name: /help center/i }).first(), "Help header missing.");
 
     const faqCard = page.locator("article.card", {
-      has: page.getByRole("heading", { name: /setup faq/i }).first(),
+      has: page.getByRole("heading", { name: /frequently asked questions/i }).first(),
     });
     const faqItems = faqCard.locator(".accordion-stack .accordion");
     const faqCount = await faqItems.count();
@@ -1051,7 +1058,7 @@ async function main() {
     markControl("help", "help:faq-open");
 
     const docsCard = page.locator("article.card", {
-      has: page.getByRole("heading", { name: /setup and troubleshooting/i }).first(),
+      has: page.getByRole("heading", { name: /reference guides/i }).first(),
     });
     const docs = docsCard.locator(".accordion");
     const docsCount = await docs.count();
@@ -1086,19 +1093,18 @@ async function main() {
     await clickNav("About");
     await expectVisible(page.getByRole("heading", { name: /about cookdex/i }).first(), "About page header missing.");
 
+    // Verify version card is visible with version number
+    const versionHeading = page.locator("h3", { hasText: /CookDex v\d/ }).first();
+    await expectVisible(versionHeading, "Version heading not visible on About page.");
+    markControl("about", "about:version-visible");
+
+    // Verify project links
     const links = page.locator("a.link-btn");
     if ((await links.count()) < 2) {
       throw new Error("Expected GitHub and Sponsor links were not found.");
     }
+    markControl("about", "about:links-visible");
 
-    await clickButtonByRole("about", "Refresh Metrics", "about:refresh-metrics");
-    await ensureNoErrorBanner("About refresh metrics failed");
-    await clickButtonByRole("about", "Run Health Check", "about:run-health-check");
-    await ensureNoErrorBanner("About run health check failed");
-    await clickButtonByRole("about", "View Run History", "about:view-run-history");
-    await expectVisible(page.getByRole("heading", { name: /^runs$/i }), "View Run History did not navigate to Runs.");
-
-    await clickNav("About");
     await registerVisibleButtons("about");
     await screenshot("about");
   });
