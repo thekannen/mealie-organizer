@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -28,7 +28,7 @@ def _set_session_cookie(response: Response, services: Services, token: str) -> N
 def _create_session(services: Services, username: str) -> tuple[str, str]:
     token = new_session_token()
     expires_at = (
-        datetime.now(UTC) + timedelta(seconds=services.settings.session_ttl_seconds)
+        datetime.now(timezone.utc) + timedelta(seconds=services.settings.session_ttl_seconds)
     ).isoformat().replace("+00:00", "Z")
     services.state.create_session(token=token, username=username, expires_at=expires_at)
     return token, expires_at

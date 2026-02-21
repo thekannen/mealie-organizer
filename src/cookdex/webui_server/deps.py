@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,7 @@ def _expired(expires_at: str) -> bool:
         dt = _parse_iso(expires_at)
     except (ValueError, TypeError):
         return True
-    return dt <= datetime.now(UTC)
+    return dt <= datetime.now(timezone.utc)
 
 
 def require_services(request: Request) -> Services:
