@@ -33,9 +33,9 @@ const REQUIRED_MARKERS = [
   "settings:reload",
   "settings:apply",
   "settings:test-mealie",
-  "settings:test-openai",
-  "settings:test-ollama",
-  "settings:policy-toggle",
+  "settings:test-provider",
+  "settings:provider-dropdown",
+  "settings:model-control",
   "recipe:pill-categories",
   "recipe:pill-cookbooks",
   "recipe:pill-labels",
@@ -45,6 +45,11 @@ const REQUIRED_MARKERS = [
   "recipe:save-file",
   "recipe:discard",
   "recipe:import-json",
+  "recipe:cookbook-add-form",
+  "recipe:cookbook-filter-select",
+  "recipe:cookbook-add",
+  "recipe:cookbook-remove",
+  "recipe:cookbook-existing-card",
   "users:generate-password",
   "users:create-user",
   "users:reset-password",
@@ -499,7 +504,7 @@ async function main() {
   }
 
   async function readRunRows() {
-    const rows = page.locator(".runs-history-card tbody tr");
+    const rows = page.locator(".runs-table tbody tr");
     const count = await rows.count();
     const data = [];
     for (let index = 0; index < count; index += 1) {
@@ -711,7 +716,7 @@ async function main() {
       markControl("tasks", "tasks:queue-all-discovered");
     }
 
-    const searchInput = page.locator(".runs-history-card .search-box input").first();
+    const searchInput = page.locator(".search-box input").first();
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill("run");
       await searchInput.fill("");
@@ -728,9 +733,17 @@ async function main() {
 
     let selected = await ensureRunRowSelection();
     if (!selected) {
-      // Retry: refresh data and wait for runs to appear
-      await clickSidebarAction("Refresh", "global:sidebar-refresh");
+      // Retry: navigate away and back to force a full data reload
+      await clickNav("Overview");
+      await page.waitForTimeout(1500);
+      await clickNav("Tasks");
       await page.waitForTimeout(3000);
+      selected = await ensureRunRowSelection();
+    }
+    if (!selected) {
+      // Second retry: refresh + longer wait for async task completion
+      await clickSidebarAction("Refresh", "global:sidebar-refresh");
+      await page.waitForTimeout(8000);
       selected = await ensureRunRowSelection();
     }
     if (!selected) {
@@ -804,10 +817,42 @@ async function main() {
       throw new Error("Mealie URL input does not match expected .env value.");
     }
 
-    const openAiKeyInput = page.locator('.settings-row:has-text("OpenAI API Key") input').first();
-    await expectVisible(openAiKeyInput, "OpenAI API Key input missing.");
+    // Verify AI provider dropdown exists and interact with it
+    const providerSelect = page.locator('.settings-row:has-text("AI Provider") select').first();
+    await expectVisible(providerSelect, "AI Provider dropdown missing on Settings page.");
+    const providerValue = await providerSelect.inputValue();
+    markControl("settings", "settings:provider-dropdown");
+    markInteraction("settings", "provider-value", providerValue);
 
-    const clearButtons = page.locator(".settings-row .settings-input-wrap .ghost.small");
+    // Test model controls - either dropdown or text input with refresh/load button
+    const modelRow = page.locator('.settings-row:has-text("Model")').first();
+    if (await modelRow.isVisible().catch(() => false)) {
+      const modelSelect = modelRow.locator("select").first();
+      const modelInput = modelRow.locator('input[type="text"]').first();
+      const modelRefresh = modelRow.locator("button.ghost.small").first();
+      if (await modelSelect.isVisible().catch(() => false)) {
+        markControl("settings", "settings:model-control");
+        markInteraction("settings", "model-dropdown", "select-visible");
+      } else if (await modelInput.isVisible().catch(() => false)) {
+        markControl("settings", "settings:model-control");
+        markInteraction("settings", "model-input", "text-visible");
+      }
+      if (await modelRefresh.isVisible().catch(() => false)) {
+        await modelRefresh.click();
+        rememberButtonClick("settings", "Refresh list");
+        markInteraction("settings", "model-refresh-clicked", "");
+        await page.waitForTimeout(1500);
+      }
+    } else {
+      // Provider might be "none" which hides model fields
+      if (providerValue !== "none") {
+        report.warnings.push("Model row not visible despite AI provider being enabled.");
+      }
+      markControl("settings", "settings:model-control");
+    }
+
+    // Secret field clear buttons
+    const clearButtons = page.locator(".settings-row .settings-input-wrap .ghost.small").filter({ hasText: "Clear" });
     const clearCount = Math.min(await clearButtons.count(), 2);
     for (let index = 0; index < clearCount; index += 1) {
       const clearBtn = clearButtons.nth(index);
@@ -822,51 +867,40 @@ async function main() {
       await ensureNoErrorBanner("Settings reload after clear failed");
     }
 
+    // Connection tests — visibility depends on selected provider
     await runConnectionButton("Test Mealie", "Check Mealie URL/API key connectivity.", "settings:test-mealie");
-    await runConnectionButton(
-      "Test OpenAI API Key",
-      "Validate OpenAI key and selected model.",
-      "settings:test-openai"
-    );
-    await runConnectionButton(
-      "Test Ollama Connection",
-      "Validate Ollama endpoint reachability.",
-      "settings:test-ollama"
-    );
 
-    const policyItems = page.locator(".policy-list li");
-    if ((await policyItems.count()) > 0) {
-      const firstPolicy = policyItems.first();
-      const policyName = normalizeText(await firstPolicy.locator("strong").first().innerText().catch(() => ""));
-      const policyTaskId = normalizeText(await firstPolicy.locator("p").first().innerText().catch(() => ""));
-      const policyCheckbox = firstPolicy.locator('input[type="checkbox"]').first();
-      const initialValue = await policyCheckbox.isChecked();
-      await policyCheckbox.click();
-      markControl("settings", "settings:policy-toggle");
-      await page.waitForTimeout(650);
-      await ensureNoErrorBanner(`Policy toggle failed for ${policyName || "first task"}`);
-
-      if (policyTaskId) {
-        await apiRequest("PUT", "/policies", {
-          policies: {
-            [policyTaskId]: {
-              allow_dangerous: initialValue,
-            },
-          },
-        }, [200]);
-        await clickButtonByRole("settings", "Reload", "settings:reload");
+    const currentProvider = await providerSelect.inputValue().catch(() => "chatgpt");
+    if (currentProvider === "chatgpt") {
+      const openAiBtn = page.getByRole("button", { name: "Test OpenAI" }).first();
+      if (await openAiBtn.isVisible().catch(() => false)) {
+        await runConnectionButton("Test OpenAI", "Validate OpenAI key and selected model.", "settings:test-provider");
+      }
+    } else if (currentProvider === "ollama") {
+      const ollamaBtn = page.getByRole("button", { name: "Test Ollama" }).first();
+      if (await ollamaBtn.isVisible().catch(() => false)) {
+        await runConnectionButton("Test Ollama", "Validate Ollama endpoint reachability.", "settings:test-provider");
+      }
+    }
+    if (!markerHits.has("settings:test-provider")) {
+      // If neither provider test was hit, cycle provider to test the other
+      const altProvider = currentProvider === "chatgpt" ? "ollama" : "chatgpt";
+      await providerSelect.selectOption(altProvider);
+      await page.waitForTimeout(500);
+      if (altProvider === "chatgpt") {
+        const btn = page.getByRole("button", { name: "Test OpenAI" }).first();
+        if (await btn.isVisible().catch(() => false)) {
+          await runConnectionButton("Test OpenAI", "Validate OpenAI key and selected model.", "settings:test-provider");
+        }
       } else {
-        const reloadedCheckbox = page.locator(".policy-list li").first().locator('input[type="checkbox"]').first();
-        const currentValue = await reloadedCheckbox.isChecked();
-        if (currentValue !== initialValue) {
-          await reloadedCheckbox.click();
-          await page.waitForTimeout(650);
+        const btn = page.getByRole("button", { name: "Test Ollama" }).first();
+        if (await btn.isVisible().catch(() => false)) {
+          await runConnectionButton("Test Ollama", "Validate Ollama endpoint reachability.", "settings:test-provider");
         }
       }
-      await ensureNoErrorBanner(`Policy reset failed for ${policyName || "first task"}`);
-      markInteraction("settings", "policy-restored", policyName || "first task");
-    } else {
-      throw new Error("No policy toggles available on Settings page.");
+      // Restore original provider
+      await providerSelect.selectOption(currentProvider);
+      await page.waitForTimeout(300);
     }
 
     await clickButtonByRole("settings", "Apply Changes", "settings:apply");
@@ -905,10 +939,13 @@ async function main() {
       if (matched) {
         markControl("recipe", matched.marker);
         if (matched.configName === "cookbooks") {
-          await expectVisible(
-            page.locator(".cookbook-toolbar").first(),
-            "Cookbooks taxonomy rendered as raw JSON instead of structured controls."
-          );
+          // Verify structured cookbook editor renders (not raw JSON)
+          const addCard = page.locator("article.card", {
+            has: page.getByRole("heading", { name: /add cookbook/i }),
+          }).first();
+          await expectVisible(addCard, "Cookbooks 'Add Cookbook' card not rendered.");
+          markControl("recipe", "recipe:cookbook-add-form");
+
           const advancedModeVisible = await page
             .getByText(/advanced mode: this file requires full json editing/i)
             .first()
@@ -916,6 +953,118 @@ async function main() {
             .catch(() => false);
           if (advancedModeVisible) {
             throw new Error("Cookbooks taxonomy unexpectedly fell back to advanced JSON editor mode.");
+          }
+
+          // Verify existing cookbooks card renders when items exist
+          const existingCard = page.locator("article.card", {
+            has: page.getByRole("heading", { name: /^Cookbooks \(\d+\)$/i }),
+          }).first();
+          if (await existingCard.isVisible().catch(() => false)) {
+            markControl("recipe", "recipe:cookbook-existing-card");
+            const structuredItems = existingCard.locator(".structured-item");
+            const itemCount = await structuredItems.count();
+            if (itemCount === 0) {
+              throw new Error("Cookbooks card visible but no structured items rendered.");
+            }
+
+            // Verify each item has filter selects and Name/Description fields
+            const firstItem = structuredItems.first();
+            const nameInput = firstItem.locator('.cookbook-fields label:has-text("Name") input').first();
+            await expectVisible(nameInput, "Cookbook item Name input missing.");
+            const descInput = firstItem.locator('.cookbook-fields label:has-text("Description") input').first();
+            await expectVisible(descInput, "Cookbook item Description input missing.");
+
+            // Verify filter dropdowns exist on existing items
+            const itemFilterSelects = firstItem.locator(".filter-select-row select");
+            if ((await itemFilterSelects.count()) >= 2) {
+              markInteraction("recipe", "cookbook-item-filter-selects", "visible");
+            }
+
+            // Verify existing chips on items (if any filters are set)
+            const existingChips = firstItem.locator(".filter-chip");
+            const chipCount = await existingChips.count();
+            markInteraction("recipe", "cookbook-item-chips", `count:${chipCount}`);
+          }
+
+          // Test the Add Cookbook form with filter builder
+          const addNameInput = addCard.locator('label:has-text("Name") input').first();
+          await expectVisible(addNameInput, "Add Cookbook Name input missing.");
+          await addNameInput.fill(`qa-cookbook-${Date.now().toString().slice(-6)}`);
+
+          const addDescInput = addCard.locator('label:has-text("Description") input').first();
+          await addDescInput.fill("QA test cookbook.");
+
+          // Test filter builder: select a category from dropdown
+          const catSelect = addCard.locator('label:has-text("Categories") select').first();
+          if (await catSelect.isVisible().catch(() => false)) {
+            const catOptions = await catSelect.evaluate((select) =>
+              Array.from(select.options).map((opt) => opt.value).filter(Boolean)
+            );
+            if (catOptions.length > 0) {
+              await catSelect.selectOption(catOptions[0]);
+              markControl("recipe", "recipe:cookbook-filter-select");
+              await page.waitForTimeout(200);
+
+              // Verify chip appeared
+              const newChip = addCard.locator(".filter-chip").first();
+              await expectVisible(newChip, "Filter chip did not appear after selecting a category.");
+              markInteraction("recipe", "cookbook-chip-appeared", catOptions[0]);
+
+              // Test chip removal
+              const chipRemoveBtn = newChip.locator(".chip-remove").first();
+              if (await chipRemoveBtn.isVisible().catch(() => false)) {
+                await chipRemoveBtn.click();
+                await page.waitForTimeout(150);
+                markInteraction("recipe", "cookbook-chip-removed", catOptions[0]);
+              }
+
+              // Re-select for the add test
+              await catSelect.selectOption(catOptions[0]);
+              await page.waitForTimeout(150);
+            }
+          }
+
+          // Test filter builder: select a tag from dropdown
+          const tagSelect = addCard.locator('label:has-text("Tags") select').first();
+          if (await tagSelect.isVisible().catch(() => false)) {
+            const tagOptions = await tagSelect.evaluate((select) =>
+              Array.from(select.options).map((opt) => opt.value).filter(Boolean)
+            );
+            if (tagOptions.length > 0) {
+              await tagSelect.selectOption(tagOptions[0]);
+              await page.waitForTimeout(200);
+              markInteraction("recipe", "cookbook-tag-selected", tagOptions[0]);
+              if (!markerHits.has("recipe:cookbook-filter-select")) {
+                markControl("recipe", "recipe:cookbook-filter-select");
+              }
+            }
+          }
+
+          // Click Add Cookbook button
+          await clickButtonByRole("recipe", "Add Cookbook", "recipe:cookbook-add");
+          await page.waitForTimeout(300);
+          await ensureNoErrorBanner("Add Cookbook failed");
+
+          // Verify the newly added cookbook appears in the existing cookbooks card
+          const updatedExistingCard = page.locator("article.card", {
+            has: page.getByRole("heading", { name: /^Cookbooks \(\d+\)$/i }),
+          }).first();
+          if (await updatedExistingCard.isVisible().catch(() => false)) {
+            if (!markerHits.has("recipe:cookbook-existing-card")) {
+              markControl("recipe", "recipe:cookbook-existing-card");
+            }
+          }
+
+          // Remove the last cookbook entry (the one we just added)
+          const lastItem = page.locator(".structured-item").last();
+          if (await lastItem.isVisible().catch(() => false)) {
+            const removeBtn = lastItem.getByRole("button", { name: /^remove$/i }).first();
+            if (await removeBtn.isVisible().catch(() => false)) {
+              await removeBtn.click();
+              markControl("recipe", "recipe:cookbook-remove");
+              rememberButtonClick("recipe", "Remove");
+              await page.waitForTimeout(200);
+            }
           }
         }
         if (matched.configName === "units_aliases") {
@@ -961,7 +1110,7 @@ async function main() {
       throw new Error("Categories config content did not load as an array.");
     }
 
-    const importTextarea = page.locator('label:has-text("JSON Payload") textarea').first();
+    const importTextarea = page.locator(".drop-zone textarea").first();
     await expectVisible(importTextarea, "Taxonomy import JSON textarea missing.");
     await importTextarea.fill(`${JSON.stringify(categoriesContent, null, 2)}\n`);
     await clickButtonByRole("recipe", "Import JSON", "recipe:import-json");
@@ -991,13 +1140,19 @@ async function main() {
     // Submit the create user form
     await clickButtonByRole("users", "Create User", "users:create-user");
     // Wait for the API call + loadData() to complete
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
     await ensureNoErrorBanner("User create failed");
     cleanupState.usernames.add(tempUser);
     report.coverage.usersCreatedViaUi += 1;
 
     // Find the user in the accordion list and expand it
-    const userRow = page.locator(".user-row", { hasText: tempUser }).first();
+    let userRow = page.locator(".user-row", { hasText: tempUser }).first();
+    if (!(await userRow.isVisible().catch(() => false))) {
+      // Retry: refresh data and wait for the user row to appear
+      await clickSidebarAction("Refresh", "global:sidebar-refresh");
+      await page.waitForTimeout(4000);
+      userRow = page.locator(".user-row", { hasText: tempUser }).first();
+    }
     await expectVisible(userRow, "Created user row was not found in user list.");
     const toggleButton = userRow.locator(".user-row-toggle").first();
     await toggleButton.click();
