@@ -121,6 +121,7 @@ def main():
         }
     )
 
+    print("[start] Fetching recipes, categories, and tags from API ...", flush=True)
     recipes = get_json(session, f"{mealie_url}/recipes?perPage=1000")
     categories = get_json(session, f"{mealie_url}/organizers/categories?perPage=1000")
     tags = get_json(session, f"{mealie_url}/organizers/tags?perPage=1000")
@@ -183,8 +184,7 @@ def main():
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print("[done] Taxonomy audit report written to", output_path)
-    print("[summary]", json.dumps(report["summary"], indent=2))
-    print(f"[summary] problematic tags: {len(problematic_tags)}")
+    print("[summary] " + json.dumps({**report["summary"], "problematic_tags": len(problematic_tags)}), flush=True)
 
 
 if __name__ == "__main__":

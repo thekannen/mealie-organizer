@@ -119,14 +119,15 @@ class RecipeNameNormalizer:
             except Exception as exc:
                 return action, False, str(exc)
 
+        total = len(actions)
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
             futures = {pool.submit(_patch, a): a for a in actions}
-            for fut in concurrent.futures.as_completed(futures):
+            for idx, fut in enumerate(concurrent.futures.as_completed(futures), 1):
                 action, ok, err = fut.result()
                 if ok:
                     applied += 1
                     action_log.append({"status": "ok", "slug": action.slug, "old_name": action.old_name, "new_name": action.new_name})
-                    print(f"[ok] {action.slug}: '{action.old_name}' → '{action.new_name}'", flush=True)
+                    print(f"[ok] {idx}/{total} {action.slug}: '{action.old_name}' → '{action.new_name}'", flush=True)
                 else:
                     failed += 1
                     action_log.append({"status": "error", "slug": action.slug, "error": err})

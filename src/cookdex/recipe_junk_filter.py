@@ -195,7 +195,7 @@ class RecipeJunkFilter:
         deleted = 0
         failed = 0
 
-        for action in actions:
+        for idx, action in enumerate(actions, 1):
             entry: dict[str, Any] = {
                 "slug": action.slug,
                 "name": action.name,
@@ -207,7 +207,7 @@ class RecipeJunkFilter:
                     self.client.delete_recipe(action.slug)
                     entry["status"] = "deleted"
                     deleted += 1
-                    print(f"[ok] deleted '{action.name}' ({action.slug}) — {action.reason}", flush=True)
+                    print(f"[ok] {idx}/{len(actions)} {action.slug} reason={action.reason_code}", flush=True)
                 except Exception as exc:
                     entry["status"] = "error"
                     entry["error"] = str(exc)
@@ -215,7 +215,7 @@ class RecipeJunkFilter:
                     print(f"[error] {action.slug}: {exc}", flush=True)
             else:
                 entry["status"] = "planned"
-                print(f"[plan] '{action.name}' ({action.slug}) — {action.reason}", flush=True)
+                print(f"[plan] {action.slug}: '{action.name}' — {action.reason}", flush=True)
             action_log.append(entry)
 
         report: dict[str, Any] = {

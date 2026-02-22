@@ -6,15 +6,15 @@ instance with DRY_RUN=true and reports PASS / SKIP / FAIL per variant.
 
 Variants include:
   - Default (API) mode for all tasks
-  - DB mode (use_db=True) for tasks that support it — skipped if DB not configured
-  - LLM categorize — skipped if no AI provider is configured
+  - DB mode variants — skipped if MEALIE_DB_TYPE is not configured
+  - LLM categorize (tag-categorize/ai) — skipped unless --include-all + LLM configured
 
 Usage:
     python scripts/qa/run_task_dryrun_pipeline.py [--tasks task1,task2,...] [--timeout 120]
 
 Defaults:
     Runs all registered tasks plus DB-mode variants.  Pass --include-all to also
-    run the categorize (LLM) task.
+    run the AI categorization variant.
 """
 from __future__ import annotations
 
@@ -40,13 +40,12 @@ load_env_file(ENV_FILE)
 
 # ---------------------------------------------------------------------------
 # Variant definitions
-# Each variant is a named test case: (task_id, label_suffix, options, skip_reason_fn)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Variant:
     task_id: str
-    label: str          # display label, e.g. "rule-tag (api)" or "rule-tag (db)"
+    label: str          # display label, e.g. "health-check (quality/db)"
     options: dict
     skip_reason: Optional[str] = None  # non-None → skip with this message
 
@@ -64,57 +63,74 @@ def _llm_skip() -> Optional[str]:
 
 
 def _build_variants() -> list[Variant]:
-    """Build the full list of QA variants."""
+    """Build the full list of QA variants covering all task IDs and option paths."""
     variants: list[Variant] = []
 
-    # Tasks that are always safe and have no interesting mode splits
-    simple_tasks = [
-        "cookbook-sync",
-        "foods-cleanup",
-        "labels-sync",
-        "taxonomy-audit",
-        "taxonomy-refresh",
-        "tools-sync",
-        "units-cleanup",
-    ]
-    for tid in simple_tasks:
-        variants.append(Variant(task_id=tid, label=tid, options={}))
-
-    # ingredient-parse: limit to 5 recipes for speed
-    variants.append(Variant(
-        task_id="ingredient-parse",
-        label="ingredient-parse",
-        options={"max_recipes": 5},
-    ))
-
-    # data-maintenance: skip AI stage, limit stages
+    # ── data-maintenance ────────────────────────────────────────────────────
+    # Quick subset: audit stages only (no writes needed)
     variants.append(Variant(
         task_id="data-maintenance",
-        label="data-maintenance",
-        options={"stages": "taxonomy,cookbooks,yield,quality,audit", "skip_ai": True},
+        label="data-maintenance (quality+audit)",
+        options={"stages": "quality,audit", "skip_ai": True},
+    ))
+    # Full pipeline minus AI categorization
+    variants.append(Variant(
+        task_id="data-maintenance",
+        label="data-maintenance (full/no-ai)",
+        options={"skip_ai": True},
+    ))
+    # continue_on_error path
+    variants.append(Variant(
+        task_id="data-maintenance",
+        label="data-maintenance (continue-on-error)",
+        options={"stages": "quality,audit", "skip_ai": True, "continue_on_error": True},
     ))
 
-    # recipe-quality — API mode
+    # ── clean-recipes ────────────────────────────────────────────────────────
+    # All three ops together (routes through data_maintenance)
     variants.append(Variant(
-        task_id="recipe-quality",
-        label="recipe-quality (api)",
-        options={"nutrition_sample": 10},
+        task_id="clean-recipes",
+        label="clean-recipes (all-ops)",
+        options={"run_dedup": True, "run_junk": True, "run_names": True},
     ))
-    # recipe-quality — DB mode
+    # Dedup only (calls recipe_deduplicator directly)
     variants.append(Variant(
-        task_id="recipe-quality",
-        label="recipe-quality (db)",
-        options={"nutrition_sample": 10, "use_db": True},
-        skip_reason=_db_skip(),
+        task_id="clean-recipes",
+        label="clean-recipes (dedup-only)",
+        options={"run_dedup": True, "run_junk": False, "run_names": False},
+    ))
+    # Junk filter only with a specific reason
+    variants.append(Variant(
+        task_id="clean-recipes",
+        label="clean-recipes (junk/no-instructions)",
+        options={"run_dedup": False, "run_junk": True, "run_names": False, "reason": "no_instructions"},
+    ))
+    # Name normalizer only with force_all
+    variants.append(Variant(
+        task_id="clean-recipes",
+        label="clean-recipes (names/force-all)",
+        options={"run_dedup": False, "run_junk": False, "run_names": True, "force_all": True},
     ))
 
-    # yield-normalize — API mode
+    # ── ingredient-parse ─────────────────────────────────────────────────────
+    variants.append(Variant(
+        task_id="ingredient-parse",
+        label="ingredient-parse (max=5)",
+        options={"max_recipes": 5},
+    ))
+    # Higher confidence threshold
+    variants.append(Variant(
+        task_id="ingredient-parse",
+        label="ingredient-parse (conf=90, max=5)",
+        options={"max_recipes": 5, "confidence_threshold": 90},
+    ))
+
+    # ── yield-normalize ──────────────────────────────────────────────────────
     variants.append(Variant(
         task_id="yield-normalize",
         label="yield-normalize (api)",
         options={},
     ))
-    # yield-normalize — DB mode
     variants.append(Variant(
         task_id="yield-normalize",
         label="yield-normalize (db)",
@@ -122,26 +138,103 @@ def _build_variants() -> list[Variant]:
         skip_reason=_db_skip(),
     ))
 
-    # rule-tag — API mode (text_tags only)
+    # ── cleanup-duplicates ────────────────────────────────────────────────────
     variants.append(Variant(
-        task_id="rule-tag",
-        label="rule-tag (api)",
-        options={},
+        task_id="cleanup-duplicates",
+        label="cleanup-duplicates (both)",
+        options={"target": "both"},
     ))
-    # rule-tag — DB mode (ingredient + text + tool)
     variants.append(Variant(
-        task_id="rule-tag",
-        label="rule-tag (db)",
-        options={"use_db": True},
-        skip_reason=_db_skip(),
+        task_id="cleanup-duplicates",
+        label="cleanup-duplicates (foods)",
+        options={"target": "foods"},
+    ))
+    variants.append(Variant(
+        task_id="cleanup-duplicates",
+        label="cleanup-duplicates (units)",
+        options={"target": "units"},
     ))
 
-    # categorize — LLM mode (opt-in via --include-all)
+    # ── tag-categorize ────────────────────────────────────────────────────────
+    # Rule-based via API
     variants.append(Variant(
-        task_id="categorize",
-        label="categorize (llm)",
-        options={},
+        task_id="tag-categorize",
+        label="tag-categorize (rules/api)",
+        options={"method": "rules"},
+    ))
+    # Rule-based via DB
+    variants.append(Variant(
+        task_id="tag-categorize",
+        label="tag-categorize (rules/db)",
+        options={"method": "rules", "use_db": True},
+        skip_reason=_db_skip(),
+    ))
+    # AI categorization — opt-in only
+    variants.append(Variant(
+        task_id="tag-categorize",
+        label="tag-categorize (ai)",
+        options={"method": "ai"},
         skip_reason="skipped by default — pass --include-all to enable",
+    ))
+
+    # ── taxonomy-refresh ──────────────────────────────────────────────────────
+    # Default: sync labels + tools via data_maintenance
+    variants.append(Variant(
+        task_id="taxonomy-refresh",
+        label="taxonomy-refresh (labels+tools)",
+        options={"sync_labels": True, "sync_tools": True},
+    ))
+    # Labels only
+    variants.append(Variant(
+        task_id="taxonomy-refresh",
+        label="taxonomy-refresh (labels-only)",
+        options={"sync_labels": True, "sync_tools": False},
+    ))
+    # Tools only
+    variants.append(Variant(
+        task_id="taxonomy-refresh",
+        label="taxonomy-refresh (tools-only)",
+        options={"sync_labels": False, "sync_tools": True},
+    ))
+    # Direct taxonomy_manager call with replace mode (no labels/tools)
+    variants.append(Variant(
+        task_id="taxonomy-refresh",
+        label="taxonomy-refresh (direct/replace)",
+        options={"sync_labels": False, "sync_tools": False, "mode": "replace"},
+    ))
+
+    # ── cookbook-sync ─────────────────────────────────────────────────────────
+    variants.append(Variant(
+        task_id="cookbook-sync",
+        label="cookbook-sync",
+        options={},
+    ))
+
+    # ── health-check ──────────────────────────────────────────────────────────
+    # Both scopes, small nutrition sample for speed
+    variants.append(Variant(
+        task_id="health-check",
+        label="health-check (both, sample=10)",
+        options={"scope_quality": True, "scope_taxonomy": True, "nutrition_sample": 10},
+    ))
+    # Quality audit only via API
+    variants.append(Variant(
+        task_id="health-check",
+        label="health-check (quality/api, sample=10)",
+        options={"scope_quality": True, "scope_taxonomy": False, "nutrition_sample": 10},
+    ))
+    # Quality audit via DB (exact nutrition, no sampling)
+    variants.append(Variant(
+        task_id="health-check",
+        label="health-check (quality/db)",
+        options={"scope_quality": True, "scope_taxonomy": False, "use_db": True},
+        skip_reason=_db_skip(),
+    ))
+    # Taxonomy audit only
+    variants.append(Variant(
+        task_id="health-check",
+        label="health-check (taxonomy-only)",
+        options={"scope_quality": False, "scope_taxonomy": True},
     ))
 
     return variants
@@ -208,13 +301,13 @@ def main() -> int:
     parser.add_argument(
         "--include-all",
         action="store_true",
-        help="Include opt-in tasks like categorize (LLM).",
+        help="Include opt-in tasks like tag-categorize (AI).",
     )
     parser.add_argument(
         "--timeout",
         type=int,
-        default=120,
-        help="Per-task timeout in seconds (default 120).",
+        default=180,
+        help="Per-task timeout in seconds (default 180).",
     )
     args = parser.parse_args()
 
@@ -225,10 +318,10 @@ def main() -> int:
         wanted = {t.strip() for t in args.tasks.split(",") if t.strip()}
         variants = [v for v in all_variants if v.task_id in wanted]
     elif args.include_all:
-        # Reveal the categorize variant (clear its default skip)
+        # Reveal the AI categorization variant
         variants = []
         for v in all_variants:
-            if v.task_id == "categorize" and v.skip_reason and "pass --include-all" in v.skip_reason:
+            if v.task_id == "tag-categorize" and v.options.get("method") == "ai" and v.skip_reason and "pass --include-all" in v.skip_reason:
                 variants.append(Variant(
                     task_id=v.task_id,
                     label=v.label,

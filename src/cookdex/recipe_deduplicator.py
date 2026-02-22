@@ -150,6 +150,7 @@ class RecipeDeduplicator:
         action_log: list[dict] = []
         deleted = 0
         failed = 0
+        action_idx = 0
 
         for group in groups:
             keeper_slug = str(group.keeper.get("slug") or "")
@@ -157,6 +158,7 @@ class RecipeDeduplicator:
             for dupe in group.duplicates:
                 dupe_slug = str(dupe.get("slug") or "")
                 dupe_name = str(dupe.get("name") or "")
+                action_idx += 1
                 entry: dict[str, Any] = {
                     "canonical_url": group.canonical_url,
                     "keeper_slug": keeper_slug,
@@ -169,7 +171,7 @@ class RecipeDeduplicator:
                         self.client.delete_recipe(dupe_slug)
                         entry["status"] = "deleted"
                         deleted += 1
-                        print(f"[ok] deleted '{dupe_name}' ({dupe_slug}), kept '{keeper_name}'", flush=True)
+                        print(f"[ok] {action_idx}/{total_dupes} {dupe_slug} kept={keeper_slug}", flush=True)
                     except Exception as exc:
                         entry["status"] = "error"
                         entry["error"] = str(exc)
@@ -177,11 +179,7 @@ class RecipeDeduplicator:
                         print(f"[error] {dupe_slug}: {exc}", flush=True)
                 else:
                     entry["status"] = "planned"
-                    print(
-                        f"[plan] would delete '{dupe_name}' ({dupe_slug}), "
-                        f"keeping '{keeper_name}' — url: {group.canonical_url}",
-                        flush=True,
-                    )
+                    print(f"[plan] {dupe_slug}: would delete '{dupe_name}', keeping '{keeper_name}'", flush=True)
                 action_log.append(entry)
 
         report: dict[str, Any] = {
