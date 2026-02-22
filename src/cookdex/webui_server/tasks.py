@@ -31,6 +31,7 @@ class TaskDefinition:
     task_id: str
     title: str
     description: str
+    group: str = ""
     options: list[OptionSpec] = field(default_factory=list)
     build: BuildFn | None = None
 
@@ -321,6 +322,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="categorize",
                 title="Categorize Recipes",
+                group="AI & Tagging",
                 description="Classify recipes into categories/tags/tools using the configured provider.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -333,6 +335,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="taxonomy-refresh",
                 title="Refresh Taxonomy",
+                group="Taxonomy",
                 description="Sync categories and tags from taxonomy source files.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -346,6 +349,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="taxonomy-audit",
                 title="Taxonomy Audit",
+                group="Analysis",
                 description="Generate taxonomy diagnostics report.",
                 options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True)],
                 build=_build_taxonomy_audit,
@@ -355,6 +359,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="cookbook-sync",
                 title="Cookbook Sync",
+                group="Content Sync",
                 description="Create/update cookbooks based on config rules.",
                 options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True)],
                 build=_build_cookbook_sync,
@@ -364,6 +369,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="ingredient-parse",
                 title="Ingredient Parser",
+                group="Parsing",
                 description="Parse ingredients with configured parser fallback.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -380,6 +386,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="foods-cleanup",
                 title="Foods Cleanup",
+                group="Cleanup",
                 description="Merge duplicate food entries and cleanup noise.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -392,6 +399,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="units-cleanup",
                 title="Units Cleanup",
+                group="Cleanup",
                 description="Normalize unit aliases and merge duplicate units.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -404,6 +412,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="labels-sync",
                 title="Labels Sync",
+                group="Content Sync",
                 description="Create/delete labels from taxonomy config.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -416,6 +425,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="tools-sync",
                 title="Tools Sync",
+                group="Content Sync",
                 description="Create/merge tools from taxonomy config.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -428,6 +438,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="data-maintenance",
                 title="Data Maintenance Pipeline",
+                group="Pipeline",
                 description="Run staged maintenance pipeline with optional write cleanups.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
@@ -444,6 +455,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="rule-tag",
                 title="Rule-Based Tagger",
+                group="AI & Tagging",
                 description=(
                     "Tag and tool-assign recipes using regex rules — no LLM required. "
                     "API mode (default): runs text_tags rules via the Mealie API. "
@@ -488,6 +500,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="recipe-quality",
                 title="Recipe Quality Audit",
+                group="Analysis",
                 description=(
                     "Score all recipes on gold medallion dimensions "
                     "(category/tags/tools/description/time/yield) and estimate nutrition coverage."
@@ -520,6 +533,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="yield-normalize",
                 title="Yield Normalizer",
+                group="Cleanup",
                 description=(
                     "Fill missing recipe yield text from servings count, "
                     "or parse yield text to set numeric servings."
@@ -561,6 +575,7 @@ class TaskRegistry:
                     "task_id": task.task_id,
                     "title": task.title,
                     "description": task.description,
+                    "group": task.group,
                     "options": [
                         {
                             "key": option.key,

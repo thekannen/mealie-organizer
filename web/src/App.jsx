@@ -151,6 +151,20 @@ export default function App() {
     return map;
   }, [tasks]);
 
+  const TASK_GROUP_ORDER = ["AI & Tagging", "Analysis", "Taxonomy", "Content Sync", "Cleanup", "Parsing", "Pipeline"];
+
+  const taskGroups = useMemo(() => {
+    const grouped = new Map();
+    for (const task of tasks) {
+      const g = task.group || "Other";
+      if (!grouped.has(g)) grouped.set(g, []);
+      grouped.get(g).push(task);
+    }
+    return [...grouped.entries()].sort(
+      (a, b) => (TASK_GROUP_ORDER.indexOf(a[0]) + 1 || 99) - (TASK_GROUP_ORDER.indexOf(b[0]) + 1 || 99)
+    );
+  }, [tasks]);
+
   const envList = useMemo(
     () =>
       Object.values(envSpecs || {}).sort((a, b) => {
@@ -1241,21 +1255,24 @@ export default function App() {
             <p className="muted">Queue one-off tasks for immediate execution.</p>
 
             <div className="run-form">
-              <label className="field">
-                <span>Task</span>
-                <select value={selectedTask} onChange={(event) => setSelectedTask(event.target.value)}>
-                  <option value="">Choose task</option>
-                  {tasks.map((task) => (
-                    <option key={task.task_id} value={task.task_id}>
-                      {task.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {selectedTaskDef?.description ? (
-                <p className="muted tiny" style={{ marginTop: 0 }}>{selectedTaskDef.description}</p>
-              ) : null}
+              <div className="task-picker">
+                {taskGroups.map(([group, groupTasks]) => (
+                  <div key={group} className="task-group">
+                    <p className="task-group-label">{group}</p>
+                    {groupTasks.map((task) => (
+                      <button
+                        key={task.task_id}
+                        type="button"
+                        className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
+                        onClick={() => setSelectedTask(task.task_id)}
+                      >
+                        <span className="task-item-title">{task.title}</span>
+                        <span className="task-item-desc">{task.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
 
               {(selectedTaskDef?.options || []).length > 0 ? (
                 <div className="option-grid">
@@ -1322,10 +1339,12 @@ export default function App() {
                   onChange={(event) => setScheduleForm((prev) => ({ ...prev, task_id: event.target.value }))}
                 >
                   <option value="">Select task</option>
-                  {tasks.map((task) => (
-                    <option key={task.task_id} value={task.task_id}>
-                      {task.title}
-                    </option>
+                  {taskGroups.map(([group, groupTasks]) => (
+                    <optgroup key={group} label={group}>
+                      {groupTasks.map((task) => (
+                        <option key={task.task_id} value={task.task_id}>{task.title}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
