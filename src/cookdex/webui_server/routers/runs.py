@@ -28,7 +28,7 @@ async def list_tasks(
         for option in task.get("options", []):
             if db_configured and option["key"] == "use_db":
                 option["default"] = True
-            if task["task_id"] == "categorize" and option["key"] == "provider":
+            if task["task_id"] == "tag-categorize" and option["key"] == "provider":
                 provider_choices = []
                 if has_openai:
                     provider_choices.append({"value": "chatgpt", "label": "ChatGPT (OpenAI)"})

@@ -18,6 +18,10 @@ def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePay
         if seconds <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
         data: dict[str, Any] = {"seconds": seconds}
+        if request.start_at:
+            data["start_at"] = request.start_at.strip()
+        if request.end_at:
+            data["end_at"] = request.end_at.strip()
     else:  # once
         run_at = str(request.run_at or "").strip()
         if not run_at:
@@ -36,11 +40,18 @@ def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePay
 def _schedule_payload_from_update(existing: dict[str, Any], request: ScheduleUpdateRequest) -> SchedulePayload:
     kind = request.kind or str(existing["schedule_kind"])
     if kind == "interval":
-        existing_seconds = int(dict(existing["schedule_data"]).get("seconds", 0))
+        existing_data = dict(existing["schedule_data"])
+        existing_seconds = int(existing_data.get("seconds", 0))
         seconds = request.seconds if request.seconds is not None else existing_seconds
         if int(seconds) <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
         data: dict[str, Any] = {"seconds": int(seconds)}
+        start_at = request.start_at if request.start_at is not None else existing_data.get("start_at")
+        end_at = request.end_at if request.end_at is not None else existing_data.get("end_at")
+        if start_at:
+            data["start_at"] = str(start_at).strip()
+        if end_at:
+            data["end_at"] = str(end_at).strip()
     else:  # once
         existing_run_at = str(dict(existing["schedule_data"]).get("run_at", ""))
         run_at = str(request.run_at if request.run_at is not None else existing_run_at).strip()

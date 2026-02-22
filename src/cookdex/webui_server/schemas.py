@@ -78,6 +78,8 @@ class ScheduleCreateRequest(BaseModel):
     enabled: bool = True
     seconds: int | None = None
     run_at: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
 
 
 class ScheduleUpdateRequest(BaseModel):
@@ -88,6 +90,8 @@ class ScheduleUpdateRequest(BaseModel):
     enabled: bool | None = None
     seconds: int | None = None
     run_at: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
 
 
 class SettingsUpdateRequest(BaseModel):

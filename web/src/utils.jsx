@@ -513,8 +513,8 @@ export async function api(path, options = {}) {
 export function fieldFromOption(option, value, onChange, allValues = {}) {
   if (option.hidden) return null;
   if (option.hidden_when) {
-    const { key, value: trigger } = option.hidden_when;
-    if (allValues[key] === trigger) return null;
+    const conditions = Array.isArray(option.hidden_when) ? option.hidden_when : [option.hidden_when];
+    if (conditions.some(({ key, value: trigger }) => allValues[key] === trigger)) return null;
   }
 
   const labelClass = option.dangerous ? "danger-text" : "";

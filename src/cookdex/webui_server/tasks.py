@@ -14,7 +14,7 @@ class OptionSpec:
     required: bool = False
     dangerous: bool = False
     help_text: str = ""
-    hidden_when: dict[str, Any] | None = None
+    hidden_when: dict[str, Any] | list[dict[str, Any]] | None = None
     choices: list[dict[str, Any]] | None = None
     multi: bool = False
 
@@ -185,14 +185,18 @@ def _build_health_check(options: dict[str, Any]) -> TaskExecution:
     env, dangerous = _common_env(options)
     scope_quality = _bool_option(options, "scope_quality", True)
     scope_taxonomy = _bool_option(options, "scope_taxonomy", True)
+    use_db = _bool_option(options, "use_db", False)
+    nutrition_sample = _int_option(options, "nutrition_sample")
 
     if scope_quality and scope_taxonomy:
         cmd = _py_module("cookdex.data_maintenance", "--stages", "quality,audit")
+        if use_db:
+            cmd.append("--use-db")
+        if nutrition_sample is not None:
+            cmd.extend(["--nutrition-sample", str(nutrition_sample)])
         return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
     if scope_quality:
-        use_db = _bool_option(options, "use_db", False)
-        nutrition_sample = _int_option(options, "nutrition_sample")
         cmd = _py_module("cookdex.recipe_quality_audit")
         if nutrition_sample is not None:
             cmd.extend(["--nutrition-sample", str(nutrition_sample)])
@@ -598,7 +602,7 @@ class TaskRegistry:
                         "provider",
                         "AI Provider",
                         "string",
-                        help_text="Override the default AI provider (e.g. openai, anthropic). Leave blank to use the configured default.",
+                        help_text="Override the AI provider. Leave blank to use the configured default.",
                         hidden_when={"key": "method", "value": "rules"},
                     ),
                     OptionSpec(
@@ -706,7 +710,10 @@ class TaskRegistry:
                         "integer",
                         default=200,
                         help_text="Number of recipes to sample for nutrition coverage estimate (API mode only).",
-                        hidden_when={"key": "scope_quality", "value": False},
+                        hidden_when=[
+                            {"key": "scope_quality", "value": False},
+                            {"key": "use_db", "value": True},
+                        ],
                     ),
                 ],
                 build=_build_health_check,

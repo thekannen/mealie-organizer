@@ -46,7 +46,13 @@ def _categorizer_provider_active() -> bool:
     return bool(provider) and provider not in {"none", "off", "false", "0", "disabled"}
 
 
-def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
+def stage_command(
+    stage: str,
+    *,
+    apply_cleanups: bool,
+    use_db: bool = False,
+    nutrition_sample: int | None = None,
+) -> list[str]:
     python_cmd = [sys.executable, "-m"]
     if stage == "parse":
         return python_cmd + ["cookdex.ingredient_parser"]
@@ -98,7 +104,12 @@ def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
             cmd.append("--apply")
         return cmd
     if stage == "quality":
-        return python_cmd + ["cookdex.recipe_quality_audit"]
+        cmd = python_cmd + ["cookdex.recipe_quality_audit"]
+        if nutrition_sample is not None:
+            cmd.extend(["--nutrition-sample", str(nutrition_sample)])
+        if use_db:
+            cmd.append("--use-db")
+        return cmd
     if stage == "audit":
         return python_cmd + ["cookdex.audit_taxonomy"]
     if stage == "names":
@@ -128,7 +139,14 @@ def default_stage_string() -> str:
     return ",".join(DEFAULT_STAGE_ORDER)
 
 
-def run_stage(stage: str, *, apply_cleanups: bool, skip_ai: bool = False) -> StageResult:
+def run_stage(
+    stage: str,
+    *,
+    apply_cleanups: bool,
+    skip_ai: bool = False,
+    use_db: bool = False,
+    nutrition_sample: int | None = None,
+) -> StageResult:
     if stage == "categorize":
         if skip_ai:
             print(f"[skip] {stage}: skipped (--skip-ai flag set)", flush=True)
@@ -141,7 +159,7 @@ def run_stage(stage: str, *, apply_cleanups: bool, skip_ai: bool = False) -> Sta
             )
             return StageResult(stage=stage, command=[], exit_code=0)
 
-    cmd = stage_command(stage, apply_cleanups=apply_cleanups)
+    cmd = stage_command(stage, apply_cleanups=apply_cleanups, use_db=use_db, nutrition_sample=nutrition_sample)
     print(f"[stage] {stage}: {' '.join(cmd)}", flush=True)
     completed = subprocess.run(cmd, check=False)
     return StageResult(stage=stage, command=cmd, exit_code=completed.returncode)
@@ -153,10 +171,18 @@ def run_pipeline(
     continue_on_error: bool,
     apply_cleanups: bool,
     skip_ai: bool = False,
+    use_db: bool = False,
+    nutrition_sample: int | None = None,
 ) -> list[StageResult]:
     results: list[StageResult] = []
     for stage in stages:
-        result = run_stage(stage, apply_cleanups=apply_cleanups, skip_ai=skip_ai)
+        result = run_stage(
+            stage,
+            apply_cleanups=apply_cleanups,
+            skip_ai=skip_ai,
+            use_db=use_db,
+            nutrition_sample=nutrition_sample,
+        )
         results.append(result)
         if result.exit_code != 0 and not continue_on_error:
             print(f"[error] Stage '{stage}' failed with exit code {result.exit_code}. Failing fast.", flush=True)
@@ -182,6 +208,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip the categorize stage regardless of provider configuration.",
     )
+    parser.add_argument(
+        "--use-db",
+        action="store_true",
+        help="Use direct DB queries for the quality stage instead of the API.",
+    )
+    parser.add_argument(
+        "--nutrition-sample",
+        type=int,
+        default=None,
+        help="Number of recipes to sample for nutrition coverage (quality stage, API mode only).",
+    )
     return parser
 
 
@@ -189,9 +226,11 @@ def main() -> int:
     args = build_parser().parse_args()
     stages = parse_stage_list(str(args.stages))
     skip_ai = bool(args.skip_ai)
+    use_db = bool(args.use_db)
+    nutrition_sample: int | None = args.nutrition_sample
     print(
         f"[start] data-maintenance stages={','.join(stages)} "
-        f"apply_cleanups={bool(args.apply_cleanups)} skip_ai={skip_ai}",
+        f"apply_cleanups={bool(args.apply_cleanups)} skip_ai={skip_ai} use_db={use_db}",
         flush=True,
     )
     results = run_pipeline(
@@ -199,6 +238,8 @@ def main() -> int:
         continue_on_error=bool(args.continue_on_error),
         apply_cleanups=bool(args.apply_cleanups),
         skip_ai=skip_ai,
+        use_db=use_db,
+        nutrition_sample=nutrition_sample,
     )
     failed = [item for item in results if item.exit_code != 0]
     if failed:

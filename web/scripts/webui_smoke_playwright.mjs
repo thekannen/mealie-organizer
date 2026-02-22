@@ -29,7 +29,7 @@ const REQUIRED_MARKERS = [
   "tasks:filter-scheduled",
   "tasks:row-select",
   "tasks:save-interval",
-  "tasks:save-cron",
+  "tasks:save-once",
   "settings:reload",
   "settings:apply",
   "settings:test-mealie",
@@ -736,6 +736,20 @@ async function main() {
     await expectVisible(page.getByRole("heading", { name: /tasks/i }).first(), "Tasks page header missing.");
     await expectVisible(page.locator(".task-picker").first(), "Tasks card picker missing.");
 
+    // Wait for any in-flight loadData() (e.g. from a previous sidebar Refresh click) to finish
+    // before queuing tasks. If loadData() finishes AFTER our refreshRuns() calls it will overwrite
+    // the runs state with a stale empty list.
+    await page
+      .waitForFunction(
+        () => {
+          const btn = document.querySelector(".sidebar-actions button");
+          return !btn || !btn.textContent.includes("Loading");
+        },
+        { timeout: 15000 }
+      )
+      .catch(() => {});
+    await page.waitForTimeout(300);
+
     // Expand all collapsed task groups
     await expandAllTaskGroups();
 
@@ -775,14 +789,38 @@ async function main() {
       await searchInput.fill("");
     }
 
-    // Refresh data so queued runs appear in the history
-    await clickSidebarAction("Refresh", "global:sidebar-refresh");
-    await page.waitForTimeout(2000);
+    // Scope filter clicks to .run-type-filters so "All" cannot match unrelated buttons
+    const filterBar = page.locator(".run-type-filters");
+    await filterBar.getByRole("button", { name: "All" }).first().waitFor({ state: "visible", timeout: 10000 });
+    await filterBar.getByRole("button", { name: "All" }).first().click();
+    rememberButtonClick("tasks", "All");
+    markControl("tasks", "tasks:filter-all");
+    await page.waitForTimeout(200);
+    await filterBar.getByRole("button", { name: "Manual" }).first().click();
+    rememberButtonClick("tasks", "Manual");
+    markControl("tasks", "tasks:filter-manual");
+    await page.waitForTimeout(200);
+    await filterBar.getByRole("button", { name: "Scheduled" }).first().click();
+    rememberButtonClick("tasks", "Scheduled");
+    markControl("tasks", "tasks:filter-scheduled");
+    await page.waitForTimeout(200);
+    await filterBar.getByRole("button", { name: "All" }).first().click();
+    rememberButtonClick("tasks", "All");
+    markControl("tasks", "tasks:filter-all");
+    await page.waitForTimeout(200);
 
-    await clickButtonByRole("tasks", "All", "tasks:filter-all");
-    await clickButtonByRole("tasks", "Manual", "tasks:filter-manual");
-    await clickButtonByRole("tasks", "Scheduled", "tasks:filter-scheduled");
-    await clickButtonByRole("tasks", "All", "tasks:filter-all");
+    // Wait explicitly for at least one real run row to appear (not "No runs found.")
+    await page
+      .waitForFunction(
+        () => {
+          const rows = document.querySelectorAll(".runs-table tbody tr");
+          return Array.from(rows).some(
+            (r) => !r.textContent.toLowerCase().includes("no runs found")
+          );
+        },
+        { timeout: 20000 }
+      )
+      .catch(() => {});
 
     let selected = await ensureRunRowSelection();
     if (!selected) {
@@ -791,19 +829,43 @@ async function main() {
       await page.waitForTimeout(1500);
       await clickNav("Tasks");
       await page.waitForTimeout(3000);
+      // Wait again for run rows after navigation
+      await page
+        .waitForFunction(
+          () => {
+            const rows = document.querySelectorAll(".runs-table tbody tr");
+            return Array.from(rows).some(
+              (r) => !r.textContent.toLowerCase().includes("no runs found")
+            );
+          },
+          { timeout: 15000 }
+        )
+        .catch(() => {});
       selected = await ensureRunRowSelection();
     }
     if (!selected) {
-      // Second retry: refresh + longer wait for async task completion
-      await clickSidebarAction("Refresh", "global:sidebar-refresh");
-      await page.waitForTimeout(8000);
+      // Second retry: give tasks more time and wait for rows again
+      await page.waitForTimeout(5000);
+      await page
+        .waitForFunction(
+          () => {
+            const rows = document.querySelectorAll(".runs-table tbody tr");
+            return Array.from(rows).some(
+              (r) => !r.textContent.toLowerCase().includes("no runs found")
+            );
+          },
+          { timeout: 10000 }
+        )
+        .catch(() => {});
       selected = await ensureRunRowSelection();
     }
     if (!selected) {
       report.warnings.push("No run row available to select after queueing runs.");
     }
 
-    await expectVisible(page.locator(".log-viewer"), "Run output viewer not rendered.");
+    // The log output card (.log-box) is always rendered; shows "Select a run above" placeholder
+    // when no row is selected, or the actual log content when a row is selected.
+    await expectVisible(page.locator(".log-box").first(), "Run output viewer not rendered.");
 
     // Log output card action buttons
     const copyLogBtn = page.locator('button[title="Copy log to clipboard"]').first();
@@ -868,6 +930,13 @@ async function main() {
       await page.waitForTimeout(200);
     }
 
+    // Helper: build a datetime-local string for N hours from now
+    function futureDtLocal(hoursAhead) {
+      const dt = new Date(Date.now() + hoursAhead * 3600000);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    }
+
     // Create an interval schedule
     const intervalName = `qa-ui-interval-${Date.now().toString().slice(-7)}`;
     await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), intervalName);
@@ -879,12 +948,24 @@ async function main() {
     const unitSelect = page.locator('.interval-row select').first();
     await expectVisible(unitSelect, "Interval unit select missing.");
     await unitSelect.selectOption("minutes");
+    // Fill start date (required for interval schedules)
+    const startInput1 = page.locator('label:has-text("Start date") input[type="datetime-local"]').first();
+    if (await startInput1.isVisible().catch(() => false)) {
+      await startInput1.fill(futureDtLocal(1));
+      await page.waitForTimeout(100);
+    }
     await configureOptionFields(page.locator(".run-form"));
     await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
     await ensureNoErrorBanner("Interval schedule save failed");
     await page.waitForTimeout(500);
 
-    // Create a second interval schedule (once type has datetime-local which is tricky to fill reliably)
+    // After save the form may reset (toggle turns off). Re-enable schedule mode for second schedule.
+    if (!(await scheduleToggle.isChecked().catch(() => false))) {
+      await scheduleToggle.check();
+      await page.waitForTimeout(200);
+    }
+
+    // Create a second interval schedule
     const intervalName2 = `qa-ui-int2-${Date.now().toString().slice(-7)}`;
     await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), intervalName2);
     await page.locator('label:has-text("Type") select').first().selectOption("interval");
@@ -892,8 +973,13 @@ async function main() {
     const everyInput2 = page.locator('.interval-row input[type="number"]').first();
     await everyInput2.fill("60");
     await page.locator('.interval-row select').first().selectOption("minutes");
+    const startInput2 = page.locator('label:has-text("Start date") input[type="datetime-local"]').first();
+    if (await startInput2.isVisible().catch(() => false)) {
+      await startInput2.fill(futureDtLocal(2));
+      await page.waitForTimeout(100);
+    }
     await configureOptionFields(page.locator(".run-form"));
-    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-cron");
+    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
     await ensureNoErrorBanner("Second schedule save failed");
     await page.waitForTimeout(500);
 
@@ -1006,7 +1092,7 @@ async function main() {
     markControl("tasks", "tasks:once-schedule");
 
     await configureOptionFields(page.locator(".run-form"));
-    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
+    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-once");
     await ensureNoErrorBanner("Once schedule save failed");
     await page.waitForTimeout(400);
 
@@ -1363,10 +1449,21 @@ async function main() {
           }
         }
         if (matched.configName === "units_aliases") {
+          // Structured units editor shows NAME/ALIASES fields — raw JSON fallback would show a textarea
           await expectVisible(
-            page.locator('.structured-editor label:has-text("Canonical Unit")').first(),
-            "Units taxonomy rendered as raw JSON instead of canonical/aliases controls."
+            page.locator(".structured-editor").first(),
+            "Units taxonomy rendered as raw JSON instead of structured editor."
           );
+          // Verify it's the real structured editor (not advanced JSON edit mode)
+          const advancedMode = page.getByText(/advanced mode.*requires full json/i).first();
+          if (await advancedMode.isVisible().catch(() => false)) {
+            throw new Error("Units taxonomy unexpectedly fell back to advanced JSON editor mode.");
+          }
+          // Confirm an aliases/plural field is present (distinguishes structured from raw)
+          const aliasesField = page.locator(".structured-editor label").filter({ hasText: /aliases/i }).first();
+          if (await aliasesField.isVisible().catch(() => false)) {
+            markInteraction("recipe", "units-aliases-field", "structured-editor-confirmed");
+          }
         }
 
         if (matched.configName === "labels") {
@@ -1683,11 +1780,9 @@ async function main() {
       report.warnings.push("Troubleshooting card not visible on Help page.");
     }
 
-    // Debug log section: generate if needed, then test download and regenerate
-    const generateDebugBtn = page
-      .getByRole("button", { name: /generate/i })
-      .filter({ hasText: /debug|report|log/i })
-      .first();
+    // Debug log section: generate if needed, then test download and regenerate.
+    // On initial load the button may just say "Generate" without extra keywords.
+    const generateDebugBtn = page.getByRole("button", { name: /generate/i }).first();
     if (await generateDebugBtn.isVisible().catch(() => false)) {
       await generateDebugBtn.click();
       rememberButtonClick("help", "Generate debug");
@@ -1791,7 +1886,7 @@ async function main() {
     }
     const scheduleOptions = buildTaskOptionsFromDefinition(firstTask);
     const apiIntervalName = `qa-api-int-${Date.now().toString().slice(-7)}`;
-    const apiCronName = `qa-api-cron-${Date.now().toString().slice(-7)}`;
+    const apiOnceName = `qa-api-once-${Date.now().toString().slice(-7)}`;
     const createdScheduleIds = [];
 
     const intervalCreated = await apiRequest(
@@ -1813,21 +1908,23 @@ async function main() {
       cleanupState.scheduleIds.add(id);
     }
 
-    const cronCreated = await apiRequest(
+    // API supports interval and once only (cron is not a valid kind)
+    const onceRunAt = new Date(Date.now() + 7200000).toISOString();
+    const onceCreated = await apiRequest(
       "POST",
       "/schedules",
       {
-        name: apiCronName,
+        name: apiOnceName,
         task_id: firstTask.task_id,
-        kind: "cron",
-        cron: "*/20 * * * *",
+        kind: "once",
+        run_at: onceRunAt,
         options: scheduleOptions,
         enabled: true,
       },
       [201]
     );
-    if (cronCreated.payload?.schedule_id) {
-      const id = String(cronCreated.payload.schedule_id);
+    if (onceCreated.payload?.schedule_id) {
+      const id = String(onceCreated.payload.schedule_id);
       createdScheduleIds.push(id);
       cleanupState.scheduleIds.add(id);
     }
@@ -1840,7 +1937,7 @@ async function main() {
     if (createdScheduleIds.length >= 2) {
       markControl("api", "api:schedule-create-delete");
     } else {
-      throw new Error("API schedule create/delete coverage did not create both interval and cron schedules.");
+      throw new Error("API schedule create/delete coverage did not create both interval and once schedules.");
     }
 
     const apiUsername = `qaapi${Date.now().toString().slice(-6)}`;

@@ -172,6 +172,8 @@ export default function App() {
     kind: "interval",
     intervalValue: 6,
     intervalUnit: "hours",
+    start_at: "",
+    end_at: "",
     run_at: "",
     enabled: true,
   });
@@ -687,9 +689,6 @@ export default function App() {
     setEnvDraft(nextDraft);
     setEnvClear({});
 
-    if (!selectedTask && nextTasks.length > 0) {
-      setSelectedTask(nextTasks[0].task_id);
-    }
   }
 
   function scheduleAutoRefresh() {
@@ -1016,6 +1015,10 @@ export default function App() {
       setError("Please choose a date and time for this schedule.");
       return;
     }
+    if (scheduleForm.kind === "interval" && !scheduleForm.start_at) {
+      setError("Please choose a start date for this schedule.");
+      return;
+    }
 
     try {
       clearBanners();
@@ -1031,6 +1034,8 @@ export default function App() {
           task_id: selectedTask,
           kind: scheduleForm.kind,
           seconds: scheduleForm.kind === "interval" ? intervalSeconds : undefined,
+          start_at: scheduleForm.kind === "interval" ? scheduleForm.start_at : undefined,
+          end_at: (scheduleForm.kind === "interval" && scheduleForm.end_at) ? scheduleForm.end_at : undefined,
           run_at: scheduleForm.kind === "once" ? scheduleForm.run_at : undefined,
           options,
           enabled: Boolean(scheduleForm.enabled),
@@ -1727,9 +1732,16 @@ export default function App() {
                 })}
               </div>
 
-              {(selectedTaskDef?.options || []).some((o) => !o.hidden && !(o.hidden_when && taskValues[o.hidden_when.key] === o.hidden_when.value)) ? (
+              {!selectedTaskDef ? (
+                <p className="muted tiny">Select a task above to configure and run it.</p>
+              ) : (selectedTaskDef.options || []).some((o) => {
+                if (o.hidden) return false;
+                if (!o.hidden_when) return true;
+                const conds = Array.isArray(o.hidden_when) ? o.hidden_when : [o.hidden_when];
+                return !conds.some(({ key, value: trigger }) => taskValues[key] === trigger);
+              }) ? (
                 <div className="option-grid">
-                  {(selectedTaskDef?.options || []).map((option) =>
+                  {(selectedTaskDef.options || []).map((option) =>
                     fieldFromOption(option, taskValues[option.key], (key, value) =>
                       setTaskValues((prev) => ({ ...prev, [key]: value })),
                       taskValues
@@ -1740,7 +1752,7 @@ export default function App() {
                 <p className="muted tiny">This task has no additional options.</p>
               )}
 
-              <label className="field field-inline schedule-toggle">
+              <label className="field field-inline schedule-toggle" style={selectedTaskDef ? undefined : { display: "none" }}>
                 <span>Schedule Run</span>
                 <input
                   type="checkbox"
@@ -1772,29 +1784,49 @@ export default function App() {
                   </label>
 
                   {scheduleForm.kind === "interval" ? (
-                    <div className="interval-row">
+                    <>
+                      <div className="interval-row">
+                        <label className="field">
+                          <span>Every</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={scheduleForm.intervalValue}
+                            onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalValue: event.target.value }))}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>&nbsp;</span>
+                          <select
+                            value={scheduleForm.intervalUnit}
+                            onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalUnit: event.target.value }))}
+                          >
+                            <option value="seconds">Seconds</option>
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </label>
+                      </div>
                       <label className="field">
-                        <span>Every</span>
+                        <span>Start date</span>
                         <input
-                          type="number"
-                          min="1"
-                          value={scheduleForm.intervalValue}
-                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalValue: event.target.value }))}
+                          type="datetime-local"
+                          value={scheduleForm.start_at}
+                          min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, start_at: event.target.value }))}
                         />
                       </label>
                       <label className="field">
-                        <span>&nbsp;</span>
-                        <select
-                          value={scheduleForm.intervalUnit}
-                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalUnit: event.target.value }))}
-                        >
-                          <option value="seconds">Seconds</option>
-                          <option value="minutes">Minutes</option>
-                          <option value="hours">Hours</option>
-                          <option value="days">Days</option>
-                        </select>
+                        <span>End date <span className="muted">(optional)</span></span>
+                        <input
+                          type="datetime-local"
+                          value={scheduleForm.end_at}
+                          min={scheduleForm.start_at || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, end_at: event.target.value }))}
+                        />
                       </label>
-                    </div>
+                    </>
                   ) : (
                     <label className="field">
                       <span>Run at</span>
@@ -1818,7 +1850,7 @@ export default function App() {
                 </div>
               )}
 
-              {scheduleMode ? (
+              {selectedTaskDef && (scheduleMode ? (
                 <button type="button" className="primary" onClick={createSchedule}>
                   <Icon name="save" />
                   Save Schedule
@@ -1828,7 +1860,7 @@ export default function App() {
                   <Icon name="play" />
                   Queue Run
                 </button>
-              )}
+              ))}
             </div>
           </article>
         </div>

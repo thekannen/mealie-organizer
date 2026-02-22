@@ -167,7 +167,17 @@ class SchedulerService:
             seconds = int(schedule_data.get("seconds", 0))
             if seconds <= 0:
                 raise ValueError("Interval schedules require positive 'seconds'.")
-            return IntervalTrigger(seconds=seconds, timezone="UTC")
+            def _normalise_dt(val: str | None) -> str | None:
+                if not val:
+                    return None
+                s = str(val).strip()
+                if len(s) == 16:  # "YYYY-MM-DDTHH:MM" from datetime-local input
+                    s = s + ":00"
+                return s
+
+            start_date = _normalise_dt(schedule_data.get("start_at"))
+            end_date = _normalise_dt(schedule_data.get("end_at"))
+            return IntervalTrigger(seconds=seconds, timezone="UTC", start_date=start_date, end_date=end_date)
         if kind == "once":
             run_at = str(schedule_data.get("run_at", "")).strip()
             if not run_at:
