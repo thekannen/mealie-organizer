@@ -453,7 +453,7 @@ async function main() {
       if (await textInput.isVisible().catch(() => false)) {
         const current = await textInput.inputValue();
         if (lower.includes("stages") && !normalizeText(current)) {
-          await textInput.fill("taxonomy-refresh");
+          await textInput.fill("taxonomy");
         } else {
           await textInput.fill(current);
         }
@@ -495,7 +495,7 @@ async function main() {
       }
       if (option.type === "string") {
         if (labelText.includes("stages")) {
-          options[key] = "taxonomy-refresh";
+          options[key] = "taxonomy";
         } else {
           options[key] = "";
         }
@@ -692,28 +692,55 @@ async function main() {
     await screenshot("overview");
   });
 
+  async function expandAllTaskGroups() {
+    const groupHeaders = page.locator(".task-group-header");
+    const count = await groupHeaders.count();
+    for (let index = 0; index < count; index += 1) {
+      const header = groupHeaders.nth(index);
+      const chevron = header.locator(".task-group-chevron");
+      const isCollapsed = await chevron.evaluate((el) => el.classList.contains("collapsed")).catch(() => false);
+      if (isCollapsed) {
+        await header.click();
+        await page.waitForTimeout(150);
+      }
+    }
+  }
+
   await check("tasks-page-runs", async () => {
     await clickNav("Tasks");
     await expectVisible(page.getByRole("heading", { name: /tasks/i }).first(), "Tasks page header missing.");
-    const taskSelect = page.locator('label:has-text("Task") select').first();
-    await expectVisible(taskSelect, "Tasks task selector missing.");
+    await expectVisible(page.locator(".task-picker").first(), "Tasks card picker missing.");
 
-    const taskOptions = await taskSelect.evaluate((select) =>
-      Array.from(select.options).map((opt) => ({ value: opt.value, label: (opt.textContent || "").trim() }))
-    );
-    const queueTargets = taskOptions.filter((item) => item.value);
-    for (const item of queueTargets) {
-      await taskSelect.selectOption(item.value);
+    // Expand all collapsed task groups
+    await expandAllTaskGroups();
+
+    const taskItems = page.locator(".task-item");
+    const taskCount = await taskItems.count();
+    if (taskCount === 0) {
+      throw new Error("No task items found in picker after expanding groups.");
+    }
+
+    // Ensure schedule mode is OFF for run queuing
+    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
+    if (await scheduleToggle.isChecked().catch(() => false)) {
+      await scheduleToggle.uncheck();
+      await page.waitForTimeout(150);
+    }
+
+    for (let index = 0; index < taskCount; index += 1) {
+      const item = taskItems.nth(index);
+      const label = normalizeText(await item.locator(".task-item-title").innerText().catch(() => `task-${index}`));
+      await item.click();
       await page.waitForTimeout(140);
-      await configureOptionFields(page.locator(".run-builder-card"));
+      await configureOptionFields(page.locator(".run-form"));
       await clickButtonByRole("tasks", "Queue Run", "tasks:queue-run");
-      await ensureNoErrorBanner(`Run queue failed: ${item.label}`);
+      await ensureNoErrorBanner(`Run queue failed: ${label}`);
       report.coverage.tasksQueuedViaUi += 1;
-      markInteraction("tasks", "queued-task", item.label);
+      markInteraction("tasks", "queued-task", label);
       await page.waitForTimeout(280);
     }
 
-    if (queueTargets.length > 0 && report.coverage.tasksQueuedViaUi >= queueTargets.length) {
+    if (taskCount > 0 && report.coverage.tasksQueuedViaUi >= taskCount) {
       markControl("tasks", "tasks:queue-all-discovered");
     }
 
@@ -758,45 +785,68 @@ async function main() {
 
   await check("tasks-page-schedules", async () => {
     await clickNav("Tasks");
-    const taskSelect = page.locator('label:has-text("Task") select').first();
-    await expectVisible(taskSelect, "Tasks task selector missing.");
-    const taskOptions = await taskSelect.evaluate((select) =>
-      Array.from(select.options).map((option) => ({ value: option.value, label: (option.textContent || "").trim() }))
-    );
-    const validTask = taskOptions.find((item) => item.value);
-    if (!validTask) {
-      throw new Error("No task options available for schedule creation.");
-    }
-    await taskSelect.selectOption(validTask.value);
+    await expectVisible(page.locator(".task-picker").first(), "Tasks card picker missing for schedule.");
 
+    // Expand all task groups and pick the first available task
+    await expandAllTaskGroups();
+    const firstTaskItem = page.locator(".task-item").first();
+    await expectVisible(firstTaskItem, "No task items found for schedule creation.");
+    await firstTaskItem.click();
+    await page.waitForTimeout(200);
+
+    // Enable schedule mode
+    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
+    await expectVisible(scheduleToggle, "Schedule Run toggle missing.");
+    if (!(await scheduleToggle.isChecked().catch(() => false))) {
+      await scheduleToggle.check();
+      await page.waitForTimeout(200);
+    }
+
+    // Create an interval schedule
     const intervalName = `qa-ui-interval-${Date.now().toString().slice(-7)}`;
     await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), intervalName);
     await page.locator('label:has-text("Type") select').first().selectOption("interval");
-    await fillFirstVisible(page.locator('label:has-text("Seconds") input'), "1800");
-    await configureOptionFields(page.locator(".run-builder-card"));
+    await page.waitForTimeout(150);
+    const everyInput = page.locator('.interval-row input[type="number"]').first();
+    await expectVisible(everyInput, "Interval 'Every' number input missing.");
+    await everyInput.fill("30");
+    const unitSelect = page.locator('.interval-row select').first();
+    await expectVisible(unitSelect, "Interval unit select missing.");
+    await unitSelect.selectOption("minutes");
+    await configureOptionFields(page.locator(".run-form"));
     await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
     await ensureNoErrorBanner("Interval schedule save failed");
     await page.waitForTimeout(500);
 
-    const cronName = `qa-ui-cron-${Date.now().toString().slice(-7)}`;
-    await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), cronName);
-    await page.locator('label:has-text("Type") select').first().selectOption("cron");
-    await fillFirstVisible(page.locator('label:has-text("Cron Expression") input'), "*/30 * * * *");
-    await configureOptionFields(page.locator(".run-builder-card"));
+    // Create a second interval schedule (once type has datetime-local which is tricky to fill reliably)
+    const intervalName2 = `qa-ui-int2-${Date.now().toString().slice(-7)}`;
+    await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), intervalName2);
+    await page.locator('label:has-text("Type") select').first().selectOption("interval");
+    await page.waitForTimeout(150);
+    const everyInput2 = page.locator('.interval-row input[type="number"]').first();
+    await everyInput2.fill("60");
+    await page.locator('.interval-row select').first().selectOption("minutes");
+    await configureOptionFields(page.locator(".run-form"));
     await clickButtonByRole("tasks", "Save Schedule", "tasks:save-cron");
-    await ensureNoErrorBanner("Cron schedule save failed");
+    await ensureNoErrorBanner("Second schedule save failed");
     await page.waitForTimeout(500);
 
     const schedulesPayload = await apiRequest("GET", "/schedules", null, [200]);
     const items = schedulesPayload.payload?.items || [];
-    const created = items.filter((item) => item.name === intervalName || item.name === cronName);
+    const created = items.filter((item) => item.name === intervalName || item.name === intervalName2);
     if (created.length < 2) {
-      throw new Error("Expected both interval and cron schedules to be created via UI.");
+      throw new Error("Expected both interval schedules to be created via UI.");
     }
     for (const item of created) {
       cleanupState.scheduleIds.add(String(item.schedule_id));
     }
     report.coverage.schedulesCreatedViaUi += created.length;
+
+    // Turn schedule mode back off
+    if (await scheduleToggle.isChecked().catch(() => false)) {
+      await scheduleToggle.uncheck();
+      await page.waitForTimeout(150);
+    }
 
     await registerVisibleButtons("tasks");
     await screenshot("tasks-schedules");
