@@ -575,10 +575,14 @@ def main() -> int:
     )
     summary = run_parser(client, config)
     print(
-        "[summary] "
-        f"candidates={summary.total_candidates} parsed={summary.parsed_successfully} review={summary.requires_review} "
-        f"skipped_empty={summary.skipped_empty} skipped_parsed={summary.skipped_already_parsed} "
-        f"dropped_blank={summary.dropped_blank_ingredients}",
+        "[summary] " + json.dumps({
+            "candidates": summary.total_candidates,
+            "parsed": summary.parsed_successfully,
+            "review": summary.requires_review,
+            "skipped_empty": summary.skipped_empty,
+            "skipped_parsed": summary.skipped_already_parsed,
+            "dropped_blank": summary.dropped_blank_ingredients,
+        }),
         flush=True,
     )
     return 0

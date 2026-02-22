@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -160,7 +161,7 @@ def run_stage(
             return StageResult(stage=stage, command=[], exit_code=0)
 
     cmd = stage_command(stage, apply_cleanups=apply_cleanups, use_db=use_db, nutrition_sample=nutrition_sample)
-    print(f"[stage] {stage}: {' '.join(cmd)}", flush=True)
+    print(f"[start] {stage}", flush=True)
     completed = subprocess.run(cmd, check=False)
     return StageResult(stage=stage, command=cmd, exit_code=completed.returncode)
 
@@ -242,14 +243,20 @@ def main() -> int:
         nutrition_sample=nutrition_sample,
     )
     failed = [item for item in results if item.exit_code != 0]
+    all_stages = [r.stage for r in results]
+    failed_stages = [r.stage for r in failed]
+    print(
+        "[summary] " + json.dumps({
+            "stages_run": len(results),
+            "passed": len(results) - len(failed),
+            "failed": len(failed),
+            "failed_stages": failed_stages,
+            "all_stages": all_stages,
+        }),
+        flush=True,
+    )
     if failed:
-        print(
-            "[summary] failed_stages="
-            + ",".join(f"{item.stage}({item.exit_code})" for item in failed),
-            flush=True,
-        )
         return 1
-    print("[summary] all stages completed successfully.", flush=True)
     return 0
 
 

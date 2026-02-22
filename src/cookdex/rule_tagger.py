@@ -227,10 +227,13 @@ class RecipeRuleTagger:
 
         total_tags = sum(stats["text_tags"].values())
         total_cats = sum(stats["text_categories"].values())
-        action = "Would apply" if self.dry_run else "Applied"
         print(
-            f"[summary] {action} {total_tags + total_cats} assignments "
-            f"({len(stats['text_tags'])} text-tag, {len(stats['text_categories'])} text-category rules)",
+            "[summary] " + json.dumps({
+                "assignments": total_tags + total_cats,
+                "text_tag_rules": len(stats["text_tags"]),
+                "text_category_rules": len(stats["text_categories"]),
+                "dry_run": self.dry_run,
+            }),
             flush=True,
         )
         if self.dry_run:
@@ -325,7 +328,7 @@ class RecipeRuleTagger:
         count = len(matched)
         if count:
             print(
-                f"[text] '{tag_name}': {count} recipe(s) matched"
+                f"[info] tag '{tag_name}': {count} recipe(s) matched"
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
@@ -430,7 +433,7 @@ class RecipeRuleTagger:
         count = len(matched)
         if count:
             print(
-                f"[category] '{cat_name}': {count} recipe(s) matched"
+                f"[info] category '{cat_name}': {count} recipe(s) matched"
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )

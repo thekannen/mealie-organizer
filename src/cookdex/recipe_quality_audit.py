@@ -258,11 +258,19 @@ class RecipeQualityAuditor:
         g = tier_counts["gold"]
         s = tier_counts["silver"]
         b = tier_counts["bronze"]
-        print(f'[summary] {{"total": {total}, "gold": {g} ({gold_pct}%), "silver": {s}, "bronze": {b}}}', flush=True)
-        print("[summary] gaps ranked by impact:", flush=True)
-        for gap in gaps:
-            print(f"  [{gap['dimension']:12s}] missing {gap['missing']:5d} ({gap['pct_missing']:5.1f}%)", flush=True)
-        print(f"[summary] nutrition_pct_estimated={nutrition_pct}%  (sample_n={sample_n})", flush=True)
+        print(
+            "[summary] " + json.dumps({
+                "total": total,
+                "gold": g,
+                "gold_pct": gold_pct,
+                "silver": s,
+                "bronze": b,
+                "nutrition_pct": nutrition_pct,
+                "nutrition_sample": sample_n,
+                "top_gap": gaps[0]["dimension"] if gaps else None,
+            }),
+            flush=True,
+        )
 
         return report
 
