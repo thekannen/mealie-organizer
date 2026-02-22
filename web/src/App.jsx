@@ -238,6 +238,7 @@ export default function App() {
   const [healthMeta, setHealthMeta] = useState(null);
   const [lastLoadedAt, setLastLoadedAt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set(["Data Pipeline", "Actions", "Organizers", "Audits"]));
 
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
@@ -254,7 +255,15 @@ export default function App() {
     return map;
   }, [tasks]);
 
-  const TASK_GROUP_ORDER = ["AI & Tagging", "Analysis", "Taxonomy", "Content Sync", "Cleanup", "Parsing", "Pipeline"];
+  const TASK_GROUP_ORDER = ["Data Pipeline", "Actions", "Organizers", "Audits"];
+
+  function toggleTaskGroup(name) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) { next.delete(name); } else { next.add(name); }
+      return next;
+    });
+  }
 
   const TASK_ICONS = {
     "categorize": "wand",
@@ -1691,20 +1700,35 @@ export default function App() {
 
             <div className="run-form">
               <div className="task-picker">
-                {flatTasks.map((task) => (
-                  <button
-                    key={task.task_id}
-                    type="button"
-                    className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
-                    onClick={() => setSelectedTask(task.task_id)}
-                  >
-                    <span className="task-item-title">
-                      <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-item-icon" />
-                      {task.title}
-                    </span>
-                    <span className="task-item-desc">{task.description}</span>
-                  </button>
-                ))}
+                {taskGroups.map(([groupName, groupTasks], gi) => {
+                  const collapsed = collapsedGroups.has(groupName);
+                  return (
+                    <div key={groupName} className="task-group">
+                      <button
+                        type="button"
+                        className={`task-group-header${gi === 0 ? " first" : ""}`}
+                        onClick={() => toggleTaskGroup(groupName)}
+                      >
+                        <span className="task-group-label">{groupName}</span>
+                        <span className={`task-group-chevron${collapsed ? " collapsed" : ""}`}>▾</span>
+                      </button>
+                      {!collapsed && groupTasks.map((task) => (
+                        <button
+                          key={task.task_id}
+                          type="button"
+                          className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
+                          onClick={() => setSelectedTask(task.task_id)}
+                        >
+                          <span className="task-item-title">
+                            <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-item-icon" />
+                            {task.title}
+                          </span>
+                          <span className="task-item-desc">{task.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
 
               {(selectedTaskDef?.options || []).some((o) => !o.hidden && !(o.hidden_when && taskValues[o.hidden_when.key] === o.hidden_when.value)) ? (

@@ -597,6 +597,42 @@ textarea {
   gap: 0.58rem;
 }
 
+.task-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  transition: color 0.1s;
+}
+
+.task-group-header:hover { color: var(--fg); }
+.task-group-header.first { border-top: none; padding-top: 0; }
+
+.task-group-chevron {
+  font-size: 0.9rem;
+  display: inline-block;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+
+.task-group-chevron.collapsed { transform: rotate(-90deg); }
+
 .task-picker {
   display: flex;
   flex-direction: column;

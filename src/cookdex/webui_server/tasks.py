@@ -361,7 +361,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="categorize",
                 title="Categorize Recipes",
-                group="AI & Tagging",
+                group="Organizers",
                 description="Use AI to classify recipes into categories, tags, and tools.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -374,7 +374,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="taxonomy-refresh",
                 title="Refresh Taxonomy",
-                group="Taxonomy",
+                group="Organizers",
                 description="Sync categories and tags from taxonomy source files.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -406,7 +406,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="taxonomy-audit",
                 title="Taxonomy Audit",
-                group="Analysis",
+                group="Audits",
                 description="Scan taxonomy for unused entries, duplicate names, and recipes missing categories or tags.",
                 options=[],
                 build=_build_taxonomy_audit,
@@ -416,7 +416,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="cookbook-sync",
                 title="Cookbook Sync",
-                group="Content Sync",
+                group="Organizers",
                 description="Create and update cookbooks to match your cookbook configuration.",
                 options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything.")],
                 build=_build_cookbook_sync,
@@ -426,7 +426,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="ingredient-parse",
                 title="Ingredient Parser",
-                group="Parsing",
+                group="Actions",
                 description="Run NLP parsing on recipe ingredients to extract food, unit, and quantity from raw text. When confidence is below the threshold, parsing falls back to an AI processor.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -445,7 +445,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="foods-cleanup",
                 title="Foods Cleanup",
-                group="Cleanup",
+                group="Actions",
                 description="Find and merge duplicate food entries — e.g. 'garlic' and 'Garlic Clove' pointing to the same ingredient.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -457,7 +457,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="units-cleanup",
                 title="Units Cleanup",
-                group="Cleanup",
+                group="Actions",
                 description="Find and merge duplicate units — e.g. 'tsp', 'teaspoon', and 'Teaspoon' collapsed into one canonical entry.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -469,7 +469,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="labels-sync",
                 title="Labels Sync",
-                group="Content Sync",
+                group="Organizers",
                 description="Sync labels from your taxonomy config — creates missing labels and removes unlisted ones.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -481,7 +481,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="tools-sync",
                 title="Tools Sync",
-                group="Content Sync",
+                group="Organizers",
                 description="Sync cooking tools from your taxonomy config — creates new tools and merges duplicates.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -493,7 +493,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="data-maintenance",
                 title="Data Maintenance Pipeline",
-                group="Pipeline",
+                group="Data Pipeline",
                 description="Run all maintenance stages in order: Dedup → Junk Filter → Name Normalize → Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit. Select specific stages to run a subset.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -551,7 +551,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="rule-tag",
                 title="Rule-Based Tagger",
-                group="AI & Tagging",
+                group="Organizers",
                 description="Apply tag and tool rules to recipes using regex patterns — no AI required.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -570,7 +570,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="recipe-quality",
                 title="Recipe Quality Audit",
-                group="Analysis",
+                group="Audits",
                 description="Score all recipes on completeness — categories, tags, tools, description, cook time, yield, and nutrition coverage.",
                 options=[
                     OptionSpec(
@@ -596,7 +596,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="recipe-name-normalize",
                 title="Recipe Name Normalizer",
-                group="Cleanup",
+                group="Actions",
                 description="Clean up recipe names derived from URL slugs — turns 'how-to-make-chicken-pasta-recipe' into 'Chicken Pasta'. By default only fixes names that match their slug.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -615,7 +615,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="recipe-dedup",
                 title="Recipe Deduplicator",
-                group="Cleanup",
+                group="Actions",
                 description="Find recipes with the same canonical source URL and delete the duplicates, keeping the best copy. Strips tracking parameters before comparing.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -627,7 +627,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="recipe-junk-filter",
                 title="Junk Recipe Filter",
-                group="Cleanup",
+                group="Actions",
                 description="Detect and remove non-recipe content that slipped in during import: listicles, how-to articles, digest posts, and recipes with placeholder instructions.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
@@ -655,7 +655,7 @@ class TaskRegistry:
             TaskDefinition(
                 task_id="yield-normalize",
                 title="Yield Normalizer",
-                group="Cleanup",
+                group="Actions",
                 description="Fill missing yield text from servings count, or parse yield text to set numeric servings.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
