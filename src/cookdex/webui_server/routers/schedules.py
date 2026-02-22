@@ -17,12 +17,12 @@ def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePay
         seconds = int(request.seconds or 0)
         if seconds <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
-        data = {"seconds": seconds}
-    else:
-        expression = str(request.cron or "").strip()
-        if not expression:
-            raise HTTPException(status_code=422, detail="Cron schedules require 'cron'.")
-        data = {"expression": expression}
+        data: dict[str, Any] = {"seconds": seconds}
+    else:  # once
+        run_at = str(request.run_at or "").strip()
+        if not run_at:
+            raise HTTPException(status_code=422, detail="Once schedules require 'run_at'.")
+        data = {"run_at": run_at}
     return SchedulePayload(
         name=request.name.strip(),
         task_id=request.task_id.strip(),
@@ -40,13 +40,13 @@ def _schedule_payload_from_update(existing: dict[str, Any], request: ScheduleUpd
         seconds = request.seconds if request.seconds is not None else existing_seconds
         if int(seconds) <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
-        data = {"seconds": int(seconds)}
-    else:
-        existing_cron = str(dict(existing["schedule_data"]).get("expression", ""))
-        expression = str(request.cron if request.cron is not None else existing_cron).strip()
-        if not expression:
-            raise HTTPException(status_code=422, detail="Cron schedules require 'cron'.")
-        data = {"expression": expression}
+        data: dict[str, Any] = {"seconds": int(seconds)}
+    else:  # once
+        existing_run_at = str(dict(existing["schedule_data"]).get("run_at", ""))
+        run_at = str(request.run_at if request.run_at is not None else existing_run_at).strip()
+        if not run_at:
+            raise HTTPException(status_code=422, detail="Once schedules require 'run_at'.")
+        data = {"run_at": run_at}
     return SchedulePayload(
         name=(request.name or str(existing["name"])).strip(),
         task_id=(request.task_id or str(existing["task_id"])).strip(),

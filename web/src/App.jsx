@@ -69,15 +69,15 @@ export default function App() {
   const [runLog, setRunLog] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
 
+  const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     name: "",
-    task_id: "",
     kind: "interval",
-    seconds: 3600,
-    cron: "0 3 * * *",
+    intervalValue: 6,
+    intervalUnit: "hours",
+    run_at: "",
     enabled: true,
   });
-  const [scheduleOptionValues, setScheduleOptionValues] = useState({});
 
   const [configFiles, setConfigFiles] = useState([]);
   const [activeConfig, setActiveConfig] = useState("categories");
@@ -134,11 +134,6 @@ export default function App() {
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
     [tasks, selectedTask]
-  );
-
-  const scheduleTaskDef = useMemo(
-    () => tasks.find((item) => item.task_id === scheduleForm.task_id) || null,
-    [tasks, scheduleForm.task_id]
   );
 
   const activePageMeta = PAGE_META[activePage] || PAGE_META.overview;
@@ -402,9 +397,19 @@ export default function App() {
     setTaskValues(buildDefaultOptionValues(selectedTaskDef));
   }, [selectedTaskDef]);
 
+  const liveRunsTimer = React.useRef(null);
+
   useEffect(() => {
-    setScheduleOptionValues(buildDefaultOptionValues(scheduleTaskDef));
-  }, [scheduleTaskDef]);
+    if (activePage !== "tasks" || !session) {
+      clearInterval(liveRunsTimer.current);
+      return;
+    }
+    // Fetch fresh task definitions (including dynamic options like provider choices)
+    // every time the user opens the Tasks page, so cached data never goes stale.
+    refreshTasks();
+    liveRunsTimer.current = setInterval(() => { refreshRuns(); }, 3000);
+    return () => clearInterval(liveRunsTimer.current);
+  }, [activePage, session]);
 
   const bannerTimer = React.useRef(null);
 
@@ -521,9 +526,6 @@ export default function App() {
     if (!selectedTask && nextTasks.length > 0) {
       setSelectedTask(nextTasks[0].task_id);
     }
-    if (!scheduleForm.task_id && nextTasks.length > 0) {
-      setScheduleForm((prev) => ({ ...prev, task_id: nextTasks[0].task_id }));
-    }
   }
 
   function scheduleAutoRefresh() {
@@ -541,6 +543,34 @@ export default function App() {
       scheduleAutoRefresh();
       return true;
     } catch { return false; }
+  }
+
+  async function refreshRuns() {
+    try {
+      const payload = await api("/runs");
+      setRuns(payload?.items || []);
+    } catch (exc) { handleError(exc); }
+  }
+
+  async function refreshSchedules() {
+    try {
+      const payload = await api("/schedules");
+      setSchedules(payload?.items || []);
+    } catch (exc) { handleError(exc); }
+  }
+
+  async function refreshUsers() {
+    try {
+      const payload = await api("/users");
+      setUsers(payload?.items || []);
+    } catch (exc) { handleError(exc); }
+  }
+
+  async function refreshTasks() {
+    try {
+      const payload = await api("/tasks");
+      setTasks(payload?.items || []);
+    } catch (exc) { handleError(exc); }
   }
 
   async function loadData() {
@@ -679,12 +709,27 @@ export default function App() {
     try {
       clearBanners();
       const options = normalizeTaskOptions(selectedTaskDef, taskValues);
+      const isDangerous = options.dry_run === false;
+      if (isDangerous) {
+        await togglePolicy(selectedTaskDef.task_id, true);
+      }
       await api("/runs", {
         method: "POST",
         body: { task_id: selectedTaskDef.task_id, options },
       });
-      await loadData();
+      await refreshRuns();
       showNotice("Run queued.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function cancelRun(runId) {
+    try {
+      clearBanners();
+      await api(`/runs/${runId}/cancel`, { method: "POST" });
+      await refreshRuns();
+      showNotice("Run canceled.");
     } catch (exc) {
       handleError(exc);
     }
@@ -708,36 +753,50 @@ export default function App() {
         method: "PUT",
         body: { policies: { [taskId]: { allow_dangerous: value } } },
       });
-      await loadData();
+      await refreshTasks();
       showNotice("Task policy updated.");
     } catch (exc) {
       handleError(exc);
     }
   }
 
-  async function createSchedule(event) {
-    event.preventDefault();
-    if (!scheduleTaskDef) {
+  const UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600, days: 86400 };
+
+  async function createSchedule() {
+    if (!selectedTaskDef) {
       setError("Select a task before saving a schedule.");
+      return;
+    }
+    if (!scheduleForm.name.trim()) {
+      setError("Please enter a name for this schedule.");
+      return;
+    }
+    if (scheduleForm.kind === "once" && !scheduleForm.run_at) {
+      setError("Please choose a date and time for this schedule.");
       return;
     }
 
     try {
       clearBanners();
-      const options = normalizeTaskOptions(scheduleTaskDef, scheduleOptionValues);
+      const options = normalizeTaskOptions(selectedTaskDef, taskValues);
+      if (options.dry_run === false) {
+        await togglePolicy(selectedTask, true);
+      }
+      const intervalSeconds = Number(scheduleForm.intervalValue) * (UNIT_SECONDS[scheduleForm.intervalUnit] || 1);
       await api("/schedules", {
         method: "POST",
         body: {
           name: scheduleForm.name,
-          task_id: scheduleForm.task_id,
+          task_id: selectedTask,
           kind: scheduleForm.kind,
-          seconds: scheduleForm.kind === "interval" ? Number(scheduleForm.seconds) : undefined,
-          cron: scheduleForm.kind === "cron" ? scheduleForm.cron : undefined,
+          seconds: scheduleForm.kind === "interval" ? intervalSeconds : undefined,
+          run_at: scheduleForm.kind === "once" ? scheduleForm.run_at : undefined,
           options,
           enabled: Boolean(scheduleForm.enabled),
         },
       });
-      await loadData();
+      await refreshSchedules();
+      setScheduleMode(false);
       showNotice("Schedule saved.");
     } catch (exc) {
       handleError(exc);
@@ -748,8 +807,21 @@ export default function App() {
     try {
       clearBanners();
       await api(`/schedules/${scheduleId}`, { method: "DELETE" });
-      await loadData();
+      await refreshSchedules();
       showNotice("Schedule removed.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function toggleScheduleEnabled(schedule) {
+    try {
+      clearBanners();
+      await api(`/schedules/${schedule.schedule_id}`, {
+        method: "PATCH",
+        body: { enabled: !schedule.enabled },
+      });
+      await refreshSchedules();
     } catch (exc) {
       handleError(exc);
     }
@@ -1042,7 +1114,7 @@ export default function App() {
       setNewUserUsername("");
       setNewUserRole("Editor");
       setNewUserPassword("");
-      await loadData();
+      await refreshUsers();
       showNotice("User created.");
     } catch (exc) {
       handleError(exc);
@@ -1075,7 +1147,7 @@ export default function App() {
         try {
           clearBanners();
           await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });
-          await loadData();
+          await refreshUsers();
           showNotice(`Removed ${usernameValue}.`);
         } catch (exc) {
           handleError(exc);
@@ -1261,8 +1333,14 @@ export default function App() {
     const selectedRun = runs.find((item) => item.run_id === selectedRunId) || null;
 
     function formatScheduleTiming(schedule) {
-      if (schedule.kind === "cron") return `Cron ${schedule.cron || ""}`;
-      const secs = Number(schedule.seconds || 0);
+      const kind = schedule.schedule_kind;
+      const data = schedule.schedule_data || {};
+      if (kind === "once") {
+        if (!data.run_at) return "Once";
+        return `Once · ${new Date(data.run_at).toLocaleString()}`;
+      }
+      const secs = Number(data.seconds || 0);
+      if (secs >= 86400) return `Every ${Math.round(secs / 86400)}d`;
       if (secs >= 3600) return `Every ${Math.round(secs / 3600)}h`;
       if (secs >= 60) return `Every ${Math.round(secs / 60)}m`;
       return `Every ${secs}s`;
@@ -1293,11 +1371,12 @@ export default function App() {
                 ))}
               </div>
 
-              {(selectedTaskDef?.options || []).length > 0 ? (
+              {(selectedTaskDef?.options || []).some((o) => !o.hidden && !(o.hidden_when && taskValues[o.hidden_when.key] === o.hidden_when.value)) ? (
                 <div className="option-grid">
                   {(selectedTaskDef?.options || []).map((option) =>
                     fieldFromOption(option, taskValues[option.key], (key, value) =>
-                      setTaskValues((prev) => ({ ...prev, [key]: value }))
+                      setTaskValues((prev) => ({ ...prev, [key]: value })),
+                      taskValues
                     )
                   )}
                 </div>
@@ -1305,13 +1384,100 @@ export default function App() {
                 <p className="muted tiny">This task has no additional options.</p>
               )}
 
-              <button type="button" className="primary" onClick={triggerRun}>
-                <Icon name="play" />
-                Queue Run
-              </button>
+              <label className="field field-inline schedule-toggle">
+                <span>Schedule Run</span>
+                <input
+                  type="checkbox"
+                  checked={scheduleMode}
+                  onChange={(event) => setScheduleMode(event.target.checked)}
+                />
+              </label>
+
+              {scheduleMode && (
+                <div className="schedule-inline">
+                  <label className="field">
+                    <span>Schedule Name</span>
+                    <input
+                      value={scheduleForm.name}
+                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="e.g. Morning cleanup"
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Type</span>
+                    <select
+                      value={scheduleForm.kind}
+                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
+                    >
+                      <option value="interval">Interval</option>
+                      <option value="once">Once</option>
+                    </select>
+                  </label>
+
+                  {scheduleForm.kind === "interval" ? (
+                    <div className="interval-row">
+                      <label className="field">
+                        <span>Every</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={scheduleForm.intervalValue}
+                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalValue: event.target.value }))}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>&nbsp;</span>
+                        <select
+                          value={scheduleForm.intervalUnit}
+                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalUnit: event.target.value }))}
+                        >
+                          <option value="seconds">Seconds</option>
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="field">
+                      <span>Run at</span>
+                      <input
+                        type="datetime-local"
+                        value={scheduleForm.run_at}
+                        min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                        onChange={(event) => setScheduleForm((prev) => ({ ...prev, run_at: event.target.value }))}
+                      />
+                    </label>
+                  )}
+
+                  <label className="field field-inline">
+                    <span>Enabled</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(scheduleForm.enabled)}
+                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {scheduleMode ? (
+                <button type="button" className="primary" onClick={createSchedule}>
+                  <Icon name="save" />
+                  Save Schedule
+                </button>
+              ) : (
+                <button type="button" className="primary" onClick={triggerRun}>
+                  <Icon name="play" />
+                  Queue Run
+                </button>
+              )}
             </div>
           </article>
+        </div>
 
+        <div className="stacked-cards">
           {schedules.length > 0 ? (
             <article className="card">
               <h3>Saved Schedules</h3>
@@ -1326,11 +1492,15 @@ export default function App() {
                       </p>
                     </div>
                     <div className="schedule-item-actions">
-                      <span className={`status-pill ${schedule.enabled !== false ? "success" : "neutral"}`}>
-                        {schedule.enabled !== false ? "Enabled" : "Disabled"}
-                      </span>
-                      <button className="ghost small" onClick={() => deleteSchedule(schedule.schedule_id)}>
-                        <Icon name="x" />
+                      <button
+                        className={`ghost small ${schedule.enabled !== false ? "enabled-toggle" : "disabled-toggle"}`}
+                        title={schedule.enabled !== false ? "Disable schedule" : "Enable schedule"}
+                        onClick={() => toggleScheduleEnabled(schedule)}
+                      >
+                        <Icon name={schedule.enabled !== false ? "check-circle" : "x-circle"} />
+                      </button>
+                      <button className="ghost small danger" onClick={() => deleteSchedule(schedule.schedule_id)}>
+                        <Icon name="trash" />
                       </button>
                     </div>
                   </li>
@@ -1340,95 +1510,7 @@ export default function App() {
           ) : null}
 
           <article className="card">
-            <h3>New Schedule</h3>
-            <form className="run-form" onSubmit={createSchedule}>
-              <label className="field">
-                <span>Schedule Name</span>
-                <input
-                  value={scheduleForm.name}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
-                  placeholder="Morning cleanup"
-                />
-              </label>
-
-              <label className="field">
-                <span>Task</span>
-                <select
-                  value={scheduleForm.task_id}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, task_id: event.target.value }))}
-                >
-                  <option value="">Select task</option>
-                  {taskGroups.map(([group, groupTasks]) => (
-                    <optgroup key={group} label={group}>
-                      {groupTasks.map((task) => (
-                        <option key={task.task_id} value={task.task_id}>{task.title}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-
-              <div className="option-grid two">
-                <label className="field">
-                  <span>Type</span>
-                  <select
-                    value={scheduleForm.kind}
-                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
-                  >
-                    <option value="interval">Interval</option>
-                    <option value="cron">Cron</option>
-                  </select>
-                </label>
-
-                {scheduleForm.kind === "interval" ? (
-                  <label className="field">
-                    <span>Seconds</span>
-                    <input
-                      type="number"
-                      value={scheduleForm.seconds}
-                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, seconds: event.target.value }))}
-                    />
-                  </label>
-                ) : (
-                  <label className="field">
-                    <span>Cron Expression</span>
-                    <input
-                      value={scheduleForm.cron}
-                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, cron: event.target.value }))}
-                    />
-                  </label>
-                )}
-              </div>
-
-              {(scheduleTaskDef?.options || []).length > 0 ? (
-                <div className="option-grid">
-                  {(scheduleTaskDef?.options || []).map((option) =>
-                    fieldFromOption(option, scheduleOptionValues[option.key], (key, value) =>
-                      setScheduleOptionValues((prev) => ({ ...prev, [key]: value }))
-                    )
-                  )}
-                </div>
-              ) : null}
-
-              <label className="field field-inline">
-                <span>Enabled</span>
-                <input
-                  type="checkbox"
-                  checked={Boolean(scheduleForm.enabled)}
-                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-                />
-              </label>
-
-              <button type="submit" className="primary">
-                <Icon name="save" />
-                Save Schedule
-              </button>
-            </form>
-          </article>
-        </div>
-
-        <article className="card">
-          <div className="card-head split">
+            <div className="card-head split">
             <div>
               <h3>All Activity</h3>
               <p>Manual and scheduled runs shown together.</p>
@@ -1473,30 +1555,52 @@ export default function App() {
                 <tr>
                   <th>Task</th>
                   <th>Type</th>
+                  <th>Mode</th>
                   <th>Status</th>
                   <th>Run Time</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No runs found.</td>
+                    <td colSpan={6}>No runs found.</td>
                   </tr>
                 ) : (
-                  filteredRuns.map((run) => (
-                    <tr
-                      key={run.run_id}
-                      className={selectedRunId === run.run_id ? "selected-row" : ""}
-                      onClick={() => fetchLog(run.run_id)}
-                    >
-                      <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
-                      <td>{runTypeLabel(run)}</td>
-                      <td>
-                        <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
-                      </td>
-                      <td>{formatRunTime(run)}</td>
-                    </tr>
-                  ))
+                  filteredRuns.map((run) => {
+                    const cancelable = run.status === "queued" || run.status === "running";
+                    const isDryRun = run.options?.dry_run !== false;
+                    return (
+                      <tr
+                        key={run.run_id}
+                        className={selectedRunId === run.run_id ? "selected-row" : ""}
+                        onClick={() => fetchLog(run.run_id)}
+                      >
+                        <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
+                        <td>{runTypeLabel(run)}</td>
+                        <td>
+                          <span className={`status-pill ${isDryRun ? "dry-run" : "live-run"}`}>
+                            {isDryRun ? "Dry Run" : "Live"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
+                        </td>
+                        <td>{formatRunTime(run)}</td>
+                        <td className="run-actions-cell">
+                          {cancelable && (
+                            <button
+                              className="ghost small danger"
+                              title="Cancel run"
+                              onClick={(event) => { event.stopPropagation(); cancelRun(run.run_id); }}
+                            >
+                              <Icon name="x" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1516,6 +1620,7 @@ export default function App() {
             <pre className="log-viewer">{runLog || "Select any row above to inspect its full formatted output."}</pre>
           </div>
         </article>
+        </div>
       </section>
     );
   }

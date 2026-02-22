@@ -28,7 +28,9 @@ export function normalizeErrorMessage(raw) {
 export function buildDefaultOptionValues(taskDefinition) {
   const values = {};
   for (const option of taskDefinition?.options || []) {
-    if (option.default !== undefined && option.default !== null) {
+    if (option.multi) {
+      values[option.key] = [];
+    } else if (option.default !== undefined && option.default !== null) {
       values[option.key] = option.default;
     }
   }
@@ -495,11 +497,68 @@ export async function api(path, options = {}) {
   return textPayload;
 }
 
-export function fieldFromOption(option, value, onChange) {
+export function fieldFromOption(option, value, onChange, allValues = {}) {
+  if (option.hidden) return null;
+  if (option.hidden_when) {
+    const { key, value: trigger } = option.hidden_when;
+    if (allValues[key] === trigger) return null;
+  }
+
   const labelClass = option.dangerous ? "danger-text" : "";
   const hint = option.help_text ? (
     <p className="muted tiny" style={{ margin: 0 }}>{option.help_text}</p>
   ) : null;
+
+  if (Array.isArray(option.choices) && option.choices.length > 0) {
+    if (option.multi) {
+      const selected = Array.isArray(value) ? value : [];
+      const remove = (v) => onChange(option.key, selected.filter((x) => x !== v));
+      const add = (v) => { if (v) onChange(option.key, [...selected, v]); };
+      const remaining = option.choices.filter((c) => !selected.includes(c.value));
+      return (
+        <div key={option.key} className="chip-select tag-selector">
+          <span className={labelClass} style={{ fontSize: "0.82rem", fontWeight: 600 }}>{option.label}</span>
+          <div className="tag-selector-body">
+            {selected.map((v) => {
+              const choice = option.choices.find((c) => c.value === v);
+              return (
+                <span key={v} className="tag-item">
+                  {choice?.label ?? v}
+                  <button type="button" onClick={() => remove(v)} title={`Remove ${choice?.label ?? v}`}>×</button>
+                </span>
+              );
+            })}
+            {remaining.length > 0 && (
+              <select className="tag-add" value="" onChange={(e) => add(e.target.value)}>
+                <option value="">{selected.length === 0 ? "Add stages to limit pipeline…" : "Add stage…"}</option>
+                {remaining.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {selected.length === 0 && (
+            <p className="muted tiny" style={{ margin: 0 }}>All stages will run. Select stages above to run a subset.</p>
+          )}
+          {selected.length > 0 && hint}
+        </div>
+      );
+    }
+    return (
+      <label key={option.key} className="field">
+        <span className={labelClass}>{option.label}</span>
+        <select
+          value={value ?? ""}
+          onChange={(event) => onChange(option.key, event.target.value)}
+        >
+          {option.choices.map((c) => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+        </select>
+        {hint}
+      </label>
+    );
+  }
 
   if (option.type === "boolean") {
     return (
@@ -632,6 +691,12 @@ export function normalizeTaskOptions(task, values) {
   for (const option of task?.options || []) {
     const raw = values[option.key];
     if (raw === undefined || raw === null || raw === "") {
+      continue;
+    }
+    if (option.multi) {
+      if (Array.isArray(raw) && raw.length > 0) {
+        payload[option.key] = raw;
+      }
       continue;
     }
     if (option.type === "boolean") {

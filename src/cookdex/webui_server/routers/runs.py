@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from ..deps import Services, enforce_safety, require_services, require_session
+from ..deps import Services, build_runtime_env, enforce_safety, require_services, require_session
 from ..schemas import PoliciesUpdateRequest, RunCreateRequest
 
 router = APIRouter(tags=["runs"])
@@ -18,8 +18,29 @@ async def list_tasks(
 ) -> dict[str, Any]:
     tasks = services.registry.describe_tasks()
     policies = services.state.list_task_policies()
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    db_configured = bool(runtime_env.get("MEALIE_DB_TYPE", "").strip())
+    has_openai = bool(runtime_env.get("OPENAI_API_KEY", "").strip())
+    has_ollama = bool(runtime_env.get("OLLAMA_URL", "").strip())
     for task in tasks:
         task["policy"] = policies.get(task["task_id"], {"allow_dangerous": False})
+        for option in task.get("options", []):
+            if db_configured and option["key"] == "use_db":
+                option["default"] = True
+            if task["task_id"] == "categorize" and option["key"] == "provider":
+                provider_choices = []
+                if has_openai:
+                    provider_choices.append({"value": "chatgpt", "label": "ChatGPT (OpenAI)"})
+                if has_ollama:
+                    provider_choices.append({"value": "ollama", "label": "Ollama (Local)"})
+                if not provider_choices:
+                    option["hidden"] = True
+                else:
+                    option["choices"] = [
+                        {"value": "", "label": "Default"},
+                        *provider_choices,
+                        {"value": "none", "label": "No AI"},
+                    ]
     return {"items": tasks}
 
 

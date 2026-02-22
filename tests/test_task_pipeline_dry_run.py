@@ -35,8 +35,21 @@ ALL_TASK_IDS = [
     "yield-normalize",
 ]
 
-# Tasks that expose an `apply` flag that marks the execution as dangerous
-APPLY_TASKS = ["foods-cleanup", "labels-sync", "rule-tag", "tools-sync", "units-cleanup", "yield-normalize"]
+# Read-only tasks that never write anything; dry_run is not exposed in the UI
+READ_ONLY_TASKS = ["taxonomy-audit", "recipe-quality"]
+
+# Tasks that have a user-visible dry_run option
+DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t not in READ_ONLY_TASKS]
+
+# Tasks that drive --apply via dry_run=False (no separate apply option)
+DRY_RUN_APPLY_TASKS = [
+    "foods-cleanup",
+    "labels-sync",
+    "rule-tag",
+    "tools-sync",
+    "units-cleanup",
+    "yield-normalize",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -104,16 +117,16 @@ def test_unknown_options_are_rejected(task_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("task_id", APPLY_TASKS)
-def test_apply_flag_marks_dangerous(task_id: str) -> None:
-    execution = _build(task_id, {"apply": True})
+@pytest.mark.parametrize("task_id", DRY_RUN_APPLY_TASKS)
+def test_dry_run_false_marks_dangerous(task_id: str) -> None:
+    execution = _build(task_id, {"dry_run": False})
     assert execution.dangerous_requested is True
     assert "--apply" in execution.command
 
 
-@pytest.mark.parametrize("task_id", APPLY_TASKS)
-def test_apply_false_does_not_mark_dangerous_when_dry_run(task_id: str) -> None:
-    execution = _build(task_id, {"dry_run": True, "apply": False})
+@pytest.mark.parametrize("task_id", DRY_RUN_APPLY_TASKS)
+def test_dry_run_true_does_not_mark_dangerous(task_id: str) -> None:
+    execution = _build(task_id, {"dry_run": True})
     assert execution.dangerous_requested is False
     assert "--apply" not in execution.command
 
@@ -223,7 +236,7 @@ def test_ingredient_parse_module() -> None:
 
 
 def test_ingredient_parse_confidence_flag() -> None:
-    execution = _build("ingredient-parse", {"confidence_threshold": 0.75})
+    execution = _build("ingredient-parse", {"confidence_threshold": 75})
     assert "--conf" in execution.command
     idx = execution.command.index("--conf")
     assert execution.command[idx + 1] == "0.75"
@@ -267,10 +280,22 @@ def test_foods_cleanup_module_and_subcommand() -> None:
     assert "cleanup" in execution.command
 
 
+def test_foods_cleanup_dry_run_false_is_dangerous() -> None:
+    execution = _build("foods-cleanup", {"dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
+
+
 def test_units_cleanup_module_and_subcommand() -> None:
     execution = _build("units-cleanup")
     assert "cookdex.units_manager" in execution.command
     assert "cleanup" in execution.command
+
+
+def test_units_cleanup_dry_run_false_is_dangerous() -> None:
+    execution = _build("units-cleanup", {"dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
 
 
 def test_labels_sync_module() -> None:
@@ -278,9 +303,21 @@ def test_labels_sync_module() -> None:
     assert "cookdex.labels_manager" in execution.command
 
 
+def test_labels_sync_dry_run_false_is_dangerous() -> None:
+    execution = _build("labels-sync", {"dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
+
+
 def test_tools_sync_module() -> None:
     execution = _build("tools-sync")
     assert "cookdex.tools_manager" in execution.command
+
+
+def test_tools_sync_dry_run_false_is_dangerous() -> None:
+    execution = _build("tools-sync", {"dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
 
 
 # ---------------------------------------------------------------------------
@@ -373,8 +410,8 @@ def test_yield_normalize_module() -> None:
     assert "cookdex.yield_normalizer" in execution.command
 
 
-def test_yield_normalize_apply_marks_dangerous() -> None:
-    execution = _build("yield-normalize", {"apply": True})
+def test_yield_normalize_dry_run_false_is_dangerous() -> None:
+    execution = _build("yield-normalize", {"dry_run": False})
     assert execution.dangerous_requested is True
     assert "--apply" in execution.command
 
@@ -406,8 +443,8 @@ def test_rule_tag_dry_run_default() -> None:
     assert "--apply" not in execution.command
 
 
-def test_rule_tag_apply_is_dangerous() -> None:
-    execution = _build("rule-tag", {"apply": True})
+def test_rule_tag_dry_run_false_is_dangerous() -> None:
+    execution = _build("rule-tag", {"dry_run": False})
     assert "--apply" in execution.command
     assert execution.dangerous_requested is True
 
@@ -457,15 +494,22 @@ def test_task_description_has_required_fields(task_id: str) -> None:
         assert opt["type"] in {"boolean", "string", "integer", "number"}
 
 
-@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
 def test_every_task_has_dry_run_option(task_id: str) -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
     option_keys = {o["key"] for o in descriptions[task_id]["options"]}
     assert "dry_run" in option_keys
 
 
-@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
 def test_dry_run_option_defaults_true(task_id: str) -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
     dry_run_opt = next(o for o in descriptions[task_id]["options"] if o["key"] == "dry_run")
     assert dry_run_opt["default"] is True
+
+
+@pytest.mark.parametrize("task_id", READ_ONLY_TASKS)
+def test_read_only_tasks_have_no_dry_run_option(task_id: str) -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+    option_keys = {o["key"] for o in descriptions[task_id]["options"]}
+    assert "dry_run" not in option_keys

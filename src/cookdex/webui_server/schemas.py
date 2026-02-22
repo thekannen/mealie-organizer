@@ -71,21 +71,21 @@ class PoliciesUpdateRequest(BaseModel):
 class ScheduleCreateRequest(BaseModel):
     name: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
-    kind: str = Field(pattern="^(interval|cron)$")
+    kind: str = Field(pattern="^(interval|once)$")
     options: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     seconds: int | None = None
-    cron: str | None = None
+    run_at: str | None = None
 
 
 class ScheduleUpdateRequest(BaseModel):
     name: str | None = None
     task_id: str | None = None
-    kind: str | None = Field(default=None, pattern="^(interval|cron)$")
+    kind: str | None = Field(default=None, pattern="^(interval|once)$")
     options: dict[str, Any] | None = None
     enabled: bool | None = None
     seconds: int | None = None
-    cron: str | None = None
+    run_at: str | None = None
 
 
 class SettingsUpdateRequest(BaseModel):

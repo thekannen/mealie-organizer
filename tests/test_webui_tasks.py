@@ -8,9 +8,9 @@ def test_registry_defaults_to_dry_run_for_parser():
     assert execution.dangerous_requested is False
 
 
-def test_registry_marks_apply_option_as_dangerous():
+def test_registry_marks_dry_run_false_as_dangerous():
     registry = TaskRegistry()
-    execution = registry.build_execution("foods-cleanup", {"apply": True})
+    execution = registry.build_execution("foods-cleanup", {"dry_run": False})
     assert execution.dangerous_requested is True
 
 

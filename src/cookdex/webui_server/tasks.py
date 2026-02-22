@@ -14,6 +14,9 @@ class OptionSpec:
     required: bool = False
     dangerous: bool = False
     help_text: str = ""
+    hidden_when: dict[str, Any] | None = None
+    choices: list[dict[str, Any]] | None = None
+    multi: bool = False
 
 
 @dataclass(frozen=True)
@@ -164,7 +167,7 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
     )
     env, dangerous = _common_env(options)
     cmd = _py_module("cookdex.ingredient_parser")
-    confidence = _float_option(options, "confidence_threshold")
+    confidence_pct = _int_option(options, "confidence_threshold")
     max_recipes = _int_option(options, "max_recipes")
     after_slug = _str_option(options, "after_slug", "")
     parsers = _str_option(options, "parsers", "")
@@ -175,8 +178,8 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
     retries = _int_option(options, "retries")
     backoff_seconds = _float_option(options, "backoff_seconds")
 
-    if confidence is not None:
-        cmd.extend(["--conf", str(confidence)])
+    if confidence_pct is not None:
+        cmd.extend(["--conf", str(confidence_pct / 100.0)])
     if max_recipes is not None:
         cmd.extend(["--max", str(max_recipes)])
     if after_slug:
@@ -200,43 +203,43 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_foods_cleanup(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply"})
+    _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     cmd = _py_module("cookdex.foods_manager", "cleanup")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_units_cleanup(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply"})
+    _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     cmd = _py_module("cookdex.units_manager", "cleanup")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_labels_sync(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply"})
+    _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     cmd = _py_module("cookdex.labels_manager")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_tools_sync(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply"})
+    _validate_allowed(options, {"dry_run"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     cmd = _py_module("cookdex.tools_manager")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
@@ -264,19 +267,19 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_rule_tag(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply", "use_db", "config_file"})
+    _validate_allowed(options, {"dry_run", "use_db", "config_file"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     use_db = _bool_option(options, "use_db", False)
     config_file = _str_option(options, "config_file", "")
     cmd = _py_module("cookdex.rule_tagger")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
     if use_db:
         cmd.append("--use-db")
     if config_file:
         cmd.extend(["--config", config_file])
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_recipe_quality(options: dict[str, Any]) -> TaskExecution:
@@ -293,16 +296,16 @@ def _build_recipe_quality(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply", "use_db"})
+    _validate_allowed(options, {"dry_run", "use_db"})
     env, dangerous = _common_env(options)
-    apply = _bool_option(options, "apply", False)
+    dry_run = _bool_option(options, "dry_run", True)
     use_db = _bool_option(options, "use_db", False)
     cmd = _py_module("cookdex.yield_normalizer")
-    if apply:
+    if not dry_run:
         cmd.append("--apply")
     if use_db:
         cmd.append("--use-db")
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 class TaskRegistry:
@@ -323,10 +326,10 @@ class TaskRegistry:
                 task_id="categorize",
                 title="Categorize Recipes",
                 group="AI & Tagging",
-                description="Classify recipes into categories/tags/tools using the configured provider.",
+                description="Use AI to classify recipes into categories, tags, and tools.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("provider", "Provider Override", "string"),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec("provider", "AI Provider", "string"),
                 ],
                 build=_build_categorize,
             )
@@ -338,9 +341,27 @@ class TaskRegistry:
                 group="Taxonomy",
                 description="Sync categories and tags from taxonomy source files.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("mode", "Refresh Mode", "string", default="merge"),
-                    OptionSpec("cleanup_apply", "Apply Cleanup Deletes", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec(
+                        "mode",
+                        "Refresh Mode",
+                        "string",
+                        default="merge",
+                        help_text="Merge keeps existing entries and adds new ones. Replace overwrites to match source files exactly.",
+                        choices=[
+                            {"value": "merge", "label": "Merge (keep existing)"},
+                            {"value": "replace", "label": "Replace (match source exactly)"},
+                        ],
+                    ),
+                    OptionSpec(
+                        "cleanup_apply",
+                        "Delete Unused Entries",
+                        "boolean",
+                        default=False,
+                        dangerous=True,
+                        help_text="Permanently delete categories/tags not referenced by any recipe.",
+                        hidden_when={"key": "dry_run", "value": True},
+                    ),
                 ],
                 build=_build_taxonomy_refresh,
             )
@@ -350,8 +371,8 @@ class TaskRegistry:
                 task_id="taxonomy-audit",
                 title="Taxonomy Audit",
                 group="Analysis",
-                description="Generate taxonomy diagnostics report.",
-                options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True)],
+                description="Scan taxonomy for unused entries, duplicate names, and recipes missing categories or tags.",
+                options=[],
                 build=_build_taxonomy_audit,
             )
         )
@@ -360,8 +381,8 @@ class TaskRegistry:
                 task_id="cookbook-sync",
                 title="Cookbook Sync",
                 group="Content Sync",
-                description="Create/update cookbooks based on config rules.",
-                options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True)],
+                description="Create and update cookbooks to match your cookbook configuration.",
+                options=[OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything.")],
                 build=_build_cookbook_sync,
             )
         )
@@ -370,14 +391,16 @@ class TaskRegistry:
                 task_id="ingredient-parse",
                 title="Ingredient Parser",
                 group="Parsing",
-                description="Parse ingredients with configured parser fallback.",
+                description="Run NLP parsing on recipe ingredients to extract food, unit, and quantity from raw text. When confidence is below the threshold, parsing falls back to an AI processor.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("confidence_threshold", "Confidence", "number"),
-                    OptionSpec("max_recipes", "Max Recipes", "integer"),
-                    OptionSpec("after_slug", "After Slug", "string"),
-                    OptionSpec("parsers", "Parsers", "string"),
-                    OptionSpec("force_parser", "Force Parser", "string"),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec(
+                        "confidence_threshold",
+                        "Confidence Threshold",
+                        "integer",
+                        default=75,
+                        help_text="Minimum confidence % (0–100) to accept an NLP parse result. Results below this threshold fall back to AI parsing.",
+                    ),
                 ],
                 build=_build_ingredient_parse,
             )
@@ -387,10 +410,9 @@ class TaskRegistry:
                 task_id="foods-cleanup",
                 title="Foods Cleanup",
                 group="Cleanup",
-                description="Merge duplicate food entries and cleanup noise.",
+                description="Find and merge duplicate food entries — e.g. 'garlic' and 'Garlic Clove' pointing to the same ingredient.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("apply", "Apply Merge Actions", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                 ],
                 build=_build_foods_cleanup,
             )
@@ -400,10 +422,9 @@ class TaskRegistry:
                 task_id="units-cleanup",
                 title="Units Cleanup",
                 group="Cleanup",
-                description="Normalize unit aliases and merge duplicate units.",
+                description="Find and merge duplicate units — e.g. 'tsp', 'teaspoon', and 'Teaspoon' collapsed into one canonical entry.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("apply", "Apply Merge Actions", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                 ],
                 build=_build_units_cleanup,
             )
@@ -413,10 +434,9 @@ class TaskRegistry:
                 task_id="labels-sync",
                 title="Labels Sync",
                 group="Content Sync",
-                description="Create/delete labels from taxonomy config.",
+                description="Sync labels from your taxonomy config — creates missing labels and removes unlisted ones.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("apply", "Apply Changes", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                 ],
                 build=_build_labels_sync,
             )
@@ -426,10 +446,9 @@ class TaskRegistry:
                 task_id="tools-sync",
                 title="Tools Sync",
                 group="Content Sync",
-                description="Create/merge tools from taxonomy config.",
+                description="Sync cooking tools from your taxonomy config — creates new tools and merges duplicates.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("apply", "Apply Changes", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                 ],
                 build=_build_tools_sync,
             )
@@ -439,14 +458,52 @@ class TaskRegistry:
                 task_id="data-maintenance",
                 title="Data Maintenance Pipeline",
                 group="Pipeline",
-                description="Run staged maintenance pipeline with optional write cleanups.",
+                description="Run all maintenance stages in order: Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit. Select specific stages to run a subset.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("stages", "Stages", "string"),
-                    OptionSpec("continue_on_error", "Continue on Error", "boolean", default=False),
-                    OptionSpec("apply_cleanups", "Apply Cleanup Writes", "boolean", default=False, dangerous=True),
-                    OptionSpec("skip_ai", "Skip AI Categorize Stage", "boolean", default=False,
-                               help_text="Skip categorize even if a provider is configured."),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec(
+                        "stages",
+                        "Stages",
+                        "string",
+                        help_text="Select stages to run. Leave all unselected to run the full pipeline.",
+                        multi=True,
+                        choices=[
+                            {"value": "parse", "label": "Ingredient Parse"},
+                            {"value": "foods", "label": "Foods Cleanup"},
+                            {"value": "units", "label": "Units Cleanup"},
+                            {"value": "labels", "label": "Labels Sync"},
+                            {"value": "tools", "label": "Tools Sync"},
+                            {"value": "taxonomy", "label": "Taxonomy Refresh"},
+                            {"value": "categorize", "label": "Categorize"},
+                            {"value": "cookbooks", "label": "Cookbook Sync"},
+                            {"value": "yield", "label": "Yield Normalize"},
+                            {"value": "quality", "label": "Quality Audit"},
+                            {"value": "audit", "label": "Taxonomy Audit"},
+                        ],
+                    ),
+                    OptionSpec(
+                        "skip_ai",
+                        "Skip AI Stage",
+                        "boolean",
+                        default=False,
+                        help_text="Skip AI categorization even if a provider is configured.",
+                    ),
+                    OptionSpec(
+                        "continue_on_error",
+                        "Continue on Error",
+                        "boolean",
+                        default=False,
+                        help_text="Keep running remaining stages if one fails.",
+                    ),
+                    OptionSpec(
+                        "apply_cleanups",
+                        "Apply Cleanup Writes",
+                        "boolean",
+                        default=False,
+                        dangerous=True,
+                        help_text="Write deduplication and cleanup results. Only takes effect for cleanup stages.",
+                        hidden_when={"key": "dry_run", "value": True},
+                    ),
                 ],
                 build=_build_data_maintenance,
             )
@@ -456,41 +513,15 @@ class TaskRegistry:
                 task_id="rule-tag",
                 title="Rule-Based Tagger",
                 group="AI & Tagging",
-                description=(
-                    "Tag and tool-assign recipes using regex rules — no LLM required. "
-                    "API mode (default): runs text_tags rules via the Mealie API. "
-                    "Add use_db for ingredient and tool matching via direct DB queries."
-                ),
+                description="Apply tag and tool rules to recipes using regex patterns — no AI required.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec(
-                        "apply",
-                        "Apply Changes",
-                        "boolean",
-                        default=False,
-                        dangerous=True,
-                        help_text="Write tag and tool assignments to Mealie.",
-                    ),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(
                         "use_db",
                         "Use Direct DB",
                         "boolean",
                         default=False,
-                        help_text=(
-                            "Enable ingredient and tool matching via direct DB queries. "
-                            "Without this, only text_tags rules run (via Mealie API). "
-                            "Requires MEALIE_DB_TYPE in .env and cookdex[db] extras."
-                        ),
-                    ),
-                    OptionSpec(
-                        "config_file",
-                        "Rules Config",
-                        "string",
-                        default="configs/taxonomy/tag_rules.json",
-                        help_text=(
-                            "Path to tag_rules.json (relative to working directory). "
-                            "Leave blank for the default file."
-                        ),
+                        help_text="Match ingredients and tools via direct DB queries.",
                     ),
                 ],
                 build=_build_rule_tag,
@@ -501,29 +532,22 @@ class TaskRegistry:
                 task_id="recipe-quality",
                 title="Recipe Quality Audit",
                 group="Analysis",
-                description=(
-                    "Score all recipes on gold medallion dimensions "
-                    "(category/tags/tools/description/time/yield) and estimate nutrition coverage."
-                ),
+                description="Score all recipes on completeness — categories, tags, tools, description, cook time, yield, and nutrition coverage.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec(
-                        "nutrition_sample",
-                        "Nutrition Sample Size",
-                        "integer",
-                        default=200,
-                        help_text="Number of full recipes to fetch for nutrition coverage estimate (ignored with use_db).",
-                    ),
                     OptionSpec(
                         "use_db",
                         "Use Direct DB",
                         "boolean",
                         default=False,
-                        help_text=(
-                            "Read via single JOIN query instead of N API calls. "
-                            "Exact nutrition coverage (not estimated). "
-                            "Requires MEALIE_DB_TYPE in .env."
-                        ),
+                        help_text="Fetch all recipe data in one query — faster and gives exact nutrition coverage.",
+                    ),
+                    OptionSpec(
+                        "nutrition_sample",
+                        "Nutrition Sample Size",
+                        "integer",
+                        default=200,
+                        help_text="Number of recipes to sample for nutrition coverage estimate.",
+                        hidden_when={"key": "use_db", "value": True},
                     ),
                 ],
                 build=_build_recipe_quality,
@@ -534,23 +558,15 @@ class TaskRegistry:
                 task_id="yield-normalize",
                 title="Yield Normalizer",
                 group="Cleanup",
-                description=(
-                    "Fill missing recipe yield text from servings count, "
-                    "or parse yield text to set numeric servings."
-                ),
+                description="Fill missing yield text from servings count, or parse yield text to set numeric servings.",
                 options=[
-                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
-                    OptionSpec("apply", "Apply Changes", "boolean", default=False, dangerous=True),
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(
                         "use_db",
                         "Use Direct DB",
                         "boolean",
                         default=False,
-                        help_text=(
-                            "Write directly to Mealie's DB in a single transaction "
-                            "instead of individual API PATCH calls. "
-                            "Requires MEALIE_DB_TYPE in .env."
-                        ),
+                        help_text="Write changes in a single DB transaction instead of per-recipe API calls — faster.",
                     ),
                 ],
                 build=_build_yield_normalize,
@@ -585,6 +601,9 @@ class TaskRegistry:
                             "required": option.required,
                             "dangerous": option.dangerous,
                             "help_text": option.help_text,
+                            "hidden_when": option.hidden_when,
+                            "choices": option.choices,
+                            "multi": option.multi,
                         }
                         for option in task.options
                     ],

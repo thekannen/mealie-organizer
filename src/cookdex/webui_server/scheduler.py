@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import logging
 from typing import Any, Callable
 from uuid import uuid4
 
+logger = logging.getLogger(__name__)
+
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from .runner import RunQueueManager
@@ -115,13 +118,22 @@ class SchedulerService:
         existing = self.state.get_schedule(schedule_id)
         if existing is None:
             return False
-        self.scheduler.remove_job(schedule_id, jobstore="default")
+        try:
+            self.scheduler.remove_job(schedule_id, jobstore="default")
+        except Exception:
+            pass
         self.state.delete_schedule(schedule_id)
         return True
 
     def _restore_from_db(self) -> None:
         for item in self.state.list_schedules():
-            self._sync_schedule_job(item)
+            try:
+                self._sync_schedule_job(item)
+            except Exception as exc:
+                logger.warning(
+                    "Skipping schedule %s (%s) on restore: %s",
+                    item.get("schedule_id"), item.get("name"), exc,
+                )
 
     def _with_next_run(self, record: dict[str, Any]) -> dict[str, Any]:
         job = self.scheduler.get_job(str(record["schedule_id"]))
@@ -132,7 +144,10 @@ class SchedulerService:
     def _sync_schedule_job(self, record: dict[str, Any]) -> None:
         schedule_id = str(record["schedule_id"])
         if not bool(record["enabled"]):
-            self.scheduler.remove_job(schedule_id, jobstore="default")
+            try:
+                self.scheduler.remove_job(schedule_id, jobstore="default")
+            except Exception:
+                pass
             return
         trigger = self._build_trigger(record["schedule_kind"], dict(record["schedule_data"]))
         self.scheduler.add_job(
@@ -147,17 +162,20 @@ class SchedulerService:
             jobstore="default",
         )
 
-    def _build_trigger(self, kind: str, schedule_data: dict[str, Any]) -> IntervalTrigger | CronTrigger:
+    def _build_trigger(self, kind: str, schedule_data: dict[str, Any]) -> IntervalTrigger | DateTrigger:
         if kind == "interval":
             seconds = int(schedule_data.get("seconds", 0))
             if seconds <= 0:
                 raise ValueError("Interval schedules require positive 'seconds'.")
             return IntervalTrigger(seconds=seconds, timezone="UTC")
-        if kind == "cron":
-            expression = str(schedule_data.get("expression", "")).strip()
-            if not expression:
-                raise ValueError("Cron schedules require non-empty 'expression'.")
-            return CronTrigger.from_crontab(expression, timezone="UTC")
+        if kind == "once":
+            run_at = str(schedule_data.get("run_at", "")).strip()
+            if not run_at:
+                raise ValueError("Once schedules require non-empty 'run_at'.")
+            # datetime-local inputs produce "YYYY-MM-DDTHH:MM" without seconds
+            if len(run_at) == 16:
+                run_at = run_at + ":00"
+            return DateTrigger(run_date=run_at)
         raise ValueError(f"Unsupported schedule kind: {kind}")
 
     def _fire_schedule(self, schedule_id: str) -> None:

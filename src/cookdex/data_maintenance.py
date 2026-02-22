@@ -14,8 +14,8 @@ VALID_STAGES = {
     "yield", "quality", "audit",
 }
 DEFAULT_STAGE_ORDER = [
-    "parse", "foods", "units", "taxonomy", "categorize",
-    "cookbooks", "yield", "quality", "audit",
+    "parse", "foods", "units", "labels", "tools",
+    "taxonomy", "categorize", "cookbooks", "yield", "quality", "audit",
 ]
 
 

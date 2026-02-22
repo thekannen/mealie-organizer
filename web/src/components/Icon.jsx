@@ -184,6 +184,12 @@ const ICON_PATHS = {
       <path d="m9 12 2 2 4-4" />
     </>
   ),
+  "x-circle": (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15 9-6 6M9 9l6 6" />
+    </>
+  ),
   zap: (
     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
   ),

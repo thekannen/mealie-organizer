@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -171,6 +172,110 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         assert config_put.status_code == 200
         config_get_updated = client.get("/cookdex/api/v1/config/files/categories")
         assert config_get_updated.json()["content"][0]["name"] == "Breakfast"
+
+
+def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
+    """Schedule creation: once type, interval validation, and rejected kinds."""
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    # Short datetime-local format: "YYYY-MM-DDTHH:MM" (no seconds)
+    future_short = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    # Full ISO format with seconds
+    future_full = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    with TestClient(app) as client:
+        _login(client)
+
+        # --- once: short format (datetime-local) should be accepted ---
+        r = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "One-time run",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "run_at": future_short,
+                "enabled": True,
+            },
+        )
+        assert r.status_code == 201, r.text
+        once_id = r.json()["schedule_id"]
+        assert r.json()["schedule_kind"] == "once"
+        assert r.json()["schedule_data"]["run_at"] == future_short
+
+        # --- once: full ISO format should also be accepted ---
+        r2 = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "One-time run full",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "run_at": future_full,
+                "enabled": True,
+            },
+        )
+        assert r2.status_code == 201, r2.text
+
+        # --- once: missing run_at should be rejected ---
+        r3 = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Bad once",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "enabled": True,
+            },
+        )
+        assert r3.status_code == 422, r3.text
+
+        # --- interval: zero seconds should be rejected ---
+        r4 = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Bad interval",
+                "task_id": "taxonomy-refresh",
+                "kind": "interval",
+                "seconds": 0,
+                "enabled": True,
+            },
+        )
+        assert r4.status_code == 422, r4.text
+
+        # --- cron kind should be rejected (deprecated/removed) ---
+        r5 = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Cron attempt",
+                "task_id": "taxonomy-refresh",
+                "kind": "cron",
+                "enabled": True,
+            },
+        )
+        assert r5.status_code == 422, r5.text
+
+        # --- delete the once schedule ---
+        del_r = client.delete(f"/cookdex/api/v1/schedules/{once_id}")
+        assert del_r.status_code == 200
+
+        # --- verify it's gone ---
+        list_r = client.get("/cookdex/api/v1/schedules")
+        assert list_r.status_code == 200
+        ids = [item["schedule_id"] for item in list_r.json()["items"]]
+        assert once_id not in ids
 
 
 def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path, monkeypatch):
