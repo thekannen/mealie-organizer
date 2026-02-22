@@ -153,6 +153,22 @@ export default function App() {
 
   const TASK_GROUP_ORDER = ["AI & Tagging", "Analysis", "Taxonomy", "Content Sync", "Cleanup", "Parsing", "Pipeline"];
 
+  const TASK_ICONS = {
+    "categorize": "wand",
+    "rule-tag": "tag",
+    "recipe-quality": "check-circle",
+    "taxonomy-audit": "search",
+    "taxonomy-refresh": "refresh",
+    "cookbook-sync": "book-open",
+    "labels-sync": "list",
+    "tools-sync": "wrench",
+    "foods-cleanup": "trash",
+    "units-cleanup": "layers",
+    "yield-normalize": "zap",
+    "ingredient-parse": "folder",
+    "data-maintenance": "settings",
+  };
+
   const taskGroups = useMemo(() => {
     const grouped = new Map();
     for (const task of tasks) {
@@ -164,6 +180,11 @@ export default function App() {
       (a, b) => (TASK_GROUP_ORDER.indexOf(a[0]) + 1 || 99) - (TASK_GROUP_ORDER.indexOf(b[0]) + 1 || 99)
     );
   }, [tasks]);
+
+  const flatTasks = useMemo(
+    () => taskGroups.flatMap(([, groupTasks]) => groupTasks),
+    [taskGroups]
+  );
 
   const envList = useMemo(
     () =>
@@ -1256,21 +1277,21 @@ export default function App() {
 
             <div className="run-form">
               <div className="task-picker">
-                {taskGroups.map(([group, groupTasks]) => (
-                  <div key={group} className="task-group">
-                    <p className="task-group-label">{group}</p>
-                    {groupTasks.map((task) => (
-                      <button
-                        key={task.task_id}
-                        type="button"
-                        className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
-                        onClick={() => setSelectedTask(task.task_id)}
-                      >
-                        <span className="task-item-title">{task.title}</span>
-                        <span className="task-item-desc">{task.description}</span>
-                      </button>
-                    ))}
-                  </div>
+                {flatTasks.map((task) => (
+                  <button
+                    key={task.task_id}
+                    type="button"
+                    className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
+                    onClick={() => setSelectedTask(task.task_id)}
+                  >
+                    <span className="task-item-icon">
+                      <Icon name={TASK_ICONS[task.task_id] || "zap"} />
+                    </span>
+                    <span className="task-item-body">
+                      <span className="task-item-title">{task.title}</span>
+                      <span className="task-item-desc">{task.description}</span>
+                    </span>
+                  </button>
                 ))}
               </div>
 

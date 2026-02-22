@@ -554,37 +554,19 @@ textarea {
 
 .task-picker {
   display: grid;
-  gap: 0.5rem;
-  max-height: 300px;
+  gap: 0.32rem;
+  max-height: 320px;
   overflow-y: auto;
   padding: 0.1rem;
 }
 
-.task-group {
-  display: grid;
-  gap: 0.22rem;
-}
-
-.task-group-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-  margin: 0.3rem 0 0.1rem;
-  padding: 0 0.2rem;
-}
-
-.task-group:first-child .task-group-label {
-  margin-top: 0;
-}
-
 .task-item {
-  display: grid;
-  gap: 0.12rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
   width: 100%;
   text-align: left;
-  padding: 0.42rem 0.55rem;
+  padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-soft);
@@ -600,6 +582,22 @@ textarea {
 .task-item.active {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.task-item-icon {
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+  color: var(--muted);
+}
+
+.task-item.active .task-item-icon {
+  color: var(--accent);
+}
+
+.task-item-body {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
 .task-item-title {
