@@ -219,6 +219,20 @@ const ICON_PATHS = {
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </>
   ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  download: (
+    <>
+      <path d="M12 6v10" />
+      <path d="m8.5 13.5 3.5 3.5 3.5-3.5" />
+      <path d="M5 19h14" />
+    </>
+  ),
 };
 
 export default function Icon({ name, className = "" }) {

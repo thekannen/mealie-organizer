@@ -386,16 +386,32 @@ button.primary:hover {
   border-color: var(--accent-strong);
 }
 
-button.ghost {
+button.ghost,
+a.ghost {
   background: var(--surface);
   border-color: var(--line);
   color: var(--text);
+  text-decoration: none;
 }
 
-button.ghost:hover {
+button.ghost:hover,
+a.ghost:hover {
   border-color: var(--accent);
   color: var(--accent-strong);
   background: var(--accent-soft);
+}
+
+a.ghost {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.58rem 0.88rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
 }
 
 button.small {
@@ -434,6 +450,19 @@ button.small {
 
 .field-inline input[type="checkbox"] {
   flex: 0 0 auto;
+}
+
+.checkbox-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.checkbox-field span {
+  font-size: 0.82rem;
+  color: var(--fg);
 }
 
 input[type="checkbox"] {
@@ -571,7 +600,7 @@ textarea {
 .task-picker {
   display: flex;
   flex-direction: column;
-  max-height: 280px;
+  max-height: 360px;
   overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -853,6 +882,11 @@ tbody tr:hover {
   border-color: color-mix(in oklab, var(--accent) 35%, var(--line));
 }
 
+.status-pill.warning {
+  color: var(--warn, #c48a00);
+  border-color: color-mix(in oklab, var(--warn, #c48a00) 35%, var(--line));
+}
+
 .tiny-pill {
   margin-left: 0.35rem;
 }
@@ -1051,6 +1085,18 @@ tbody tr:hover {
   margin: 0 0 1.2rem;
 }
 
+.forced-reset-card {
+  max-width: 440px;
+}
+
+.forced-reset-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.forced-reset-card .run-form {
+  margin-top: 1rem;
+}
+
 .modal-actions {
   display: flex;
   gap: 0.5rem;
@@ -1064,6 +1110,11 @@ button.danger {
 
 .runs-table {
   min-width: 640px;
+}
+
+.tasks-grid .table-wrap {
+  max-height: 250px;
+  overflow-y: auto;
 }
 
 .run-actions-cell {
@@ -1080,10 +1131,14 @@ button.danger {
   grid-template-columns: 2fr 1fr;
 }
 
-.library-metrics {
-  grid-column: 1;
-  grid-row: auto;
+.overview-left,
+.overview-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
 }
+
 
 .intro-card {
   grid-column: 1 / -1;
@@ -1109,9 +1164,7 @@ button.danger {
 }
 
 .chart-panel {
-  grid-column: 1;
   min-width: 0;
-  align-self: start;
 }
 
 .coverage-grid {
@@ -1120,9 +1173,6 @@ button.danger {
   gap: 0.58rem;
 }
 
-.coverage-grid-6 {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-}
 
 .coverage-card {
   border: 1px solid var(--line);
@@ -1178,6 +1228,18 @@ button.danger {
   --tone-color: #b0562f;
 }
 
+.tone-gold {
+  --tone-color: #f5c842;
+}
+
+.tone-silver {
+  --tone-color: #aab0bb;
+}
+
+.tone-bronze {
+  --tone-color: #cd7f32;
+}
+
 .status-row {
   display: flex;
   gap: 0.5rem;
@@ -1185,13 +1247,11 @@ button.danger {
 }
 
 .quick-view {
-  grid-column: 2;
   align-content: start;
 }
 
 /* Medallion quality card */
 .medallion-card {
-  grid-column: 2;
   align-content: start;
 }
 
@@ -1756,6 +1816,58 @@ button.danger {
   padding: 0 0.6rem 0.65rem;
   max-height: 240px;
   overflow: auto;
+}
+
+.debug-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.debug-log-preview {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--muted);
+}
+
+.debug-log-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.debug-health-grid {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.debug-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.debug-health-row .status-pill {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .markdown-preview {

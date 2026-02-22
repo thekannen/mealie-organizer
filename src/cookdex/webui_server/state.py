@@ -47,10 +47,18 @@ class StateStore:
                     CREATE TABLE IF NOT EXISTS users (
                       username TEXT PRIMARY KEY,
                       password_hash TEXT NOT NULL,
-                      created_at TEXT NOT NULL
+                      created_at TEXT NOT NULL,
+                      force_password_reset INTEGER NOT NULL DEFAULT 0
                     );
                     """
                 )
+                # Migration: add column to existing databases that lack it.
+                try:
+                    conn.execute(
+                        "ALTER TABLE users ADD COLUMN force_password_reset INTEGER NOT NULL DEFAULT 0;"
+                    )
+                except Exception:
+                    pass  # Column already exists
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS sessions (
@@ -153,19 +161,26 @@ class StateStore:
             row = conn.execute("SELECT COUNT(*) AS value FROM users;").fetchone()
             return int(row["value"]) if row is not None else 0
 
-    def list_users(self) -> list[dict[str, str]]:
+    def list_users(self) -> list[dict]:
         with self._connect(readonly=True) as conn:
             rows = conn.execute(
-                "SELECT username, created_at FROM users ORDER BY username ASC;"
+                "SELECT username, created_at, force_password_reset FROM users ORDER BY username ASC;"
             ).fetchall()
-        return [{"username": str(row["username"]), "created_at": str(row["created_at"])} for row in rows]
+        return [
+            {
+                "username": str(row["username"]),
+                "created_at": str(row["created_at"]),
+                "force_password_reset": bool(row["force_password_reset"]),
+            }
+            for row in rows
+        ]
 
     def user_exists(self, username: str) -> bool:
         with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT 1 FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
             return row is not None
 
-    def create_user(self, username: str, password_hash: str) -> bool:
+    def create_user(self, username: str, password_hash: str, force_reset: bool = False) -> bool:
         now = utc_now_iso()
         with self._write_lock:
             with self._connect() as conn:
@@ -173,8 +188,8 @@ class StateStore:
                 if row is not None:
                     return False
                 conn.execute(
-                    "INSERT INTO users(username, password_hash, created_at) VALUES(?, ?, ?);",
-                    (username, password_hash, now),
+                    "INSERT INTO users(username, password_hash, created_at, force_password_reset) VALUES(?, ?, ?, ?);",
+                    (username, password_hash, now, 1 if force_reset else 0),
                 )
         return True
 
@@ -196,10 +211,28 @@ class StateStore:
         with self._write_lock:
             with self._connect() as conn:
                 result = conn.execute(
-                    "UPDATE users SET password_hash = ? WHERE username = ?;",
+                    "UPDATE users SET password_hash = ?, force_password_reset = 0 WHERE username = ?;",
                     (password_hash, username),
                 )
                 return int(result.rowcount or 0) > 0
+
+    def set_force_password_reset(self, username: str, value: bool) -> bool:
+        with self._write_lock:
+            with self._connect() as conn:
+                result = conn.execute(
+                    "UPDATE users SET force_password_reset = ? WHERE username = ?;",
+                    (1 if value else 0, username),
+                )
+                return int(result.rowcount or 0) > 0
+
+    def get_force_password_reset(self, username: str) -> bool:
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT force_password_reset FROM users WHERE username = ?;", (username,)
+            ).fetchone()
+            if row is None:
+                return False
+            return bool(row["force_password_reset"])
 
     def get_password_hash(self, username: str) -> str | None:
         with self._connect(readonly=True) as conn:

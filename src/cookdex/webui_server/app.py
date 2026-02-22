@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from .config_files import ConfigFilesManager
@@ -93,13 +96,13 @@ def create_app() -> FastAPI:
         app.state.services = services
         services.runner.start()
         services.scheduler.start()
-        print(
-            f"[start] webui-server listening on http://{settings.bind_host}:{settings.bind_port}{settings.base_path}",
-            flush=True,
-        )
+        addr = f"http://{settings.bind_host}:{settings.bind_port}{settings.base_path}"
+        print(f"[start] webui-server listening on {addr}", flush=True)
+        logger.info("webui-server started — %s", addr)
         try:
             yield
         finally:
+            logger.info("webui-server shutting down")
             services.scheduler.shutdown()
             services.runner.stop()
 
@@ -147,7 +150,8 @@ def create_app() -> FastAPI:
         return HTMLResponse(_render_index(services.ui_root, settings.base_path))
 
     @app.exception_handler(RuntimeError)
-    async def runtime_error_handler(_request: Request, exc: RuntimeError) -> JSONResponse:
+    async def runtime_error_handler(request: Request, exc: RuntimeError) -> JSONResponse:
+        logger.exception("Unhandled RuntimeError on %s %s: %s", request.method, request.url.path, exc)
         return JSONResponse(status_code=500, content={"error": "runtime_error", "detail": str(exc)})
 
     return app

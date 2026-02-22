@@ -391,6 +391,19 @@ export function formatDateTime(value) {
   return date.toLocaleString();
 }
 
+export function formatDateTimeShort(value) {
+  const date = parseIso(value);
+  if (!date) return "-";
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  const timePart = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (isToday) return timePart;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + timePart;
+}
+
 export function formatDurationMs(ms) {
   const safe = Math.max(0, Math.floor(ms));
   const totalSeconds = Math.floor(safe / 1000);

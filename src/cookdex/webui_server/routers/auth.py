@@ -61,7 +61,8 @@ async def login(
     _limiter.clear(client_ip)
     token, expires_at = _create_session(services, username)
     _set_session_cookie(response, services, token)
-    return {"ok": True, "username": username, "expires_at": expires_at}
+    force_reset = services.state.get_force_password_reset(username)
+    return {"ok": True, "username": username, "expires_at": expires_at, "force_reset": force_reset}
 
 
 @router.post("/auth/register")
@@ -97,5 +98,10 @@ async def logout(
 
 
 @router.get("/auth/session")
-async def session_status(session: dict[str, Any] = Depends(require_session)) -> dict[str, Any]:
-    return {"authenticated": True, "username": session["username"], "expires_at": session["expires_at"]}
+async def session_status(
+    session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    username = str(session["username"])
+    force_reset = services.state.get_force_password_reset(username)
+    return {"authenticated": True, "username": username, "expires_at": session["expires_at"], "force_reset": force_reset}

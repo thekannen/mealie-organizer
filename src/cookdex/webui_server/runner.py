@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,8 @@ from uuid import uuid4
 from ..config import REPO_ROOT
 from .state import StateStore, utc_now_iso
 from .tasks import TaskRegistry
+
+logger = logging.getLogger(__name__)
 
 ENVProvider = Callable[[], dict[str, str]]
 
@@ -75,6 +78,7 @@ class RunQueueManager:
             log_path=str(log_path),
         )
         self._queue.put(run_id)
+        logger.info("run %s queued: task=%s triggered_by=%s", run_id, task_id, triggered_by)
         return record
 
     def cancel(self, run_id: str) -> bool:
@@ -96,6 +100,7 @@ class RunQueueManager:
                     exit_code=None,
                     error_text="Canceled before execution.",
                 )
+                logger.info("run %s canceled before execution", run_id)
                 return True
 
             proc = self._active.get(run_id)
@@ -112,6 +117,7 @@ class RunQueueManager:
             exit_code=None,
             error_text="Canceled while running.",
         )
+        logger.info("run %s canceled while running", run_id)
         return True
 
     def read_log(self, run_id: str, max_bytes: int = 200_000) -> str:
@@ -144,13 +150,15 @@ class RunQueueManager:
             self._rotate_logs()
 
     def _execute_run(self, run_id: str, run: dict[str, Any]) -> None:
+        task_id = str(run["task_id"])
         started_at = utc_now_iso()
+        logger.info("run %s starting: task=%s", run_id, task_id)
         self.state.update_run_status(run_id, status="running", started_at=started_at)
         log_path = Path(str(run["log_path"]))
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            execution = self.registry.build_execution(str(run["task_id"]), dict(run.get("options") or {}))
+            execution = self.registry.build_execution(task_id, dict(run.get("options") or {}))
         except (KeyError, ValueError, TypeError) as exc:
             message = f"Task build failed: {exc}"
             log_path.write_text(message + "\n", encoding="utf-8")
@@ -162,6 +170,7 @@ class RunQueueManager:
                 error_text=message,
             )
             self.state.update_run_log_size(run_id, log_path.stat().st_size)
+            logger.error("run %s failed to build task=%s: %s", run_id, task_id, exc)
             return
 
         env = os.environ.copy()
@@ -193,6 +202,7 @@ class RunQueueManager:
                     error_text=message,
                 )
                 self.state.update_run_log_size(run_id, log_path.stat().st_size)
+                logger.error("run %s failed to start process: %s", run_id, exc)
                 return
 
             with self._active_lock:
@@ -221,6 +231,7 @@ class RunQueueManager:
                     exit_code=0,
                     error_text=None,
                 )
+                logger.info("run %s succeeded: task=%s", run_id, task_id)
             else:
                 self.state.update_run_status(
                     run_id,
@@ -229,6 +240,7 @@ class RunQueueManager:
                     exit_code=exit_code,
                     error_text=f"Process exited with code {exit_code}.",
                 )
+                logger.error("run %s failed: task=%s exit_code=%s", run_id, task_id, exit_code)
             self.state.update_run_log_size(run_id, log_path.stat().st_size)
 
     def _rotate_logs(self) -> None:

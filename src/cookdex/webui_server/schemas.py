@@ -39,6 +39,7 @@ class RegisterRequest(BaseModel):
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=_PASSWORD_MIN_LENGTH)
+    force_reset: bool = False
 
     @field_validator("password")
     @classmethod
@@ -48,6 +49,7 @@ class UserCreateRequest(BaseModel):
 
 class UserPasswordResetRequest(BaseModel):
     password: str = Field(min_length=_PASSWORD_MIN_LENGTH)
+    force_reset: bool = False
 
     @field_validator("password")
     @classmethod

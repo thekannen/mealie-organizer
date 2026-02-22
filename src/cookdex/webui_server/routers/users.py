@@ -26,7 +26,7 @@ async def create_user(
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     username = normalize_username(payload.username)
-    created = services.state.create_user(username, hash_password(payload.password))
+    created = services.state.create_user(username, hash_password(payload.password), force_reset=payload.force_reset)
     if not created:
         raise HTTPException(status_code=409, detail="Username already exists.")
     return {"ok": True, "username": username}
@@ -43,6 +43,8 @@ async def reset_user_password(
     updated = services.state.update_password(normalized, hash_password(payload.password))
     if not updated:
         raise HTTPException(status_code=404, detail="User not found.")
+    if payload.force_reset:
+        services.state.set_force_password_reset(normalized, True)
     return {"ok": True}
 
 

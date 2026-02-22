@@ -8,6 +8,7 @@ import {
   buildDefaultOptionValues,
   fieldFromOption,
   formatDateTime,
+  formatDateTimeShort,
   formatRunTime,
   moveArrayItem,
   normalizeCookbookEntries,
@@ -89,6 +90,9 @@ export default function App() {
   const [activeToolItems, setActiveToolItems] = useState([]);
   const [activeLabelItems, setActiveLabelItems] = useState([]);
   const [activeUnitItems, setActiveUnitItems] = useState([]);
+  const [toolDraft, setToolDraft] = useState({ name: "", onHand: false });
+  const [labelDraft, setLabelDraft] = useState({ name: "", color: "#959595" });
+  const [unitDraft, setUnitDraft] = useState({ name: "", pluralName: "", abbreviation: "", pluralAbbreviation: "", description: "", fraction: true, useAbbreviation: false, aliases: [] });
   const [configDraftItem, setConfigDraftItem] = useState("");
   const [cookbookDraft, setCookbookDraft] = useState({
     name: "",
@@ -117,14 +121,21 @@ export default function App() {
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
   const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserForceReset, setNewUserForceReset] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [resetPasswords, setResetPasswords] = useState({});
+  const [resetForceResets, setResetForceResets] = useState({});
   const [expandedUser, setExpandedUser] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
+  const [forcedResetPending, setForcedResetPending] = useState(false);
+  const [forcedResetPassword, setForcedResetPassword] = useState("");
+  const [forcedResetShowPass, setForcedResetShowPass] = useState(false);
 
   const [taxonomyItemsByFile, setTaxonomyItemsByFile] = useState({});
   const [helpDocs, setHelpDocs] = useState([]);
+  const [debugLog, setDebugLog] = useState(null);
+  const [debugLogLoading, setDebugLogLoading] = useState(false);
   const [overviewMetrics, setOverviewMetrics] = useState(null);
   const [qualityMetrics, setQualityMetrics] = useState(null);
   const [aboutMeta, setAboutMeta] = useState(null);
@@ -466,6 +477,7 @@ export default function App() {
       const payload = await api("/auth/session", { method: "GET" });
       setSession(payload);
       setError("");
+      if (payload.force_reset) setForcedResetPending(true);
       return true;
     } catch {
       setSession(null);
@@ -533,6 +545,74 @@ export default function App() {
   function scheduleAutoRefresh() {
     clearTimeout(staleTimer.current);
     staleTimer.current = setTimeout(() => { loadData(); }, CACHE_TTL);
+  }
+
+  async function fetchDebugLog() {
+    setDebugLogLoading(true);
+    try {
+      const data = await api("/debug-log");
+      setDebugLog(data);
+    } catch (e) {
+      setDebugLog({ error: String(e), log: "", log_available: false });
+    } finally {
+      setDebugLogLoading(false);
+    }
+  }
+
+  function downloadDebugLog() {
+    if (!debugLog) return;
+    const h = debugLog.health || {};
+    const db = h.db || {};
+    const cfg = h.config || {};
+    const conns = h.connections || {};
+    const runs = h.runs || {};
+    const sc = h.scheduler || {};
+    const statusCounts = runs.status_counts || {};
+    const connLine = (label, c) => `${label.padEnd(12)}${c?.ok ? "OK" : "FAIL"}  ${c?.detail || ""}`;
+
+    const sections = [
+      "=== CookDex Debug Report ===",
+      `Version:    ${debugLog.app_version || "-"}`,
+      `Python:     ${debugLog.python_version || "-"}`,
+      `Platform:   ${debugLog.platform || "-"}`,
+      `Log file:   ${debugLog.log_file || "-"}`,
+      "",
+      "=== Connection Tests ===",
+      connLine("Mealie", conns.mealie),
+      connLine("OpenAI", conns.openai),
+      connLine("Ollama", conns.ollama),
+      connLine("Direct DB", conns.direct_db),
+      "",
+      "=== Instance Health ===",
+      `Users:      ${db.user_count ?? "-"}`,
+      `Runs total: ${db.run_count ?? "-"}  (${Object.entries(statusCounts).map(([k, v]) => `${k}: ${v}`).join(", ") || "none"})`,
+      `Schedules:  ${db.schedule_count ?? "-"} total, ${db.enabled_schedules ?? "-"} enabled`,
+      `Scheduler:  ${sc.running ? "running" : "stopped"}`,
+      "",
+      "=== Configuration ===",
+      `Mealie URL:       ${cfg.mealie_url || "(not set)"}`,
+      `Mealie key:       ${cfg.mealie_key_set ? "set" : "NOT SET"}`,
+      `OpenAI key:       ${cfg.openai_key_set ? "set" : "not set"}`,
+      `OpenAI model:     ${cfg.openai_model || "(default)"}`,
+      `Ollama URL:       ${cfg.ollama_url || "(not set)"}`,
+      `Ollama model:     ${cfg.ollama_model || "(default)"}`,
+      "",
+      "=== Recent Runs ===",
+      ...(runs.recent || []).map(r =>
+        `${r.started_at || "-"}  ${r.status.padEnd(10)}  ${r.task_id}  (${r.triggered_by})`
+      ),
+      "",
+      "=== Server Log ===",
+      debugLog.log || "(no log content)",
+    ].join("\n");
+
+    const blob = new Blob([sections], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cookdex-debug.log";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function loadCachedData() {
@@ -697,11 +777,15 @@ export default function App() {
     event.preventDefault();
     try {
       clearBanners();
-      await api("/auth/login", { method: "POST", body: { username, password } });
+      const loginResult = await api("/auth/login", { method: "POST", body: { username, password } });
       setPassword("");
       await refreshSession();
       await loadData();
-      showNotice("Signed in successfully.");
+      if (loginResult?.force_reset) {
+        setForcedResetPending(true);
+      } else {
+        showNotice("Signed in successfully.");
+      }
     } catch (exc) {
       handleError(exc);
     }
@@ -964,7 +1048,9 @@ export default function App() {
 
   // --- Tool card helpers ---
   function addToolEntry() {
-    setActiveToolItems((prev) => [...prev, { name: "", onHand: false }]);
+    if (!toolDraft.name.trim()) return;
+    setActiveToolItems((prev) => [...prev, { ...toolDraft, name: toolDraft.name.trim() }]);
+    setToolDraft({ name: "", onHand: false });
   }
   function updateToolEntry(index, key, value) {
     setActiveToolItems((prev) =>
@@ -980,7 +1066,9 @@ export default function App() {
 
   // --- Label card helpers ---
   function addLabelEntry() {
-    setActiveLabelItems((prev) => [...prev, { name: "", color: "#959595" }]);
+    if (!labelDraft.name.trim()) return;
+    setActiveLabelItems((prev) => [...prev, { ...labelDraft, name: labelDraft.name.trim() }]);
+    setLabelDraft({ name: "", color: "#959595" });
   }
   function updateLabelEntry(index, key, value) {
     setActiveLabelItems((prev) =>
@@ -996,10 +1084,10 @@ export default function App() {
 
   // --- Unit card helpers ---
   function addUnitEntry() {
-    setActiveUnitItems((prev) => [
-      ...prev,
-      { name: "", pluralName: "", abbreviation: "", pluralAbbreviation: "", description: "", fraction: true, useAbbreviation: false, aliases: [] },
-    ]);
+    if (!unitDraft.name.trim()) return;
+    const aliases = Array.isArray(unitDraft.aliases) ? unitDraft.aliases : parseAliasInput(unitDraft.aliases);
+    setActiveUnitItems((prev) => [...prev, { ...unitDraft, name: unitDraft.name.trim(), aliases }]);
+    setUnitDraft({ name: "", pluralName: "", abbreviation: "", pluralAbbreviation: "", description: "", fraction: true, useAbbreviation: false, aliases: [] });
   }
   function updateUnitEntry(index, key, value) {
     if (key === "aliases") {
@@ -1127,11 +1215,12 @@ export default function App() {
       clearBanners();
       await api("/users", {
         method: "POST",
-        body: { username: newUserUsername, password: newUserPassword },
+        body: { username: newUserUsername, password: newUserPassword, force_reset: newUserForceReset },
       });
       setNewUserUsername("");
       setNewUserRole("Editor");
       setNewUserPassword("");
+      setNewUserForceReset(true);
       await refreshUsers();
       showNotice("User created.");
     } catch (exc) {
@@ -1149,10 +1238,34 @@ export default function App() {
       clearBanners();
       await api(`/users/${encodeURIComponent(usernameValue)}/reset-password`, {
         method: "POST",
-        body: { password: nextPassword },
+        body: { password: nextPassword, force_reset: resetForceResets[usernameValue] ?? false },
       });
       setResetPasswords((prev) => ({ ...prev, [usernameValue]: "" }));
+      setResetForceResets((prev) => ({ ...prev, [usernameValue]: false }));
+      await refreshUsers();
       showNotice(`Password reset for ${usernameValue}.`);
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function doForcedReset(event) {
+    event.preventDefault();
+    const newPass = forcedResetPassword.trim();
+    if (!newPass) {
+      setError("Enter a new password.");
+      return;
+    }
+    try {
+      clearBanners();
+      await api(`/users/${encodeURIComponent(session.username)}/reset-password`, {
+        method: "POST",
+        body: { password: newPass, force_reset: false },
+      });
+      setForcedResetPending(false);
+      setForcedResetPassword("");
+      setForcedResetShowPass(false);
+      showNotice("Password changed. Welcome!");
     } catch (exc) {
       handleError(exc);
     }
@@ -1243,14 +1356,23 @@ export default function App() {
   }
 
   function renderOverviewPage() {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    const hasFailed = runStats.failed > 0;
+    const statusMsg = hasFailed
+      ? `${runStats.failed} run${runStats.failed === 1 ? "" : "s"} failed recently.`
+      : !overviewMetrics?.ok && overviewMetrics?.reason
+      ? "Mealie is not connected."
+      : "Your organizer is healthy and ready.";
+
     return (
       <section className="page-grid overview-grid">
         <article className="card tone-soft intro-card">
-          <h3>Good morning. Your organizer is healthy and ready.</h3>
+          <h3>{greeting}. {statusMsg}</h3>
           <div className="status-row">
             <span className="status-pill success">Queued {runStats.queued}</span>
             <span className="status-pill neutral">Scheduled {upcomingScheduleCount}</span>
-            {runStats.failed > 0 && <span className="status-pill error">Failed {runStats.failed}</span>}
+            {runStats.failed > 0 && <span className="status-pill danger">Failed {runStats.failed}</span>}
           </div>
           {!overviewMetrics?.ok && overviewMetrics?.reason ? (
             <p className="muted tiny">{overviewMetrics.reason}</p>
@@ -1276,131 +1398,135 @@ export default function App() {
           </article>
         </section>
 
-        <article className="card chart-panel">
-          <h3>Coverage</h3>
-          <div className={`coverage-grid ${qualityMetrics?.available ? "coverage-grid-6" : ""}`}>
-            <CoverageRing label="Categories" value={overviewCoverage.categories} tone="accent" />
-            <CoverageRing label="Tags" value={overviewCoverage.tags} tone="olive" />
-            <CoverageRing label="Tools" value={overviewCoverage.tools} tone="terracotta" />
-            {qualityMetrics?.available && <>
-              <CoverageRing label="Description" value={qualityMetrics.dimension_coverage?.description?.pct_have ?? 0} tone="accent" />
-              <CoverageRing label="Cook Time" value={qualityMetrics.dimension_coverage?.time?.pct_have ?? 0} tone="olive" />
-              <CoverageRing label="Yield" value={qualityMetrics.dimension_coverage?.yield?.pct_have ?? 0} tone="terracotta" />
-            </>}
-          </div>
-        </article>
-
-        <article className="card medallion-card">
-          <h3>Recipe Quality</h3>
-          {qualityMetrics?.available ? (() => {
-            const { total, gold, silver, bronze, gold_pct, dimension_coverage } = qualityMetrics;
-            const tier = gold_pct >= 80 ? "gold" : gold_pct >= 50 ? "silver" : "bronze";
-            const DIMS = ["category", "tags", "tools", "description", "time", "yield"];
-            const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", description: "Description", time: "Cook Time", yield: "Yield" };
-            return (
-              <div className="medallion-body">
-                <div className={`medallion-badge medallion-${tier}`}>
-                  <span className="medallion-icon">{tier === "gold" ? "🥇" : tier === "silver" ? "🥈" : "🥉"}</span>
-                  <span className="medallion-tier">{tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
-                  <span className="medallion-pct">{gold_pct}% gold</span>
-                </div>
-                <div className="medallion-tiers">
-                  <span className="medallion-tier-row gold-row"><strong>{gold}</strong> gold</span>
-                  <span className="medallion-tier-row silver-row"><strong>{silver}</strong> silver</span>
-                  <span className="medallion-tier-row bronze-row"><strong>{bronze}</strong> bronze</span>
-                </div>
-                <div className="medallion-dims">
-                  {DIMS.map((dim) => {
-                    const d = dimension_coverage?.[dim];
-                    const pct = d?.pct_have ?? 0;
-                    return (
-                      <div key={dim} className="dim-row">
-                        <span className="dim-label">{DIM_LABELS[dim]}</span>
-                        <div className="dim-bar-track">
-                          <div className="dim-bar-fill" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="dim-pct">{pct}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="muted tiny">{total} recipes scored</p>
-              </div>
-            );
-          })() : (
-            <div className="medallion-empty">
-              <p className="muted">No quality audit data yet.</p>
-              <button
-                className="ghost small"
-                onClick={() => {
-                  setActivePage("tasks");
-                  setSelectedTask("recipe-quality");
-                }}
-              >
-                Run Quality Audit →
-              </button>
+        <div className="overview-left">
+          <article className="card chart-panel">
+            <h3>Coverage</h3>
+            <div className="coverage-grid">
+              <CoverageRing label="Categories" value={overviewCoverage.categories} />
+              <CoverageRing label="Tags" value={overviewCoverage.tags} />
+              <CoverageRing label="Tools" value={overviewCoverage.tools} />
+              {qualityMetrics?.available && <>
+                <CoverageRing label="Description" value={qualityMetrics.dimension_coverage?.description?.pct_have ?? 0} />
+                <CoverageRing label="Cook Time" value={qualityMetrics.dimension_coverage?.time?.pct_have ?? 0} />
+                <CoverageRing label="Yield" value={qualityMetrics.dimension_coverage?.yield?.pct_have ?? 0} />
+              </>}
             </div>
-          )}
-        </article>
+          </article>
 
-        <article className="card quick-view">
-          <h3>Activity</h3>
-          <ul className="kv-list">
-            <li>
-              <span>Upcoming schedules (24h)</span>
-              <strong>{upcomingScheduleCount}</strong>
-            </li>
-            <li>
-              <span>Queued runs</span>
-              <strong>{runStats.queued}</strong>
-            </li>
-            <li>
-              <span>Last failure</span>
-              <strong>{latestFailureLabel}</strong>
-            </li>
-          </ul>
+          <article className="card library-metrics">
+            <h3>Library</h3>
+            <div className="metric-grid">
+              <article><span>Recipes</span><strong>{overviewTotals.recipes}</strong></article>
+              <article><span>Ingredients</span><strong>{overviewTotals.ingredients}</strong></article>
+              <article><span>Tools</span><strong>{overviewTotals.tools}</strong></article>
+              <article><span>Categories</span><strong>{overviewTotals.categories}</strong></article>
+              <article><span>Cookbooks</span><strong>{taxonomyCounts.cookbooks || 0}</strong></article>
+              <article><span>Tags</span><strong>{overviewTotals.tags}</strong></article>
+              <article><span>Labels</span><strong>{overviewTotals.labels}</strong></article>
+              <article><span>Units</span><strong>{overviewTotals.units}</strong></article>
+            </div>
+            {!overviewMetrics?.ok && overviewMetrics?.reason ? (
+              <p className="banner error"><span>{overviewMetrics.reason}</span></p>
+            ) : null}
+          </article>
+        </div>
 
-          <div className="top-usage">
-            <h4>Task Mix This Week</h4>
-            <ul>
-              {taskMixRows.map((item) => (
-                <li key={`taskmix-${item.name}`}>
-                  <span>{item.name}</span>
-                  <span>{item.percent}%</span>
-                </li>
-              ))}
-              {taskMixRows.length === 0 ? <li className="muted">No runs in the last seven days.</li> : null}
+        <div className="overview-right">
+          <article className="card medallion-card">
+            <h3>Recipe Quality</h3>
+            {qualityMetrics?.available ? (() => {
+              const { total, gold, silver, bronze, gold_pct, dimension_coverage } = qualityMetrics;
+              const tier = gold_pct >= 80 ? "gold" : gold_pct >= 50 ? "silver" : "bronze";
+              const DIMS = ["category", "tags", "tools", "description", "time", "yield"];
+              const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", description: "Description", time: "Cook Time", yield: "Yield" };
+              return (
+                <div className="medallion-body">
+                  <div className={`medallion-badge medallion-${tier}`}>
+                    <span className="medallion-icon">{tier === "gold" ? "🥇" : tier === "silver" ? "🥈" : "🥉"}</span>
+                    <span className="medallion-tier">{tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
+                    <span className="medallion-pct">{gold_pct}% gold</span>
+                  </div>
+                  <div className="medallion-tiers">
+                    <span className="medallion-tier-row gold-row"><strong>{gold}</strong> gold</span>
+                    <span className="medallion-tier-row silver-row"><strong>{silver}</strong> silver</span>
+                    <span className="medallion-tier-row bronze-row"><strong>{bronze}</strong> bronze</span>
+                  </div>
+                  <div className="medallion-dims">
+                    {DIMS.map((dim) => {
+                      const d = dimension_coverage?.[dim];
+                      const pct = d?.pct_have ?? 0;
+                      return (
+                        <div key={dim} className="dim-row">
+                          <span className="dim-label">{DIM_LABELS[dim]}</span>
+                          <div className="dim-bar-track">
+                            <div className="dim-bar-fill" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="dim-pct">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="muted tiny">{total} recipes scored</p>
+                </div>
+              );
+            })() : (
+              <div className="medallion-empty">
+                <p className="muted">No quality audit data yet.</p>
+                <button
+                  className="ghost small"
+                  onClick={() => {
+                    setActivePage("tasks");
+                    setSelectedTask("recipe-quality");
+                  }}
+                >
+                  Run Quality Audit →
+                </button>
+              </div>
+            )}
+          </article>
+
+          <article className="card quick-view">
+            <h3>Activity</h3>
+            <ul className="kv-list">
+              <li>
+                <span>Upcoming schedules (24h)</span>
+                <strong>{upcomingScheduleCount}</strong>
+              </li>
+              <li>
+                <span>Queued runs</span>
+                <strong>{runStats.queued}</strong>
+              </li>
+              <li>
+                <span>Last failure</span>
+                <strong>{latestFailureLabel}</strong>
+              </li>
             </ul>
 
-            <h4>Next Scheduled Jobs</h4>
-            <ul>
-              {upcomingScheduleRows.map((item) => (
-                <li key={`next-${item.id}`}>
-                  <span>{item.nextRun}</span>
-                  <span>{item.label}</span>
-                </li>
-              ))}
-              {upcomingScheduleRows.length === 0 ? <li className="muted">No scheduled jobs in the queue.</li> : null}
-            </ul>
-          </div>
-        </article>
+            <div className="top-usage">
+              <h4>Task Mix This Week</h4>
+              <ul>
+                {taskMixRows.map((item) => (
+                  <li key={`taskmix-${item.name}`}>
+                    <span>{item.name}</span>
+                    <span>{item.percent}%</span>
+                  </li>
+                ))}
+                {taskMixRows.length === 0 ? <li className="muted">No runs in the last seven days.</li> : null}
+              </ul>
 
-        <article className="card library-metrics">
-          <h3>Library</h3>
-          <div className="metric-grid">
-            <article><span>Recipes</span><strong>{overviewTotals.recipes}</strong></article>
-            <article><span>Ingredients</span><strong>{overviewTotals.ingredients}</strong></article>
-            <article><span>Tools</span><strong>{overviewTotals.tools}</strong></article>
-            <article><span>Categories</span><strong>{overviewTotals.categories}</strong></article>
-            <article><span>Cookbooks</span><strong>{taxonomyCounts.cookbooks || 0}</strong></article>
-            <article><span>Tags</span><strong>{overviewTotals.tags}</strong></article>
-            <article><span>Labels</span><strong>{overviewTotals.labels}</strong></article>
-            <article><span>Units</span><strong>{overviewTotals.units}</strong></article>
-          </div>
-          {!overviewMetrics?.ok && overviewMetrics?.reason ? (
-            <p className="banner error"><span>{overviewMetrics.reason}</span></p>
-          ) : null}
-        </article>
+              <h4>Next Scheduled Jobs</h4>
+              <ul>
+                {upcomingScheduleRows.map((item) => (
+                  <li key={`next-${item.id}`}>
+                    <span>{item.nextRun}</span>
+                    <span>{item.label}</span>
+                  </li>
+                ))}
+                {upcomingScheduleRows.length === 0 ? <li className="muted">No scheduled jobs in the queue.</li> : null}
+              </ul>
+            </div>
+          </article>
+        </div>
       </section>
     );
   }
@@ -1634,13 +1760,14 @@ export default function App() {
                   <th>Mode</th>
                   <th>Status</th>
                   <th>Run Time</th>
+                  <th>Started</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No runs found.</td>
+                    <td colSpan={7}>No runs found.</td>
                   </tr>
                 ) : (
                   filteredRuns.map((run) => {
@@ -1663,6 +1790,7 @@ export default function App() {
                           <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
                         </td>
                         <td>{formatRunTime(run)}</td>
+                        <td className="muted">{formatDateTimeShort(run.started_at || run.created_at)}</td>
                         <td className="run-actions-cell">
                           {cancelable && (
                             <button
@@ -2376,11 +2504,32 @@ export default function App() {
             </section>
           ) : activeConfigMode === "tool-cards" ? (
             <section className="structured-editor">
-              <div className="structured-toolbar">
-                <button className="ghost" type="button" onClick={addToolEntry}>
-                  <Icon name="plus" /> Add Tool
-                </button>
-              </div>
+              <li className="structured-item">
+                <div className="structured-item-grid tool-fields">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={toolDraft.name}
+                      placeholder="Air Fryer"
+                      onChange={(e) => setToolDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addToolEntry(); } }}
+                    />
+                  </label>
+                  <label className="field-inline">
+                    <input
+                      type="checkbox"
+                      checked={toolDraft.onHand}
+                      onChange={(e) => setToolDraft((prev) => ({ ...prev, onHand: e.target.checked }))}
+                    />
+                    <span>On Hand</span>
+                  </label>
+                </div>
+                <div className="line-actions">
+                  <button className="ghost" type="button" onClick={addToolEntry}>
+                    <Icon name="plus" /> Add Tool
+                  </button>
+                </div>
+              </li>
               <ul className="structured-list">
                 {activeToolItems.map((item, index) => (
                   <li key={`tool-${index}`} className="structured-item">
@@ -2414,11 +2563,41 @@ export default function App() {
             </section>
           ) : activeConfigMode === "label-cards" ? (
             <section className="structured-editor">
-              <div className="structured-toolbar">
-                <button className="ghost" type="button" onClick={addLabelEntry}>
-                  <Icon name="plus" /> Add Label
-                </button>
-              </div>
+              <li className="structured-item">
+                <div className="structured-item-grid label-fields">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={labelDraft.name}
+                      placeholder="Meal Prep"
+                      onChange={(e) => setLabelDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addLabelEntry(); } }}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Color</span>
+                    <div className="color-field">
+                      <input
+                        type="color"
+                        value={labelDraft.color}
+                        onChange={(e) => setLabelDraft((prev) => ({ ...prev, color: e.target.value }))}
+                      />
+                      <input
+                        type="text"
+                        value={labelDraft.color}
+                        onChange={(e) => setLabelDraft((prev) => ({ ...prev, color: e.target.value }))}
+                        placeholder="#959595"
+                        className="color-hex"
+                      />
+                    </div>
+                  </label>
+                </div>
+                <div className="line-actions">
+                  <button className="ghost" type="button" onClick={addLabelEntry}>
+                    <Icon name="plus" /> Add Label
+                  </button>
+                </div>
+              </li>
               <ul className="structured-list">
                 {activeLabelItems.map((item, index) => (
                   <li key={`label-${index}`} className="structured-item">
@@ -2461,11 +2640,47 @@ export default function App() {
             </section>
           ) : activeConfigMode === "unit-cards" ? (
             <section className="structured-editor">
-              <div className="structured-toolbar">
-                <button className="ghost" type="button" onClick={addUnitEntry}>
-                  <Icon name="plus" /> Add Unit
-                </button>
-              </div>
+              <li className="structured-item">
+                <div className="structured-item-grid unit-fields">
+                  <label className="field">
+                    <span>Name</span>
+                    <input value={unitDraft.name} placeholder="Teaspoon" onChange={(e) => setUnitDraft((prev) => ({ ...prev, name: e.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Plural Name</span>
+                    <input value={unitDraft.pluralName} placeholder="Teaspoons" onChange={(e) => setUnitDraft((prev) => ({ ...prev, pluralName: e.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Abbreviation</span>
+                    <input value={unitDraft.abbreviation} placeholder="tsp" onChange={(e) => setUnitDraft((prev) => ({ ...prev, abbreviation: e.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Plural Abbreviation</span>
+                    <input value={unitDraft.pluralAbbreviation} placeholder="tsps" onChange={(e) => setUnitDraft((prev) => ({ ...prev, pluralAbbreviation: e.target.value }))} />
+                  </label>
+                  <label className="field" style={{ gridColumn: "1 / -1" }}>
+                    <span>Description</span>
+                    <input value={unitDraft.description} placeholder="Optional description" onChange={(e) => setUnitDraft((prev) => ({ ...prev, description: e.target.value }))} />
+                  </label>
+                  <label className="field" style={{ gridColumn: "1 / -1" }}>
+                    <span>Aliases (comma separated)</span>
+                    <input value={unitDraft.aliases.join(", ")} placeholder="t, tsp, tsp." onChange={(e) => setUnitDraft((prev) => ({ ...prev, aliases: e.target.value }))} />
+                  </label>
+                  <label className="field-inline">
+                    <input type="checkbox" checked={unitDraft.fraction} onChange={(e) => setUnitDraft((prev) => ({ ...prev, fraction: e.target.checked }))} />
+                    <span>Display as Fraction</span>
+                  </label>
+                  <label className="field-inline">
+                    <input type="checkbox" checked={unitDraft.useAbbreviation} onChange={(e) => setUnitDraft((prev) => ({ ...prev, useAbbreviation: e.target.checked }))} />
+                    <span>Use Abbreviation</span>
+                  </label>
+                </div>
+                <div className="line-actions">
+                  <button className="ghost" type="button" onClick={addUnitEntry}>
+                    <Icon name="plus" /> Add Unit
+                  </button>
+                </div>
+              </li>
               <ul className="structured-list">
                 {activeUnitItems.map((item, index) => (
                   <li key={`unit-${index}`} className="structured-item">
@@ -2656,6 +2871,15 @@ export default function App() {
               </div>
             </label>
 
+            <label className="field checkbox-field">
+              <input
+                type="checkbox"
+                checked={newUserForceReset}
+                onChange={(e) => setNewUserForceReset(e.target.checked)}
+              />
+              <span>Force password reset on first login</span>
+            </label>
+
             <button type="submit" className="primary">
               <Icon name="users" />
               Create User
@@ -2691,6 +2915,7 @@ export default function App() {
                         <span className="user-row-meta">
                           <span className="status-pill neutral">{userRoleLabel(item.username, session?.username)}</span>
                           {isMe && <span className="status-pill success">You</span>}
+                          {item.force_password_reset && <span className="status-pill warning" title="Must reset password on next login">Reset pending</span>}
                         </span>
                         <Icon name="chevron" className={`row-chevron${isOpen ? " rotated" : ""}`} />
                       </button>
@@ -2715,6 +2940,16 @@ export default function App() {
                             Reset Password
                           </button>
                         </div>
+                        <label className="field checkbox-field" style={{ marginTop: "0.5rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={resetForceResets[item.username] ?? false}
+                            onChange={(e) =>
+                              setResetForceResets((prev) => ({ ...prev, [item.username]: e.target.checked }))
+                            }
+                          />
+                          <span>Force password reset on next login</span>
+                        </label>
                       </div>
                     )}
                   </li>
@@ -2797,6 +3032,93 @@ export default function App() {
                     <div className="doc-preview markdown-preview">{renderMarkdownDocument(doc.content)}</div>
                   </details>
                 ))
+              )}
+            </div>
+          </article>
+
+          <article className="card">
+            <h3>Report a Bug</h3>
+            <p className="muted">Collect debug logs and open a GitHub issue to help the developer reproduce and fix problems.</p>
+
+            <div className="debug-actions">
+              <a
+                className="button ghost"
+                href={(aboutMeta?.links?.github || "https://github.com/thekannen/cookdex") + "/issues/new"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Icon name="external" /> Open a GitHub Issue
+              </a>
+
+              {!debugLog ? (
+                <button className="ghost" type="button" onClick={fetchDebugLog} disabled={debugLogLoading}>
+                  <Icon name={debugLogLoading ? "refresh" : "list"} />
+                  {debugLogLoading ? "Generating…" : "Generate Debug Log"}
+                </button>
+              ) : (
+                <>
+                  {debugLog.error ? (
+                    <p className="muted tiny" style={{ color: "var(--error, #c0392b)" }}>{debugLog.error}</p>
+                  ) : (() => {
+                    const h = debugLog.health || {};
+                    const db = h.db || {};
+                    const cfg = h.config || {};
+                    const conns = h.connections || {};
+                    const runs = h.runs || {};
+                    const sc = h.scheduler || {};
+                    const counts = runs.status_counts || {};
+                    const ConnRow = ({ label, conn, detail }) => (
+                      <div className="debug-health-row">
+                        <span className="muted tiny">{label}</span>
+                        <span className={`status-pill ${conn?.ok ? "success" : conn?.detail === "Not configured" ? "neutral" : "danger"}`}
+                          title={conn?.detail || ""}>
+                          {conn?.ok ? "OK" : conn?.detail === "Not configured" ? "Not configured" : "Failed"}
+                        </span>
+                      </div>
+                    );
+                    return (
+                      <>
+                        <div className="debug-health-grid">
+                          <div className="debug-health-row">
+                            <span className="muted tiny">Scheduler</span>
+                            <span className={`status-pill ${sc.running ? "success" : "danger"}`}>{sc.running ? "Running" : "Stopped"}</span>
+                          </div>
+                          <ConnRow label="Mealie" conn={conns.mealie} />
+                          <ConnRow label="OpenAI" conn={conns.openai} />
+                          <ConnRow label="Ollama" conn={conns.ollama} />
+                          <ConnRow label="Direct DB" conn={conns.direct_db} />
+                          <div className="debug-health-row">
+                            <span className="muted tiny">Runs</span>
+                            <span className="muted tiny">
+                              {db.run_count ?? 0} total
+                              {counts.failed ? <span style={{ color: "var(--error, #c0392b)", marginLeft: "0.4rem" }}>{counts.failed} failed</span> : null}
+                            </span>
+                          </div>
+                          <div className="debug-health-row">
+                            <span className="muted tiny">Schedules</span>
+                            <span className="muted tiny">{db.enabled_schedules ?? 0} of {db.schedule_count ?? 0} enabled</span>
+                          </div>
+                        </div>
+                        {!debugLog.log_available ? (
+                          <p className="muted tiny">No server log file found yet — logs appear after the first server restart.</p>
+                        ) : (
+                          <pre className="debug-log-preview">{debugLog.log}</pre>
+                        )}
+                      </>
+                    );
+                  })()}
+                  <div className="debug-log-row">
+                    <button className="ghost small" type="button" onClick={downloadDebugLog}>
+                      <Icon name="download" /> Download Report
+                    </button>
+                    <button className="ghost small" type="button" onClick={() => setDebugLog(null)}>
+                      <Icon name="refresh" /> Regenerate
+                    </button>
+                  </div>
+                  {debugLog.app_version && (
+                    <p className="muted tiny">v{debugLog.app_version} · {debugLog.platform}</p>
+                  )}
+                </>
               )}
             </div>
           </article>
@@ -3057,6 +3379,36 @@ export default function App() {
               <button className="ghost" onClick={() => setConfirmModal(null)}>Cancel</button>
               <button className="primary danger" onClick={() => { setConfirmModal(null); confirmModal.action(); }}>Remove</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {forcedResetPending && (
+        <div className="modal-backdrop">
+          <div className="modal-card forced-reset-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Password Reset Required</h3>
+            <p className="muted">Your password was set by an administrator. Choose a new password before continuing.</p>
+            <form className="run-form" onSubmit={doForcedReset}>
+              <label className="field">
+                <span>New Password</span>
+                <div className="password-row">
+                  <input
+                    type={forcedResetShowPass ? "text" : "password"}
+                    value={forcedResetPassword}
+                    onChange={(e) => setForcedResetPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    autoFocus
+                  />
+                  <button type="button" className="ghost icon-btn" onClick={() => setForcedResetShowPass((v) => !v)} title={forcedResetShowPass ? "Hide" : "Show"}>
+                    <Icon name={forcedResetShowPass ? "eye-off" : "eye"} />
+                  </button>
+                </div>
+              </label>
+              <button type="submit" className="primary">
+                <Icon name="lock" />
+                Set New Password
+              </button>
+            </form>
           </div>
         </div>
       )}

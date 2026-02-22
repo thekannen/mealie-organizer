@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import platform
+import sys
 from collections import Counter
 from typing import Any
 
 import requests
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ... import _read_version
 from ..deps import Services, build_runtime_env, require_services, require_session
@@ -233,3 +235,129 @@ async def get_help_docs(
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {"items": _build_help_docs_payload(services)}
+
+
+def _build_health_report(services: Services) -> dict[str, Any]:
+    """Collect instance health metrics + live connection tests for debug reports."""
+    from .settings_api import (
+        _test_db_connection,
+        _test_mealie_connection,
+        _test_ollama_connection,
+        _test_openai_connection,
+    )
+
+    users = services.state.list_users()
+    all_runs = services.state.list_runs(limit=500)
+    schedules = services.scheduler.list_schedules()
+
+    # Run status tallies
+    status_counts: dict[str, int] = {}
+    for run in all_runs:
+        s = str(run.get("status", "unknown"))
+        status_counts[s] = status_counts.get(s, 0) + 1
+
+    # Most recent 10 runs for the snapshot
+    recent_runs = [
+        {
+            "run_id": str(r.get("run_id", ""))[:8],
+            "task_id": r.get("task_id", ""),
+            "status": r.get("status", ""),
+            "triggered_by": r.get("triggered_by", ""),
+            "started_at": r.get("started_at") or r.get("created_at"),
+            "exit_code": r.get("exit_code"),
+        }
+        for r in all_runs[:10]
+    ]
+
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    mealie_url = str(runtime_env.get("MEALIE_URL", "")).strip().rstrip("/")
+    mealie_api_key = str(runtime_env.get("MEALIE_API_KEY", "")).strip()
+    openai_api_key = str(runtime_env.get("OPENAI_API_KEY", "")).strip()
+    openai_model = str(runtime_env.get("OPENAI_MODEL", "")).strip()
+    ollama_url = str(runtime_env.get("OLLAMA_URL", "")).strip()
+    ollama_model = str(runtime_env.get("OLLAMA_MODEL", "")).strip()
+
+    enabled_schedules = sum(1 for s in schedules if s.get("enabled"))
+
+    # Live connection tests — only attempt if credentials are present
+    def _conn(ok: bool, detail: str) -> dict[str, Any]:
+        return {"ok": ok, "detail": detail}
+
+    if mealie_url and mealie_api_key:
+        mealie_conn = _conn(*_test_mealie_connection(mealie_url, mealie_api_key))
+    else:
+        mealie_conn = _conn(False, "Not configured")
+
+    if openai_api_key:
+        openai_conn = _conn(*_test_openai_connection(openai_api_key, openai_model or "gpt-4o-mini"))
+    else:
+        openai_conn = _conn(False, "Not configured")
+
+    if ollama_url:
+        ollama_conn = _conn(*_test_ollama_connection(ollama_url, ollama_model))
+    else:
+        ollama_conn = _conn(False, "Not configured")
+
+    db_conn = _conn(*_test_db_connection(runtime_env))
+
+    return {
+        "db": {
+            "user_count": len(users),
+            "run_count": len(all_runs),
+            "schedule_count": len(schedules),
+            "enabled_schedules": enabled_schedules,
+        },
+        "config": {
+            "mealie_url": mealie_url or None,
+            "mealie_key_set": bool(mealie_api_key),
+            "openai_key_set": bool(openai_api_key),
+            "openai_model": openai_model or None,
+            "ollama_url": ollama_url or None,
+            "ollama_model": ollama_model or None,
+        },
+        "connections": {
+            "mealie": mealie_conn,
+            "openai": openai_conn,
+            "ollama": ollama_conn,
+            "direct_db": db_conn,
+        },
+        "runs": {
+            "status_counts": status_counts,
+            "recent": recent_runs,
+        },
+        "scheduler": {
+            "running": services.scheduler.scheduler.running,
+        },
+    }
+
+
+@router.get("/debug-log")
+async def get_debug_log(
+    lines: int = Query(default=300, ge=10, le=2000),
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    """Return recent server log lines, live connection tests, and system context for bug reports."""
+    def _build() -> dict[str, Any]:
+        log_file = services.settings.logs_dir.parent / "server.log"
+        log_content = ""
+        log_available = log_file.exists()
+        if log_available:
+            try:
+                text = log_file.read_text(encoding="utf-8", errors="replace")
+                all_lines = text.splitlines()
+                log_content = "\n".join(all_lines[-lines:])
+            except OSError:
+                log_content = "(unable to read log file)"
+
+        return {
+            "app_version": _read_version(),
+            "python_version": sys.version,
+            "platform": platform.platform(),
+            "log_file": str(log_file),
+            "log_available": log_available,
+            "health": _build_health_report(services),
+            "log": log_content,
+        }
+
+    return await asyncio.to_thread(_build)
