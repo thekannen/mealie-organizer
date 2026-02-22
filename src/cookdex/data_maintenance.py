@@ -12,8 +12,10 @@ VALID_STAGES = {
     "parse", "foods", "units", "labels", "tools",
     "taxonomy", "categorize", "cookbooks",
     "yield", "quality", "audit",
+    "names", "dedup", "junk",
 }
 DEFAULT_STAGE_ORDER = [
+    "dedup", "junk", "names",
     "parse", "foods", "units", "labels", "tools",
     "taxonomy", "categorize", "cookbooks", "yield", "quality", "audit",
 ]
@@ -99,6 +101,21 @@ def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
         return python_cmd + ["cookdex.recipe_quality_audit"]
     if stage == "audit":
         return python_cmd + ["cookdex.audit_taxonomy"]
+    if stage == "names":
+        cmd = python_cmd + ["cookdex.recipe_name_normalizer"]
+        if apply_cleanups:
+            cmd.append("--apply")
+        return cmd
+    if stage == "dedup":
+        cmd = python_cmd + ["cookdex.recipe_deduplicator"]
+        if apply_cleanups:
+            cmd.append("--apply")
+        return cmd
+    if stage == "junk":
+        cmd = python_cmd + ["cookdex.recipe_junk_filter"]
+        if apply_cleanups:
+            cmd.append("--apply")
+        return cmd
     raise ValueError(f"Unsupported stage: {stage}")
 
 

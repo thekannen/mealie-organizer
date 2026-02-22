@@ -26,6 +26,9 @@ ALL_TASK_IDS = [
     "foods-cleanup",
     "ingredient-parse",
     "labels-sync",
+    "recipe-dedup",
+    "recipe-junk-filter",
+    "recipe-name-normalize",
     "recipe-quality",
     "rule-tag",
     "taxonomy-audit",
@@ -45,6 +48,9 @@ DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t not in READ_ONLY_TASKS]
 DRY_RUN_APPLY_TASKS = [
     "foods-cleanup",
     "labels-sync",
+    "recipe-dedup",
+    "recipe-junk-filter",
+    "recipe-name-normalize",
     "rule-tag",
     "tools-sync",
     "units-cleanup",
@@ -513,3 +519,75 @@ def test_read_only_tasks_have_no_dry_run_option(task_id: str) -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
     option_keys = {o["key"] for o in descriptions[task_id]["options"]}
     assert "dry_run" not in option_keys
+
+
+# ---------------------------------------------------------------------------
+# Command construction: recipe-name-normalize
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_name_normalize_module() -> None:
+    execution = _build("recipe-name-normalize")
+    assert "cookdex.recipe_name_normalizer" in execution.command
+
+
+def test_recipe_name_normalize_apply_flag() -> None:
+    execution = _build("recipe-name-normalize", {"dry_run": False})
+    assert "--apply" in execution.command
+
+
+def test_recipe_name_normalize_force_all_flag() -> None:
+    execution = _build("recipe-name-normalize", {"force_all": True})
+    assert "--all" in execution.command
+
+
+def test_recipe_name_normalize_no_apply_in_dry_run() -> None:
+    execution = _build("recipe-name-normalize", {"dry_run": True})
+    assert "--apply" not in execution.command
+
+
+# ---------------------------------------------------------------------------
+# Command construction: recipe-dedup
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_dedup_module() -> None:
+    execution = _build("recipe-dedup")
+    assert "cookdex.recipe_deduplicator" in execution.command
+
+
+def test_recipe_dedup_apply_flag() -> None:
+    execution = _build("recipe-dedup", {"dry_run": False})
+    assert "--apply" in execution.command
+
+
+def test_recipe_dedup_no_apply_in_dry_run() -> None:
+    execution = _build("recipe-dedup", {"dry_run": True})
+    assert "--apply" not in execution.command
+
+
+# ---------------------------------------------------------------------------
+# Command construction: recipe-junk-filter
+# ---------------------------------------------------------------------------
+
+
+def test_recipe_junk_filter_module() -> None:
+    execution = _build("recipe-junk-filter")
+    assert "cookdex.recipe_junk_filter" in execution.command
+
+
+def test_recipe_junk_filter_apply_flag() -> None:
+    execution = _build("recipe-junk-filter", {"dry_run": False})
+    assert "--apply" in execution.command
+
+
+def test_recipe_junk_filter_reason_flag() -> None:
+    execution = _build("recipe-junk-filter", {"reason": "listicle"})
+    assert "--reason" in execution.command
+    idx = execution.command.index("--reason")
+    assert execution.command[idx + 1] == "listicle"
+
+
+def test_recipe_junk_filter_no_reason_by_default() -> None:
+    execution = _build("recipe-junk-filter")
+    assert "--reason" not in execution.command

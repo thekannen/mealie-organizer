@@ -193,6 +193,9 @@ class MealieApiClient:
             return data
         return {}
 
+    def delete_recipe(self, slug: str) -> None:
+        self._request_raw("DELETE", f"/recipes/{slug}", timeout=60)
+
     def parse_ingredients(self, ingredients: list[str], strategy: str) -> list[dict[str, Any]]:
         data = self.request_json(
             "POST",

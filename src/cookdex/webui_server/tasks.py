@@ -308,6 +308,42 @@ def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
+def _build_recipe_name_normalize(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "force_all"})
+    env, dangerous = _common_env(options)
+    dry_run = _bool_option(options, "dry_run", True)
+    force_all = _bool_option(options, "force_all", False)
+    cmd = _py_module("cookdex.recipe_name_normalizer")
+    if not dry_run:
+        cmd.append("--apply")
+    if force_all:
+        cmd.append("--all")
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
+def _build_recipe_dedup(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run"})
+    env, dangerous = _common_env(options)
+    dry_run = _bool_option(options, "dry_run", True)
+    cmd = _py_module("cookdex.recipe_deduplicator")
+    if not dry_run:
+        cmd.append("--apply")
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
+def _build_recipe_junk_filter(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "reason"})
+    env, dangerous = _common_env(options)
+    dry_run = _bool_option(options, "dry_run", True)
+    reason = _str_option(options, "reason", "")
+    cmd = _py_module("cookdex.recipe_junk_filter")
+    if not dry_run:
+        cmd.append("--apply")
+    if reason:
+        cmd.extend(["--reason", reason])
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
 class TaskRegistry:
     def __init__(self) -> None:
         self._tasks: dict[str, TaskDefinition] = {}
@@ -458,7 +494,7 @@ class TaskRegistry:
                 task_id="data-maintenance",
                 title="Data Maintenance Pipeline",
                 group="Pipeline",
-                description="Run all maintenance stages in order: Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit. Select specific stages to run a subset.",
+                description="Run all maintenance stages in order: Dedup → Junk Filter → Name Normalize → Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit. Select specific stages to run a subset.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(
@@ -468,6 +504,9 @@ class TaskRegistry:
                         help_text="Select stages to run. Leave all unselected to run the full pipeline.",
                         multi=True,
                         choices=[
+                            {"value": "dedup", "label": "Recipe Dedup"},
+                            {"value": "junk", "label": "Junk Filter"},
+                            {"value": "names", "label": "Name Normalize"},
                             {"value": "parse", "label": "Ingredient Parse"},
                             {"value": "foods", "label": "Foods Cleanup"},
                             {"value": "units", "label": "Units Cleanup"},
@@ -551,6 +590,65 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_recipe_quality,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="recipe-name-normalize",
+                title="Recipe Name Normalizer",
+                group="Cleanup",
+                description="Clean up recipe names derived from URL slugs — turns 'how-to-make-chicken-pasta-recipe' into 'Chicken Pasta'. By default only fixes names that match their slug.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec(
+                        "force_all",
+                        "Normalize All Names",
+                        "boolean",
+                        default=False,
+                        help_text="Apply normalization to all recipe names, not just those that appear to be slug-derived.",
+                    ),
+                ],
+                build=_build_recipe_name_normalize,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="recipe-dedup",
+                title="Recipe Deduplicator",
+                group="Cleanup",
+                description="Find recipes with the same canonical source URL and delete the duplicates, keeping the best copy. Strips tracking parameters before comparing.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                ],
+                build=_build_recipe_dedup,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="recipe-junk-filter",
+                title="Junk Recipe Filter",
+                group="Cleanup",
+                description="Detect and remove non-recipe content that slipped in during import: listicles, how-to articles, digest posts, and recipes with placeholder instructions.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    OptionSpec(
+                        "reason",
+                        "Filter by Category",
+                        "string",
+                        help_text="Only scan for a specific junk category. Leave blank to check all categories.",
+                        choices=[
+                            {"value": "", "label": "All categories"},
+                            {"value": "how_to", "label": "How-to articles"},
+                            {"value": "listicle", "label": "Listicles / roundups"},
+                            {"value": "digest", "label": "Digest / weekly posts"},
+                            {"value": "keyword", "label": "High-risk keywords"},
+                            {"value": "utility", "label": "Utility pages"},
+                            {"value": "bad_instructions", "label": "Placeholder instructions"},
+                            {"value": "no_instructions", "label": "Missing instructions"},
+                        ],
+                    ),
+                ],
+                build=_build_recipe_junk_filter,
             )
         )
         self._register(
