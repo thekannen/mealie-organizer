@@ -110,6 +110,7 @@ export default function App() {
     mealie: { loading: false, ok: null, detail: "" },
     openai: { loading: false, ok: null, detail: "" },
     ollama: { loading: false, ok: null, detail: "" },
+    db: { loading: false, ok: null, detail: "" },
   });
   const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [] });
 
@@ -1078,19 +1079,19 @@ export default function App() {
         [kind]: { loading: true, ok: null, detail: "Running connection test..." },
       }));
 
-      const body = {
-        mealie_url: draftOverrideValue("MEALIE_URL"),
-        mealie_api_key: envClear.MEALIE_API_KEY ? "" : draftOverrideValue("MEALIE_API_KEY"),
-        openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
-        openai_model: draftOverrideValue("OPENAI_MODEL"),
-        ollama_url: draftOverrideValue("OLLAMA_URL"),
-        ollama_model: draftOverrideValue("OLLAMA_MODEL"),
-      };
+      const requestOptions = { method: "POST" };
+      if (kind !== "db") {
+        requestOptions.body = {
+          mealie_url: draftOverrideValue("MEALIE_URL"),
+          mealie_api_key: envClear.MEALIE_API_KEY ? "" : draftOverrideValue("MEALIE_API_KEY"),
+          openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
+          openai_model: draftOverrideValue("OPENAI_MODEL"),
+          ollama_url: draftOverrideValue("OLLAMA_URL"),
+          ollama_model: draftOverrideValue("OLLAMA_MODEL"),
+        };
+      }
 
-      const result = await api(`/settings/test/${kind}`, {
-        method: "POST",
-        body,
-      });
+      const result = await api(`/settings/test/${kind}`, requestOptions);
 
       setConnectionChecks((prev) => ({
         ...prev,
@@ -1251,6 +1252,10 @@ export default function App() {
                   ))}
                 </select>
               </label>
+
+              {selectedTaskDef?.description ? (
+                <p className="muted tiny" style={{ marginTop: 0 }}>{selectedTaskDef.description}</p>
+              ) : null}
 
               {(selectedTaskDef?.options || []).length > 0 ? (
                 <div className="option-grid">
@@ -1477,7 +1482,7 @@ export default function App() {
     );
   }
 
-  const GROUP_ICONS = { Connection: "link", AI: "wand" };
+  const GROUP_ICONS = { Connection: "link", AI: "wand", "Direct DB": "database" };
 
   function renderSettingsPage() {
     return (
@@ -1502,7 +1507,7 @@ export default function App() {
                   {items.map((item) => {
                     const key = String(item.key);
                     const provider = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
-                    if (key !== "CATEGORIZER_PROVIDER" && provider === "none") return null;
+                    if (group === "AI" && key !== "CATEGORIZER_PROVIDER" && provider === "none") return null;
                     if (provider === "chatgpt" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
                     if (provider === "ollama" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
                     const hasValue = Boolean(item.has_value);
@@ -1554,6 +1559,14 @@ export default function App() {
                             <Icon name="refresh" /> Load models
                           </button>
                         </>
+                      );
+                    } else if (Array.isArray(item.choices) && item.choices.length > 0) {
+                      inputElement = (
+                        <select value={draftValue} onChange={(e) => onChangeDraft(e.target.value)}>
+                          {item.choices.map((c) => (
+                            <option key={c} value={c}>{c === "" ? "— disabled —" : c}</option>
+                          ))}
+                        </select>
                       );
                     } else {
                       inputElement = (
@@ -1615,9 +1628,15 @@ export default function App() {
                 { id: "mealie", label: "Test Mealie", hint: "Check Mealie URL/API key connectivity." },
                 { id: "openai", label: "Test OpenAI", hint: "Validate OpenAI key and selected model.", provider: "chatgpt" },
                 { id: "ollama", label: "Test Ollama", hint: "Validate Ollama endpoint reachability.", provider: "ollama" },
+                { id: "db", label: "Test DB", hint: "Verify direct database connection.", requiresDb: true },
               ].filter((test) => {
                 const p = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
-                return !test.provider || (p !== "none" && p === test.provider);
+                if (test.provider && (p === "none" || p !== test.provider)) return false;
+                if (test.requiresDb) {
+                  const dbType = String(envDraft["MEALIE_DB_TYPE"] || "").trim();
+                  return dbType === "postgres" || dbType === "sqlite";
+                }
+                return true;
               })
               .map((test) => {
                 const state = connectionChecks[test.id] || {};

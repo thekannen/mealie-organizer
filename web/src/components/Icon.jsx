@@ -187,6 +187,19 @@ const ICON_PATHS = {
   zap: (
     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
   ),
+  database: (
+    <>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" />
+      <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <circle cx="7" cy="7" r="0.8" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 export default function Icon({ name, className = "" }) {

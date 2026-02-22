@@ -248,3 +248,60 @@ async def test_ollama_settings(
     ollama_model = resolve_runtime_value(runtime_env, "OLLAMA_MODEL", payload.ollama_model)
     ok, detail = _test_ollama_connection(ollama_url, ollama_model)
     return {"ok": ok, "detail": detail, "model": ollama_model}
+
+
+_DB_ENV_KEYS = (
+    "MEALIE_DB_TYPE",
+    "MEALIE_PG_HOST",
+    "MEALIE_PG_PORT",
+    "MEALIE_PG_DB",
+    "MEALIE_PG_USER",
+    "MEALIE_PG_PASS",
+    "MEALIE_DB_SSH_HOST",
+    "MEALIE_DB_SSH_USER",
+    "MEALIE_DB_SSH_KEY",
+)
+
+
+def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
+    import os
+
+    db_type_val = runtime_env.get("MEALIE_DB_TYPE", "").strip().lower()
+    if not db_type_val:
+        return False, "MEALIE_DB_TYPE is not configured. Set it to 'postgres' or 'sqlite'."
+
+    saved: dict[str, str | None] = {}
+    try:
+        for key in _DB_ENV_KEYS:
+            saved[key] = os.environ.get(key)
+            val = runtime_env.get(key, "")
+            if val:
+                os.environ[key] = str(val)
+            else:
+                os.environ.pop(key, None)
+
+        from cookdex.db_client import MealieDBClient
+
+        with MealieDBClient() as db:
+            group_id = db.get_group_id()
+        if group_id:
+            return True, f"DB connection validated. Group: {group_id[:8]}\u2026"
+        return True, "DB connection validated (no household found, but connection succeeded)."
+    except Exception as exc:
+        return False, str(exc)
+    finally:
+        for key, val in saved.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+
+@router.post("/settings/test/db")
+async def test_db_settings(
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    ok, detail = _test_db_connection(runtime_env)
+    return {"ok": ok, "detail": detail}

@@ -76,6 +76,18 @@ export const HELP_FAQ = [
     answer:
       "Open the Tasks page, pick a task, choose interval or cron timing, and save. Scheduled runs appear in the activity table alongside manual runs.",
   },
+  {
+    question: "Can I tag recipes without an AI provider?",
+    icon: "tag",
+    answer:
+      "Yes. The rule-tag task assigns tags and kitchen tools using configurable regex rules — no LLM required. Edit configs/taxonomy/tag_rules.json to define ingredient, text, and instruction patterns. Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to basic text rules.",
+  },
+  {
+    question: "What does 'Use Direct DB' do?",
+    icon: "database",
+    answer:
+      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for rule-tag. Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
+  },
 ];
 
 export const HELP_TROUBLESHOOTING = [
@@ -104,6 +116,15 @@ export const HELP_TROUBLESHOOTING = [
       "Click any row in the run history table to load its log output.",
       "Cancelled runs stop at the next safe checkpoint, not immediately.",
       "Scheduled runs use the server clock \u2014 cron expressions follow UTC unless configured otherwise.",
+    ],
+  },
+  {
+    title: "Direct DB Access",
+    icon: "database",
+    items: [
+      "Set MEALIE_DB_TYPE to 'postgres' or 'sqlite' in Settings to enable Use Direct DB options.",
+      "If Postgres is only accessible via SSH, set MEALIE_DB_SSH_HOST to your server address and ensure the SSH key is present at the path in MEALIE_DB_SSH_KEY.",
+      "Run recipe-quality with Use Direct DB enabled as a smoke test \u2014 it only reads data and reports results without making changes.",
     ],
   },
 ];

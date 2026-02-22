@@ -496,28 +496,37 @@ export async function api(path, options = {}) {
 }
 
 export function fieldFromOption(option, value, onChange) {
+  const labelClass = option.dangerous ? "danger-text" : "";
+  const hint = option.help_text ? (
+    <p className="muted tiny" style={{ margin: 0 }}>{option.help_text}</p>
+  ) : null;
+
   if (option.type === "boolean") {
     return (
-      <label key={option.key} className="field field-inline">
-        <span>{option.label}</span>
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(event) => onChange(option.key, event.target.checked)}
-        />
-      </label>
+      <div key={option.key} style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="field field-inline">
+          <span className={labelClass}>{option.label}</span>
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => onChange(option.key, event.target.checked)}
+          />
+        </label>
+        {hint}
+      </div>
     );
   }
 
   if (option.type === "number") {
     return (
       <label key={option.key} className="field">
-        <span>{option.label}</span>
+        <span className={labelClass}>{option.label}</span>
         <input
           type="number"
           value={value ?? ""}
           onChange={(event) => onChange(option.key, event.target.value)}
         />
+        {hint}
       </label>
     );
   }
@@ -525,25 +534,27 @@ export function fieldFromOption(option, value, onChange) {
   if (option.type === "integer") {
     return (
       <label key={option.key} className="field">
-        <span>{option.label}</span>
+        <span className={labelClass}>{option.label}</span>
         <input
           type="number"
           step="1"
           value={value ?? ""}
           onChange={(event) => onChange(option.key, event.target.value)}
         />
+        {hint}
       </label>
     );
   }
 
   return (
     <label key={option.key} className="field">
-      <span>{option.label}</span>
+      <span className={labelClass}>{option.label}</span>
       <input
         type="text"
         value={value ?? ""}
         onChange={(event) => onChange(option.key, event.target.value)}
       />
+      {hint}
     </label>
   );
 }

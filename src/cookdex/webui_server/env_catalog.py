@@ -11,6 +11,7 @@ class EnvVarSpec:
     default: str
     secret: bool
     description: str
+    choices: tuple[str, ...] = ()
 
 
 ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
@@ -101,6 +102,82 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         default="43200",
         secret=False,
         description="Session TTL in seconds for Web UI login cookies.",
+    ),
+    # ------------------------------------------------------------------
+    # Direct DB access (optional — enables use_db on relevant tasks)
+    # ------------------------------------------------------------------
+    EnvVarSpec(
+        key="MEALIE_DB_TYPE",
+        label="DB Type",
+        group="Direct DB",
+        default="",
+        secret=False,
+        description="Set to 'postgres' or 'sqlite' to enable direct DB access. Leave blank to use API-only mode.",
+        choices=("", "postgres", "sqlite"),
+    ),
+    EnvVarSpec(
+        key="MEALIE_PG_HOST",
+        label="Postgres Host",
+        group="Direct DB",
+        default="localhost",
+        secret=False,
+        description="Postgres server hostname or IP. Used when MEALIE_DB_TYPE=postgres.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_PG_PORT",
+        label="Postgres Port",
+        group="Direct DB",
+        default="5432",
+        secret=False,
+        description="Postgres server port.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_PG_DB",
+        label="Postgres Database",
+        group="Direct DB",
+        default="mealie_db",
+        secret=False,
+        description="Postgres database name.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_PG_USER",
+        label="Postgres User",
+        group="Direct DB",
+        default="mealie__user",
+        secret=False,
+        description="Postgres user name.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_PG_PASS",
+        label="Postgres Password",
+        group="Direct DB",
+        default="",
+        secret=True,
+        description="Postgres password (stored encrypted).",
+    ),
+    EnvVarSpec(
+        key="MEALIE_DB_SSH_HOST",
+        label="SSH Tunnel Host",
+        group="Direct DB",
+        default="",
+        secret=False,
+        description="SSH host for auto-tunnel to Postgres. Leave blank if Postgres is directly reachable.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_DB_SSH_USER",
+        label="SSH Tunnel User",
+        group="Direct DB",
+        default="root",
+        secret=False,
+        description="SSH user for the tunnel host.",
+    ),
+    EnvVarSpec(
+        key="MEALIE_DB_SSH_KEY",
+        label="SSH Key Path",
+        group="Direct DB",
+        default="~/.ssh/cookdex_mealie",
+        secret=False,
+        description="Path to SSH private key file for the tunnel.",
     ),
 )
 

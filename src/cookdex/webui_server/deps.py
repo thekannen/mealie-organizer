@@ -172,5 +172,6 @@ def env_payload(state: StateStore, cipher: SecretCipher) -> dict[str, Any]:
             "has_value": has_value,
             "default": spec.default,
             "description": spec.description,
+            "choices": list(spec.choices),
         }
     return payload
