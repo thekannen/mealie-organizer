@@ -126,6 +126,7 @@ export default function App() {
   const [taxonomyItemsByFile, setTaxonomyItemsByFile] = useState({});
   const [helpDocs, setHelpDocs] = useState([]);
   const [overviewMetrics, setOverviewMetrics] = useState(null);
+  const [qualityMetrics, setQualityMetrics] = useState(null);
   const [aboutMeta, setAboutMeta] = useState(null);
   const [healthMeta, setHealthMeta] = useState(null);
   const [lastLoadedAt, setLastLoadedAt] = useState("");
@@ -510,6 +511,7 @@ export default function App() {
     setUsers(data.users?.items || []);
     setHelpDocs(data.help?.items || []);
     setOverviewMetrics(data.metrics);
+    setQualityMetrics(data.quality);
     setAboutMeta(data.about);
     setHealthMeta(data.health);
     setLastLoadedAt(data.timestamp);
@@ -581,7 +583,7 @@ export default function App() {
       const [
         taskPayload, runPayload, schedulePayload, settingsPayload,
         configPayload, usersPayload, helpPayload,
-        metricsPayload, aboutPayload, healthPayload,
+        metricsPayload, qualityPayload, aboutPayload, healthPayload,
       ] = await Promise.all([
         api("/tasks"),
         api("/runs"),
@@ -591,6 +593,7 @@ export default function App() {
         api("/users"),
         api("/help/docs").catch(() => ({ items: [] })),
         api("/metrics/overview").catch(() => null),
+        api("/metrics/quality").catch(() => null),
         api("/about/meta").catch(() => null),
         api("/health").catch(() => null),
       ]);
@@ -598,8 +601,9 @@ export default function App() {
       const data = {
         tasks: taskPayload, runs: runPayload, schedules: schedulePayload,
         settings: settingsPayload, config: configPayload, users: usersPayload,
-        help: helpPayload, metrics: metricsPayload, about: aboutPayload,
-        health: healthPayload, timestamp: new Date().toISOString(), savedAt: Date.now(),
+        help: helpPayload, metrics: metricsPayload, quality: qualityPayload,
+        about: aboutPayload, health: healthPayload,
+        timestamp: new Date().toISOString(), savedAt: Date.now(),
       };
 
       applyData(data);
@@ -1265,6 +1269,59 @@ export default function App() {
             <CoverageRing label="Tags" value={overviewCoverage.tags} tone="olive" />
             <CoverageRing label="Tools" value={overviewCoverage.tools} tone="terracotta" />
           </div>
+        </article>
+
+        <article className="card medallion-card">
+          <h3>Recipe Quality</h3>
+          {qualityMetrics?.available ? (() => {
+            const { total, gold, silver, bronze, gold_pct, dimension_coverage } = qualityMetrics;
+            const tier = gold_pct >= 50 ? "gold" : bronze > silver + gold ? "bronze" : "silver";
+            const DIMS = ["category", "tags", "tools", "description", "time", "yield"];
+            const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", description: "Description", time: "Cook Time", yield: "Yield" };
+            return (
+              <div className="medallion-body">
+                <div className={`medallion-badge medallion-${tier}`}>
+                  <span className="medallion-icon">{tier === "gold" ? "🥇" : tier === "silver" ? "🥈" : "🥉"}</span>
+                  <span className="medallion-tier">{tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
+                  <span className="medallion-pct">{gold_pct}% gold</span>
+                </div>
+                <div className="medallion-tiers">
+                  <span className="medallion-tier-row gold-row"><strong>{gold}</strong> gold</span>
+                  <span className="medallion-tier-row silver-row"><strong>{silver}</strong> silver</span>
+                  <span className="medallion-tier-row bronze-row"><strong>{bronze}</strong> bronze</span>
+                </div>
+                <div className="medallion-dims">
+                  {DIMS.map((dim) => {
+                    const d = dimension_coverage?.[dim];
+                    const pct = d?.pct_have ?? 0;
+                    return (
+                      <div key={dim} className="dim-row">
+                        <span className="dim-label">{DIM_LABELS[dim]}</span>
+                        <div className="dim-bar-track">
+                          <div className="dim-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="dim-pct">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="muted tiny">{total} recipes scored</p>
+              </div>
+            );
+          })() : (
+            <div className="medallion-empty">
+              <p className="muted">No quality audit data yet.</p>
+              <button
+                className="ghost small"
+                onClick={() => {
+                  setActivePage("tasks");
+                  setSelectedTask("recipe-quality");
+                }}
+              >
+                Run Quality Audit →
+              </button>
+            </div>
+          )}
         </article>
 
         <article className="card quick-view">

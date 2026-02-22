@@ -196,6 +196,37 @@ async def get_about_meta(
     }
 
 
+@router.get("/metrics/quality")
+async def get_quality_metrics(
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    report_path = services.settings.config_root / "reports" / "quality_audit_report.json"
+    if not report_path.exists():
+        return {"available": False}
+    try:
+        import json as _json
+        data = _json.loads(report_path.read_text(encoding="utf-8"))
+        summary = data.get("summary", {})
+        total = int(summary.get("total") or 0)
+        gold = int(summary.get("gold") or 0)
+        silver = int(summary.get("silver") or 0)
+        bronze = int(summary.get("bronze") or 0)
+        gold_pct = float(summary.get("gold_pct") or 0)
+        dim_coverage = data.get("dimension_coverage", {})
+        return {
+            "available": True,
+            "total": total,
+            "gold": gold,
+            "silver": silver,
+            "bronze": bronze,
+            "gold_pct": gold_pct,
+            "dimension_coverage": dim_coverage,
+        }
+    except Exception:
+        return {"available": False}
+
+
 @router.get("/help/docs")
 async def get_help_docs(
     _session: dict[str, Any] = Depends(require_session),

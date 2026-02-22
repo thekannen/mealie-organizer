@@ -1183,6 +1183,123 @@ button.danger {
   align-content: start;
 }
 
+/* Medallion quality card */
+.medallion-card {
+  align-content: start;
+}
+
+.medallion-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.medallion-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 2px solid;
+}
+
+.medallion-badge.medallion-gold {
+  background: color-mix(in oklab, #f5c842 12%, var(--surface));
+  border-color: #f5c842;
+  color: #9a7a00;
+}
+
+.medallion-badge.medallion-silver {
+  background: color-mix(in oklab, #aab0bb 15%, var(--surface));
+  border-color: #aab0bb;
+  color: #5a6070;
+}
+
+.medallion-badge.medallion-bronze {
+  background: color-mix(in oklab, #cd7f32 12%, var(--surface));
+  border-color: #cd7f32;
+  color: #7a4b1a;
+}
+
+.medallion-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.medallion-tier {
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex: 1;
+}
+
+.medallion-pct {
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.medallion-tiers {
+  display: flex;
+  gap: 1rem;
+}
+
+.medallion-tier-row {
+  font-size: 0.8rem;
+}
+
+.medallion-tier-row strong {
+  font-size: 1rem;
+  margin-right: 0.2rem;
+}
+
+.gold-row strong { color: #9a7a00; }
+.silver-row strong { color: #5a6070; }
+.bronze-row strong { color: #7a4b1a; }
+
+.medallion-dims {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.dim-row {
+  display: grid;
+  grid-template-columns: 6rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.dim-label {
+  color: var(--muted);
+}
+
+.dim-bar-track {
+  height: 5px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.dim-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.dim-pct {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.medallion-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
 .top-usage ul {
   list-style: none;
   margin: 0;
