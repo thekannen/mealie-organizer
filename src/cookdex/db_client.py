@@ -14,33 +14,31 @@ Configuration (environment variables)
 --------------------------------------
   MEALIE_DB_TYPE          : 'postgres' | 'sqlite'  (unset → DB disabled)
 
-  PostgreSQL:
-    MEALIE_PG_HOST        : hostname / IP of the PostgreSQL server
-                            (default: localhost — use an SSH tunnel for remote hosts)
-    MEALIE_PG_PORT        : port (default: 5432)
-    MEALIE_PG_DB          : database name (default: mealie_db)
-    MEALIE_PG_USER        : user name (default: mealie__user)
-    MEALIE_PG_PASS        : password (required)
+  PostgreSQL direct (PostgreSQL accessible from this host):
+    MEALIE_PG_HOST        : hostname / IP  (default: localhost)
+    MEALIE_PG_PORT        : port           (default: 5432)
+    MEALIE_PG_DB          : database name  (default: mealie_db)
+    MEALIE_PG_USER        : user name      (default: mealie__user)
+    MEALIE_PG_PASS        : password       (required)
+
+  PostgreSQL via auto SSH tunnel (set when PostgreSQL only listens locally):
+    MEALIE_DB_SSH_HOST    : SSH host, e.g. 192.168.1.100
+    MEALIE_DB_SSH_USER    : SSH user (default: root)
+    MEALIE_DB_SSH_KEY     : path to private key (default: ~/.ssh/cookdex_mealie)
+    MEALIE_PG_HOST, _PORT, _DB, _USER, _PASS as above (HOST defaults to localhost)
+
+    When MEALIE_DB_SSH_HOST is set, cookdex automatically opens the tunnel
+    before connecting and closes it when done.  No manual ssh command needed.
 
   SQLite:
     MEALIE_SQLITE_PATH    : absolute path to mealie.db
-
-Remote PostgreSQL via SSH tunnel
----------------------------------
-  If PostgreSQL only accepts local connections (common), create a tunnel first:
-
-    ssh -N -L 5432:127.0.0.1:5432 -i /tmp/cookdex_mealie_key your_user@192.168.1.100
-
-  Then set MEALIE_PG_HOST=localhost and MEALIE_PG_PORT=5432.  The tunnel
-  forwards localhost:5432 → 127.0.0.1:5432 on the remote host.
 """
 from __future__ import annotations
 
 import os
 import re
 import uuid
-from contextlib import contextmanager
-from typing import Any, Generator, Optional
+from typing import Any, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +73,7 @@ class DBWrapper:
         dtype = db_type()
         self.conn: Any = None
         self.cursor: Any = None
+        self._tunnel: Any = None  # sshtunnel.SSHTunnelForwarder, if opened
         self._type: str = "postgres" if dtype in {"postgres", "postgresql"} else "sqlite"
         self._ph: str = "%s" if self._type == "postgres" else "?"
 
@@ -84,11 +83,13 @@ class DBWrapper:
             except ImportError as exc:
                 raise RuntimeError(
                     "psycopg2 is required for PostgreSQL DB access.  "
-                    "Install it with:  pip install psycopg2-binary"
+                    "Install it with:  pip install 'cookdex[db]'  or  pip install psycopg2-binary"
                 ) from exc
+
+            pg_host, pg_port = self._resolve_pg_endpoint()
             self.conn = psycopg2.connect(
-                host=_env("MEALIE_PG_HOST", "localhost"),
-                port=int(_env("MEALIE_PG_PORT", "5432")),
+                host=pg_host,
+                port=pg_port,
                 dbname=_env("MEALIE_PG_DB", "mealie_db"),
                 user=_env("MEALIE_PG_USER", "mealie__user"),
                 password=_env("MEALIE_PG_PASS"),
@@ -101,6 +102,38 @@ class DBWrapper:
             self.conn.create_function("REGEXP", 2, self._sqlite_regexp)
 
         self.cursor = self.conn.cursor()
+
+    def _resolve_pg_endpoint(self) -> tuple[str, int]:
+        """Return (host, port) for PostgreSQL, opening an SSH tunnel if configured."""
+        ssh_host = _env("MEALIE_DB_SSH_HOST")
+        pg_host = _env("MEALIE_PG_HOST", "localhost")
+        pg_port = int(_env("MEALIE_PG_PORT", "5432"))
+
+        if not ssh_host:
+            return pg_host, pg_port
+
+        try:
+            from sshtunnel import SSHTunnelForwarder  # type: ignore[import]
+        except ImportError as exc:
+            raise RuntimeError(
+                "sshtunnel is required for auto SSH tunnel.  "
+                "Install it with:  pip install 'cookdex[db]'  or  pip install sshtunnel"
+            ) from exc
+
+        ssh_user = _env("MEALIE_DB_SSH_USER", "root")
+        ssh_key = _env("MEALIE_DB_SSH_KEY") or os.path.expanduser("~/.ssh/cookdex_mealie")
+        print(f"[db] Opening SSH tunnel → {ssh_user}@{ssh_host} → {pg_host}:{pg_port}", flush=True)
+
+        tunnel = SSHTunnelForwarder(
+            ssh_host,
+            ssh_username=ssh_user,
+            ssh_pkey=ssh_key,
+            remote_bind_address=(pg_host, pg_port),
+        )
+        tunnel.start()
+        self._tunnel = tunnel
+        print(f"[db] Tunnel up on localhost:{tunnel.local_bind_port}", flush=True)
+        return "127.0.0.1", tunnel.local_bind_port
 
     # ------------------------------------------------------------------
     # SQLite helpers
@@ -158,6 +191,12 @@ class DBWrapper:
         try:
             if self.conn:
                 self.conn.close()
+        except Exception:
+            pass
+        try:
+            if self._tunnel is not None:
+                self._tunnel.stop()
+                self._tunnel = None
         except Exception:
             pass
 
