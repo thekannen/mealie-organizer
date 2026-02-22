@@ -20,40 +20,14 @@ from cookdex.webui_server.tasks import TaskRegistry
 REGISTRY = TaskRegistry()
 
 ALL_TASK_IDS = [
-    "categorize",
+    "clean-recipes",
+    "cleanup-duplicates",
     "cookbook-sync",
     "data-maintenance",
-    "foods-cleanup",
+    "health-check",
     "ingredient-parse",
-    "labels-sync",
-    "recipe-dedup",
-    "recipe-junk-filter",
-    "recipe-name-normalize",
-    "recipe-quality",
-    "rule-tag",
-    "taxonomy-audit",
+    "tag-categorize",
     "taxonomy-refresh",
-    "tools-sync",
-    "units-cleanup",
-    "yield-normalize",
-]
-
-# Read-only tasks that never write anything; dry_run is not exposed in the UI
-READ_ONLY_TASKS = ["taxonomy-audit", "recipe-quality"]
-
-# Tasks that have a user-visible dry_run option
-DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t not in READ_ONLY_TASKS]
-
-# Tasks that drive --apply via dry_run=False (no separate apply option)
-DRY_RUN_APPLY_TASKS = [
-    "foods-cleanup",
-    "labels-sync",
-    "recipe-dedup",
-    "recipe-junk-filter",
-    "recipe-name-normalize",
-    "rule-tag",
-    "tools-sync",
-    "units-cleanup",
     "yield-normalize",
 ]
 
@@ -119,56 +93,249 @@ def test_unknown_options_are_rejected(task_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dangerous flag behaviour
+# Metadata completeness
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("task_id", DRY_RUN_APPLY_TASKS)
-def test_dry_run_false_marks_dangerous(task_id: str) -> None:
-    execution = _build(task_id, {"dry_run": False})
-    assert execution.dangerous_requested is True
-    assert "--apply" in execution.command
+def test_describe_tasks_returns_all_tasks() -> None:
+    descriptions = REGISTRY.describe_tasks()
+    returned_ids = {d["task_id"] for d in descriptions}
+    assert returned_ids == set(ALL_TASK_IDS)
 
 
-@pytest.mark.parametrize("task_id", DRY_RUN_APPLY_TASKS)
-def test_dry_run_true_does_not_mark_dangerous(task_id: str) -> None:
-    execution = _build(task_id, {"dry_run": True})
-    assert execution.dangerous_requested is False
-    assert "--apply" not in execution.command
+@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
+def test_task_description_has_required_fields(task_id: str) -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+    desc = descriptions[task_id]
+    assert desc["title"]
+    assert desc["description"]
+    for opt in desc["options"]:
+        assert opt["key"]
+        assert opt["label"]
+        assert opt["type"] in {"boolean", "string", "integer", "number"}
 
 
-def test_taxonomy_refresh_cleanup_apply_marks_dangerous() -> None:
-    execution = _build("taxonomy-refresh", {"cleanup_apply": True})
-    assert execution.dangerous_requested is True
-    assert "--cleanup-apply" in execution.command
+# Tasks with a user-visible dry_run option
+DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t != "health-check"]
 
 
-def test_data_maintenance_apply_cleanups_marks_dangerous() -> None:
-    execution = _build("data-maintenance", {"apply_cleanups": True})
-    assert execution.dangerous_requested is True
-    assert "--apply-cleanups" in execution.command
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
+def test_every_non_audit_task_has_dry_run_option(task_id: str) -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+    option_keys = {o["key"] for o in descriptions[task_id]["options"]}
+    assert "dry_run" in option_keys
+
+
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
+def test_dry_run_option_defaults_true(task_id: str) -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+    dry_run_opt = next(o for o in descriptions[task_id]["options"] if o["key"] == "dry_run")
+    assert dry_run_opt["default"] is True
 
 
 # ---------------------------------------------------------------------------
-# Command construction: categorize
+# Command construction: tag-categorize
 # ---------------------------------------------------------------------------
 
 
-def test_categorize_module() -> None:
-    execution = _build("categorize")
+def test_tag_categorize_default_uses_ai() -> None:
+    execution = _build("tag-categorize")
     assert "cookdex.recipe_categorizer" in execution.command
 
 
-def test_categorize_provider_flag() -> None:
-    execution = _build("categorize", {"provider": "openai"})
+def test_tag_categorize_method_ai_uses_recipe_categorizer() -> None:
+    execution = _build("tag-categorize", {"method": "ai"})
+    assert "cookdex.recipe_categorizer" in execution.command
+
+
+def test_tag_categorize_method_rules_uses_rule_tagger() -> None:
+    execution = _build("tag-categorize", {"method": "rules"})
+    assert "cookdex.rule_tagger" in execution.command
+
+
+def test_tag_categorize_ai_provider_flag() -> None:
+    execution = _build("tag-categorize", {"method": "ai", "provider": "openai"})
     assert "--provider" in execution.command
     idx = execution.command.index("--provider")
     assert execution.command[idx + 1] == "openai"
 
 
-def test_categorize_empty_provider_omits_flag() -> None:
-    execution = _build("categorize", {"provider": ""})
+def test_tag_categorize_ai_empty_provider_omits_flag() -> None:
+    execution = _build("tag-categorize", {"method": "ai", "provider": ""})
     assert "--provider" not in execution.command
+
+
+def test_tag_categorize_rules_dry_run_false_adds_apply() -> None:
+    execution = _build("tag-categorize", {"method": "rules", "dry_run": False})
+    assert "--apply" in execution.command
+
+
+def test_tag_categorize_rules_dry_run_true_no_apply() -> None:
+    execution = _build("tag-categorize", {"method": "rules", "dry_run": True})
+    assert "--apply" not in execution.command
+
+
+def test_tag_categorize_rules_use_db_flag() -> None:
+    execution = _build("tag-categorize", {"method": "rules", "use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_tag_categorize_rules_use_db_absent_by_default() -> None:
+    execution = _build("tag-categorize", {"method": "rules"})
+    assert "--use-db" not in execution.command
+
+
+# ---------------------------------------------------------------------------
+# Command construction: clean-recipes
+# ---------------------------------------------------------------------------
+
+
+def test_clean_recipes_default_all_ops_uses_data_maintenance() -> None:
+    execution = _build("clean-recipes")
+    assert "cookdex.data_maintenance" in execution.command
+    assert "--stages" in execution.command
+    idx = execution.command.index("--stages")
+    assert execution.command[idx + 1] == "dedup,junk,names"
+
+
+def test_clean_recipes_dedup_only_uses_deduplicator() -> None:
+    execution = _build("clean-recipes", {"run_dedup": True, "run_junk": False, "run_names": False})
+    assert "cookdex.recipe_deduplicator" in execution.command
+
+
+def test_clean_recipes_junk_only_uses_junk_filter() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": True, "run_names": False})
+    assert "cookdex.recipe_junk_filter" in execution.command
+
+
+def test_clean_recipes_names_only_uses_name_normalizer() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": False, "run_names": True})
+    assert "cookdex.recipe_name_normalizer" in execution.command
+
+
+def test_clean_recipes_partial_combo_uses_data_maintenance() -> None:
+    execution = _build("clean-recipes", {"run_dedup": True, "run_junk": True, "run_names": False})
+    assert "cookdex.data_maintenance" in execution.command
+    idx = execution.command.index("--stages")
+    assert execution.command[idx + 1] == "dedup,junk"
+
+
+def test_clean_recipes_no_ops_raises() -> None:
+    with pytest.raises(ValueError):
+        _build("clean-recipes", {"run_dedup": False, "run_junk": False, "run_names": False})
+
+
+def test_clean_recipes_dedup_only_apply_flag() -> None:
+    execution = _build("clean-recipes", {"run_dedup": True, "run_junk": False, "run_names": False, "dry_run": False})
+    assert "--apply" in execution.command
+
+
+def test_clean_recipes_junk_reason_flag() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": True, "run_names": False, "reason": "listicle"})
+    assert "--reason" in execution.command
+    idx = execution.command.index("--reason")
+    assert execution.command[idx + 1] == "listicle"
+
+
+def test_clean_recipes_junk_no_reason_by_default() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": True, "run_names": False})
+    assert "--reason" not in execution.command
+
+
+def test_clean_recipes_names_force_all_flag() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": False, "run_names": True, "force_all": True})
+    assert "--all" in execution.command
+
+
+def test_clean_recipes_names_no_force_all_by_default() -> None:
+    execution = _build("clean-recipes", {"run_dedup": False, "run_junk": False, "run_names": True})
+    assert "--all" not in execution.command
+
+
+# ---------------------------------------------------------------------------
+# Command construction: cleanup-duplicates
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_duplicates_default_both_uses_data_maintenance() -> None:
+    execution = _build("cleanup-duplicates")
+    assert "cookdex.data_maintenance" in execution.command
+    idx = execution.command.index("--stages")
+    assert execution.command[idx + 1] == "foods,units"
+
+
+def test_cleanup_duplicates_foods_uses_foods_manager() -> None:
+    execution = _build("cleanup-duplicates", {"target": "foods"})
+    assert "cookdex.foods_manager" in execution.command
+    assert "cleanup" in execution.command
+
+
+def test_cleanup_duplicates_units_uses_units_manager() -> None:
+    execution = _build("cleanup-duplicates", {"target": "units"})
+    assert "cookdex.units_manager" in execution.command
+    assert "cleanup" in execution.command
+
+
+def test_cleanup_duplicates_foods_apply_flag() -> None:
+    execution = _build("cleanup-duplicates", {"target": "foods", "dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
+
+
+def test_cleanup_duplicates_units_apply_flag() -> None:
+    execution = _build("cleanup-duplicates", {"target": "units", "dry_run": False})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
+
+
+def test_cleanup_duplicates_both_apply_cleanups_flag() -> None:
+    execution = _build("cleanup-duplicates", {"target": "both", "dry_run": False})
+    assert "--apply-cleanups" in execution.command
+    assert execution.dangerous_requested is True
+
+
+# ---------------------------------------------------------------------------
+# Command construction: health-check
+# ---------------------------------------------------------------------------
+
+
+def test_health_check_default_uses_data_maintenance() -> None:
+    execution = _build("health-check")
+    assert "cookdex.data_maintenance" in execution.command
+    idx = execution.command.index("--stages")
+    assert execution.command[idx + 1] == "quality,audit"
+
+
+def test_health_check_quality_only_uses_quality_audit() -> None:
+    execution = _build("health-check", {"scope_quality": True, "scope_taxonomy": False})
+    assert "cookdex.recipe_quality_audit" in execution.command
+
+
+def test_health_check_taxonomy_only_uses_audit_taxonomy() -> None:
+    execution = _build("health-check", {"scope_quality": False, "scope_taxonomy": True})
+    assert "cookdex.audit_taxonomy" in execution.command
+
+
+def test_health_check_no_scope_raises() -> None:
+    with pytest.raises(ValueError):
+        _build("health-check", {"scope_quality": False, "scope_taxonomy": False})
+
+
+def test_health_check_quality_use_db_flag() -> None:
+    execution = _build("health-check", {"scope_quality": True, "scope_taxonomy": False, "use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_health_check_quality_nutrition_sample_flag() -> None:
+    execution = _build("health-check", {"scope_quality": True, "scope_taxonomy": False, "nutrition_sample": 50})
+    assert "--nutrition-sample" in execution.command
+    idx = execution.command.index("--nutrition-sample")
+    assert execution.command[idx + 1] == "50"
+
+
+def test_health_check_quality_nutrition_sample_absent_by_default() -> None:
+    execution = _build("health-check", {"scope_quality": True, "scope_taxonomy": False})
+    assert "--nutrition-sample" not in execution.command
 
 
 # ---------------------------------------------------------------------------
@@ -176,48 +343,55 @@ def test_categorize_empty_provider_omits_flag() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_taxonomy_refresh_module() -> None:
+def test_taxonomy_refresh_default_uses_data_maintenance() -> None:
+    # Default: sync_labels=True, sync_tools=True → routes through data_maintenance
     execution = _build("taxonomy-refresh")
+    assert "cookdex.data_maintenance" in execution.command
+    idx = execution.command.index("--stages")
+    stages = execution.command[idx + 1]
+    assert "taxonomy" in stages
+    assert "labels" in stages
+    assert "tools" in stages
+
+
+def test_taxonomy_refresh_labels_only_stages() -> None:
+    execution = _build("taxonomy-refresh", {"sync_labels": True, "sync_tools": False})
+    assert "cookdex.data_maintenance" in execution.command
+    idx = execution.command.index("--stages")
+    stages = execution.command[idx + 1]
+    assert "taxonomy" in stages
+    assert "labels" in stages
+    assert "tools" not in stages
+
+
+def test_taxonomy_refresh_direct_call_when_labels_and_tools_off() -> None:
+    execution = _build("taxonomy-refresh", {"sync_labels": False, "sync_tools": False})
     assert "cookdex.taxonomy_manager" in execution.command
     assert "refresh" in execution.command
 
 
-def test_taxonomy_refresh_mode_default_is_merge() -> None:
-    execution = _build("taxonomy-refresh")
+def test_taxonomy_refresh_direct_mode_default_is_merge() -> None:
+    execution = _build("taxonomy-refresh", {"sync_labels": False, "sync_tools": False})
     idx = execution.command.index("--mode")
     assert execution.command[idx + 1] == "merge"
 
 
-def test_taxonomy_refresh_custom_mode() -> None:
-    execution = _build("taxonomy-refresh", {"mode": "overwrite"})
-    idx = execution.command.index("--mode")
-    assert execution.command[idx + 1] == "overwrite"
-
-
-def test_taxonomy_refresh_includes_config_file_flags() -> None:
-    execution = _build("taxonomy-refresh")
+def test_taxonomy_refresh_direct_includes_config_file_flags() -> None:
+    execution = _build("taxonomy-refresh", {"sync_labels": False, "sync_tools": False})
     assert "--categories-file" in execution.command
     assert "--tags-file" in execution.command
 
 
-def test_taxonomy_refresh_cleanup_flags_default() -> None:
-    execution = _build("taxonomy-refresh")
-    # cleanup, cleanup-only-unused, cleanup-delete-noisy all default True
-    assert "--cleanup" in execution.command
-    assert "--cleanup-only-unused" in execution.command
-    assert "--cleanup-delete-noisy" in execution.command
-    # cleanup-apply defaults False
-    assert "--cleanup-apply" not in execution.command
+def test_taxonomy_refresh_cleanup_apply_marks_dangerous() -> None:
+    execution = _build("taxonomy-refresh", {"cleanup_apply": True})
+    assert execution.dangerous_requested is True
+    assert "--apply-cleanups" in execution.command
 
 
-# ---------------------------------------------------------------------------
-# Command construction: taxonomy-audit
-# ---------------------------------------------------------------------------
-
-
-def test_taxonomy_audit_module() -> None:
-    execution = _build("taxonomy-audit")
-    assert "cookdex.audit_taxonomy" in execution.command
+def test_taxonomy_refresh_direct_cleanup_apply_marks_dangerous() -> None:
+    execution = _build("taxonomy-refresh", {"sync_labels": False, "sync_tools": False, "cleanup_apply": True})
+    assert execution.dangerous_requested is True
+    assert "--cleanup-apply" in execution.command
 
 
 # ---------------------------------------------------------------------------
@@ -276,54 +450,35 @@ def test_ingredient_parse_optional_flags_absent_by_default() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Command construction: cleanup tasks
+# Command construction: yield-normalize
 # ---------------------------------------------------------------------------
 
 
-def test_foods_cleanup_module_and_subcommand() -> None:
-    execution = _build("foods-cleanup")
-    assert "cookdex.foods_manager" in execution.command
-    assert "cleanup" in execution.command
+def test_yield_normalize_module() -> None:
+    execution = _build("yield-normalize")
+    assert "cookdex.yield_normalizer" in execution.command
 
 
-def test_foods_cleanup_dry_run_false_is_dangerous() -> None:
-    execution = _build("foods-cleanup", {"dry_run": False})
-    assert "--apply" in execution.command
+def test_yield_normalize_dry_run_false_is_dangerous() -> None:
+    execution = _build("yield-normalize", {"dry_run": False})
     assert execution.dangerous_requested is True
-
-
-def test_units_cleanup_module_and_subcommand() -> None:
-    execution = _build("units-cleanup")
-    assert "cookdex.units_manager" in execution.command
-    assert "cleanup" in execution.command
-
-
-def test_units_cleanup_dry_run_false_is_dangerous() -> None:
-    execution = _build("units-cleanup", {"dry_run": False})
     assert "--apply" in execution.command
-    assert execution.dangerous_requested is True
 
 
-def test_labels_sync_module() -> None:
-    execution = _build("labels-sync")
-    assert "cookdex.labels_manager" in execution.command
+def test_yield_normalize_default_no_apply() -> None:
+    execution = _build("yield-normalize")
+    assert "--apply" not in execution.command
+    assert execution.dangerous_requested is False
 
 
-def test_labels_sync_dry_run_false_is_dangerous() -> None:
-    execution = _build("labels-sync", {"dry_run": False})
-    assert "--apply" in execution.command
-    assert execution.dangerous_requested is True
+def test_yield_normalize_use_db_flag() -> None:
+    execution = _build("yield-normalize", {"use_db": True})
+    assert "--use-db" in execution.command
 
 
-def test_tools_sync_module() -> None:
-    execution = _build("tools-sync")
-    assert "cookdex.tools_manager" in execution.command
-
-
-def test_tools_sync_dry_run_false_is_dangerous() -> None:
-    execution = _build("tools-sync", {"dry_run": False})
-    assert "--apply" in execution.command
-    assert execution.dangerous_requested is True
+def test_yield_normalize_use_db_absent_by_default() -> None:
+    execution = _build("yield-normalize")
+    assert "--use-db" not in execution.command
 
 
 # ---------------------------------------------------------------------------
@@ -369,225 +524,7 @@ def test_data_maintenance_skip_ai_default_absent() -> None:
     assert "--skip-ai" not in execution.command
 
 
-# ---------------------------------------------------------------------------
-# Command construction: recipe-quality
-# ---------------------------------------------------------------------------
-
-
-def test_recipe_quality_module() -> None:
-    execution = _build("recipe-quality")
-    assert "cookdex.recipe_quality_audit" in execution.command
-
-
-def test_recipe_quality_is_never_dangerous_by_default() -> None:
-    execution = _build("recipe-quality")
-    assert execution.dangerous_requested is False
-
-
-def test_recipe_quality_nutrition_sample_flag() -> None:
-    execution = _build("recipe-quality", {"nutrition_sample": 50})
-    assert "--nutrition-sample" in execution.command
-    idx = execution.command.index("--nutrition-sample")
-    assert execution.command[idx + 1] == "50"
-
-
-def test_recipe_quality_nutrition_sample_absent_by_default() -> None:
-    execution = _build("recipe-quality")
-    assert "--nutrition-sample" not in execution.command
-
-
-def test_recipe_quality_use_db_flag() -> None:
-    execution = _build("recipe-quality", {"use_db": True})
-    assert "--use-db" in execution.command
-
-
-def test_recipe_quality_use_db_absent_by_default() -> None:
-    execution = _build("recipe-quality")
-    assert "--use-db" not in execution.command
-
-
-# ---------------------------------------------------------------------------
-# Command construction: yield-normalize
-# ---------------------------------------------------------------------------
-
-
-def test_yield_normalize_module() -> None:
-    execution = _build("yield-normalize")
-    assert "cookdex.yield_normalizer" in execution.command
-
-
-def test_yield_normalize_dry_run_false_is_dangerous() -> None:
-    execution = _build("yield-normalize", {"dry_run": False})
+def test_data_maintenance_apply_cleanups_marks_dangerous() -> None:
+    execution = _build("data-maintenance", {"apply_cleanups": True})
     assert execution.dangerous_requested is True
-    assert "--apply" in execution.command
-
-
-def test_yield_normalize_default_no_apply() -> None:
-    execution = _build("yield-normalize")
-    assert "--apply" not in execution.command
-    assert execution.dangerous_requested is False
-
-
-def test_yield_normalize_use_db_flag() -> None:
-    execution = _build("yield-normalize", {"use_db": True})
-    assert "--use-db" in execution.command
-
-
-def test_yield_normalize_use_db_absent_by_default() -> None:
-    execution = _build("yield-normalize")
-    assert "--use-db" not in execution.command
-
-
-# ---------------------------------------------------------------------------
-# rule-tag
-# ---------------------------------------------------------------------------
-
-
-def test_rule_tag_dry_run_default() -> None:
-    execution = _build("rule-tag")
-    _assert_dry_run_safe(execution)
-    assert "--apply" not in execution.command
-
-
-def test_rule_tag_dry_run_false_is_dangerous() -> None:
-    execution = _build("rule-tag", {"dry_run": False})
-    assert "--apply" in execution.command
-    assert execution.dangerous_requested is True
-
-
-def test_rule_tag_custom_config_file() -> None:
-    execution = _build("rule-tag", {"config_file": "configs/taxonomy/my_rules.json"})
-    assert "--config" in execution.command
-    idx = execution.command.index("--config")
-    assert execution.command[idx + 1] == "configs/taxonomy/my_rules.json"
-
-
-def test_rule_tag_default_config_not_passed_explicitly() -> None:
-    execution = _build("rule-tag")
-    assert "--config" not in execution.command
-
-
-def test_rule_tag_use_db_flag() -> None:
-    execution = _build("rule-tag", {"use_db": True})
-    assert "--use-db" in execution.command
-
-
-def test_rule_tag_use_db_absent_by_default() -> None:
-    execution = _build("rule-tag")
-    assert "--use-db" not in execution.command
-
-
-# ---------------------------------------------------------------------------
-# Describe tasks: metadata completeness
-# ---------------------------------------------------------------------------
-
-
-def test_describe_tasks_returns_all_tasks() -> None:
-    descriptions = REGISTRY.describe_tasks()
-    returned_ids = {d["task_id"] for d in descriptions}
-    assert returned_ids == set(ALL_TASK_IDS)
-
-
-@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
-def test_task_description_has_required_fields(task_id: str) -> None:
-    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
-    desc = descriptions[task_id]
-    assert desc["title"]
-    assert desc["description"]
-    for opt in desc["options"]:
-        assert opt["key"]
-        assert opt["label"]
-        assert opt["type"] in {"boolean", "string", "integer", "number"}
-
-
-@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
-def test_every_task_has_dry_run_option(task_id: str) -> None:
-    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
-    option_keys = {o["key"] for o in descriptions[task_id]["options"]}
-    assert "dry_run" in option_keys
-
-
-@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
-def test_dry_run_option_defaults_true(task_id: str) -> None:
-    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
-    dry_run_opt = next(o for o in descriptions[task_id]["options"] if o["key"] == "dry_run")
-    assert dry_run_opt["default"] is True
-
-
-@pytest.mark.parametrize("task_id", READ_ONLY_TASKS)
-def test_read_only_tasks_have_no_dry_run_option(task_id: str) -> None:
-    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
-    option_keys = {o["key"] for o in descriptions[task_id]["options"]}
-    assert "dry_run" not in option_keys
-
-
-# ---------------------------------------------------------------------------
-# Command construction: recipe-name-normalize
-# ---------------------------------------------------------------------------
-
-
-def test_recipe_name_normalize_module() -> None:
-    execution = _build("recipe-name-normalize")
-    assert "cookdex.recipe_name_normalizer" in execution.command
-
-
-def test_recipe_name_normalize_apply_flag() -> None:
-    execution = _build("recipe-name-normalize", {"dry_run": False})
-    assert "--apply" in execution.command
-
-
-def test_recipe_name_normalize_force_all_flag() -> None:
-    execution = _build("recipe-name-normalize", {"force_all": True})
-    assert "--all" in execution.command
-
-
-def test_recipe_name_normalize_no_apply_in_dry_run() -> None:
-    execution = _build("recipe-name-normalize", {"dry_run": True})
-    assert "--apply" not in execution.command
-
-
-# ---------------------------------------------------------------------------
-# Command construction: recipe-dedup
-# ---------------------------------------------------------------------------
-
-
-def test_recipe_dedup_module() -> None:
-    execution = _build("recipe-dedup")
-    assert "cookdex.recipe_deduplicator" in execution.command
-
-
-def test_recipe_dedup_apply_flag() -> None:
-    execution = _build("recipe-dedup", {"dry_run": False})
-    assert "--apply" in execution.command
-
-
-def test_recipe_dedup_no_apply_in_dry_run() -> None:
-    execution = _build("recipe-dedup", {"dry_run": True})
-    assert "--apply" not in execution.command
-
-
-# ---------------------------------------------------------------------------
-# Command construction: recipe-junk-filter
-# ---------------------------------------------------------------------------
-
-
-def test_recipe_junk_filter_module() -> None:
-    execution = _build("recipe-junk-filter")
-    assert "cookdex.recipe_junk_filter" in execution.command
-
-
-def test_recipe_junk_filter_apply_flag() -> None:
-    execution = _build("recipe-junk-filter", {"dry_run": False})
-    assert "--apply" in execution.command
-
-
-def test_recipe_junk_filter_reason_flag() -> None:
-    execution = _build("recipe-junk-filter", {"reason": "listicle"})
-    assert "--reason" in execution.command
-    idx = execution.command.index("--reason")
-    assert execution.command[idx + 1] == "listicle"
-
-
-def test_recipe_junk_filter_no_reason_by_default() -> None:
-    execution = _build("recipe-junk-filter")
-    assert "--reason" not in execution.command
+    assert "--apply-cleanups" in execution.command

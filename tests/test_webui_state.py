@@ -5,9 +5,9 @@ from cookdex.webui_server.state import StateStore
 
 def test_state_initializes_task_policies(tmp_path: Path):
     store = StateStore(tmp_path / "state.db")
-    store.initialize(["ingredient-parse", "foods-cleanup"])
+    store.initialize(["ingredient-parse", "cleanup-duplicates"])
     policies = store.list_task_policies()
-    assert sorted(policies.keys()) == ["foods-cleanup", "ingredient-parse"]
+    assert sorted(policies.keys()) == ["cleanup-duplicates", "ingredient-parse"]
     assert policies["ingredient-parse"]["allow_dangerous"] is False
 
 

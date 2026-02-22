@@ -83,7 +83,7 @@ class TestRestoreFromDb:
             {
                 "schedule_id": "bad-id",
                 "name": "Broken",
-                "task_id": "categorize",
+                "task_id": "tag-categorize",
                 "schedule_kind": "once",
                 "schedule_data": {"run_at": ""},  # invalid — empty run_at
                 "options": {},

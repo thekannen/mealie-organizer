@@ -10,14 +10,14 @@ def test_registry_defaults_to_dry_run_for_parser():
 
 def test_registry_marks_dry_run_false_as_dangerous():
     registry = TaskRegistry()
-    execution = registry.build_execution("foods-cleanup", {"dry_run": False})
+    execution = registry.build_execution("cleanup-duplicates", {"dry_run": False})
     assert execution.dangerous_requested is True
 
 
 def test_registry_rejects_unknown_options():
     registry = TaskRegistry()
     try:
-        registry.build_execution("categorize", {"unknown": "value"})
+        registry.build_execution("tag-categorize", {"unknown": "value"})
     except ValueError as exc:
         assert "Unsupported options" in str(exc)
     else:

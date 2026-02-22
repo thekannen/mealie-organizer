@@ -266,19 +266,15 @@ export default function App() {
   }
 
   const TASK_ICONS = {
-    "categorize": "wand",
-    "rule-tag": "tag",
-    "recipe-quality": "check-circle",
-    "taxonomy-audit": "search",
+    "data-maintenance": "settings",
+    "clean-recipes": "trash",
+    "ingredient-parse": "folder",
+    "yield-normalize": "zap",
+    "cleanup-duplicates": "layers",
+    "tag-categorize": "tag",
     "taxonomy-refresh": "refresh",
     "cookbook-sync": "book-open",
-    "labels-sync": "list",
-    "tools-sync": "wrench",
-    "foods-cleanup": "trash",
-    "units-cleanup": "layers",
-    "yield-normalize": "zap",
-    "ingredient-parse": "folder",
-    "data-maintenance": "settings",
+    "health-check": "check-circle",
   };
 
   const taskGroups = useMemo(() => {
@@ -789,7 +785,7 @@ export default function App() {
       const nextRuns = payload?.items || [];
       const prev = prevRunsRef.current;
       const qualityJustFinished = nextRuns.some((run) => {
-        if (run.task_id !== "recipe-quality") return false;
+        if (run.task_id !== "health-check") return false;
         if (run.status !== "completed") return false;
         const old = prev.find((r) => r.run_id === run.run_id);
         return !old || old.status !== "completed";
@@ -1619,7 +1615,7 @@ export default function App() {
                   className="ghost small"
                   onClick={() => {
                     setActivePage("tasks");
-                    setSelectedTask("recipe-quality");
+                    setSelectedTask("health-check");
                   }}
                 >
                   Run Quality Audit →
