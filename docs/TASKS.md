@@ -60,16 +60,38 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 
 ## Task IDs (Queue Runner)
 
-- `categorize`
-- `taxonomy-refresh`
-- `taxonomy-audit`
-- `cookbook-sync`
-- `ingredient-parse`
-- `foods-cleanup`
-- `units-cleanup`
-- `labels-sync`
-- `tools-sync`
-- `data-maintenance`
+| Task ID | Title | Description |
+|---|---|---|
+| `categorize` | Recipe Categorizer | Classify recipes using the configured AI provider |
+| `taxonomy-refresh` | Taxonomy Refresh | Sync categories and tags from config files |
+| `taxonomy-audit` | Taxonomy Audit | Generate taxonomy diagnostics report |
+| `cookbook-sync` | Cookbook Sync | Create/update cookbooks from config rules |
+| `ingredient-parse` | Ingredient Parser | Parse ingredients with parser fallback chain |
+| `foods-cleanup` | Foods Cleanup | Merge duplicate food entries |
+| `units-cleanup` | Units Cleanup | Normalize unit aliases and merge duplicates |
+| `labels-sync` | Labels Sync | Create/delete labels from taxonomy config |
+| `tools-sync` | Tools Sync | Create/merge tools from taxonomy config |
+| `data-maintenance` | Data Maintenance | Run full staged maintenance pipeline |
+| `recipe-quality` | Recipe Quality Audit | Score recipes on gold-medallion dimensions; estimate nutrition coverage |
+| `yield-normalize` | Yield Normalizer | Fill missing yield text from servings, or parse yield text to set numeric servings |
+
+### recipe-quality options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Read-only — do not write any changes |
+| `nutrition_sample` | integer | `200` | Recipes fetched for nutrition coverage estimate (ignored with `use_db`) |
+| `use_db` | boolean | `false` | Read via single JOIN query instead of N API calls; exact nutrition coverage; requires `MEALIE_DB_TYPE` |
+
+### yield-normalize options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing |
+| `apply` | boolean | `false` | Write changes (dangerous — requires policy unlock) |
+| `use_db` | boolean | `false` | Write directly to Mealie DB in a single transaction instead of individual API PATCH calls; requires `MEALIE_DB_TYPE` |
+
+The `use_db` option requires the `db` extras (`pip install 'cookdex[db]'`) and DB credentials in `.env`. See [Direct DB Access](DIRECT_DB.md) for setup.
 
 ## Environment Variable Management
 

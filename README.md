@@ -45,6 +45,8 @@ Open `http://localhost:4820/cookdex` and log in with the bootstrap credentials.
 | `labels-sync` | Create/delete labels from taxonomy config |
 | `tools-sync` | Create/merge tools from taxonomy config |
 | `data-maintenance` | Run full staged maintenance pipeline |
+| `recipe-quality` | Score recipes on gold-medallion dimensions and estimate nutrition coverage |
+| `yield-normalize` | Fill missing yield text from servings count or parse yield text to set numeric servings |
 
 ## API
 
@@ -110,6 +112,29 @@ Optional (defaults shown):
 
 After first login, provider keys and runtime settings can be managed from the Settings page.
 
+## Direct DB Access (Optional)
+
+The `recipe-quality` and `yield-normalize` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes.
+
+To enable it:
+
+1. Install the `db` extras:
+   ```bash
+   pip install 'cookdex[db]'
+   ```
+
+2. Add DB credentials to `.env` (see `.env.example` for all options):
+   ```
+   MEALIE_DB_TYPE=postgres
+   MEALIE_PG_HOST=localhost
+   MEALIE_PG_PASS=your_mealie_db_password
+   MEALIE_DB_SSH_HOST=192.168.1.100   # omit if Postgres is directly reachable
+   ```
+
+3. In the Web UI, enable **Use Direct DB** when queuing `recipe-quality` or `yield-normalize` runs.
+
+See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including SSH tunnel configuration, SQLite support, and key generation.
+
 ## Docker Volumes
 
 | Host path | Container path | Purpose |
@@ -139,6 +164,7 @@ curl http://localhost:4820/cookdex/api/v1/health
 - [Local Dev](docs/LOCAL_DEV.md) — run and test locally without Docker
 - [Tasks](docs/TASKS.md) — task reference and safety policies
 - [Data Maintenance](docs/DATA_MAINTENANCE.md) — staged cleanup pipeline
+- [Direct DB Access](docs/DIRECT_DB.md) — optional direct PostgreSQL/SQLite access for bulk tasks
 - [Parser Migration](docs/PARSER_MIGRATION.md) — migrating from standalone parser
 
 ## Testing
