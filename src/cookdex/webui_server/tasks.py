@@ -263,22 +263,28 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_recipe_quality(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "nutrition_sample"})
+    _validate_allowed(options, {"dry_run", "nutrition_sample", "use_db"})
     env, dangerous = _common_env(options)
     nutrition_sample = _int_option(options, "nutrition_sample")
+    use_db = _bool_option(options, "use_db", False)
     cmd = _py_module("cookdex.recipe_quality_audit")
     if nutrition_sample is not None:
         cmd.extend(["--nutrition-sample", str(nutrition_sample)])
+    if use_db:
+        cmd.append("--use-db")
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
 def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "apply"})
+    _validate_allowed(options, {"dry_run", "apply", "use_db"})
     env, dangerous = _common_env(options)
     apply = _bool_option(options, "apply", False)
+    use_db = _bool_option(options, "use_db", False)
     cmd = _py_module("cookdex.yield_normalizer")
     if apply:
         cmd.append("--apply")
+    if use_db:
+        cmd.append("--use-db")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
 
 
@@ -433,7 +439,18 @@ class TaskRegistry:
                         "Nutrition Sample Size",
                         "integer",
                         default=200,
-                        help_text="Number of full recipes to fetch for nutrition coverage estimate.",
+                        help_text="Number of full recipes to fetch for nutrition coverage estimate (ignored with use_db).",
+                    ),
+                    OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
+                        "boolean",
+                        default=False,
+                        help_text=(
+                            "Read via single JOIN query instead of N API calls. "
+                            "Exact nutrition coverage (not estimated). "
+                            "Requires MEALIE_DB_TYPE in .env."
+                        ),
                     ),
                 ],
                 build=_build_recipe_quality,
@@ -445,11 +462,22 @@ class TaskRegistry:
                 title="Yield Normalizer",
                 description=(
                     "Fill missing recipe yield text from servings count, "
-                    "or parse yield text to set numeric servings. Uses concurrent writes."
+                    "or parse yield text to set numeric servings."
                 ),
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True),
                     OptionSpec("apply", "Apply Changes", "boolean", default=False, dangerous=True),
+                    OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
+                        "boolean",
+                        default=False,
+                        help_text=(
+                            "Write directly to Mealie's DB in a single transaction "
+                            "instead of individual API PATCH calls. "
+                            "Requires MEALIE_DB_TYPE in .env."
+                        ),
+                    ),
                 ],
                 build=_build_yield_normalize,
             )

@@ -1,0 +1,425 @@
+"""Direct Mealie database client for high-throughput bulk operations.
+
+Bypasses the HTTP API for operations that would otherwise require thousands of
+individual PATCH/GET calls.  Uses raw parameterized SQL against the same
+PostgreSQL (or SQLite) database that Mealie itself uses.
+
+Supported operations
+--------------------
+  bulk_update_yield     – UPDATE recipe yield fields in a single transaction.
+  get_recipe_rows       – SELECT all recipe rows with quality-scoring fields.
+  get_group_id          – Resolve the first group's UUID.
+
+Configuration (environment variables)
+--------------------------------------
+  MEALIE_DB_TYPE          : 'postgres' | 'sqlite'  (unset → DB disabled)
+
+  PostgreSQL:
+    MEALIE_PG_HOST        : hostname / IP of the PostgreSQL server
+                            (default: localhost — use an SSH tunnel for remote hosts)
+    MEALIE_PG_PORT        : port (default: 5432)
+    MEALIE_PG_DB          : database name (default: mealie_db)
+    MEALIE_PG_USER        : user name (default: mealie__user)
+    MEALIE_PG_PASS        : password (required)
+
+  SQLite:
+    MEALIE_SQLITE_PATH    : absolute path to mealie.db
+
+Remote PostgreSQL via SSH tunnel
+---------------------------------
+  If PostgreSQL only accepts local connections (common), create a tunnel first:
+
+    ssh -N -L 5432:127.0.0.1:5432 -i /tmp/cookdex_mealie_key your_user@192.168.1.100
+
+  Then set MEALIE_PG_HOST=localhost and MEALIE_PG_PORT=5432.  The tunnel
+  forwards localhost:5432 → 127.0.0.1:5432 on the remote host.
+"""
+from __future__ import annotations
+
+import os
+import re
+import uuid
+from contextlib import contextmanager
+from typing import Any, Generator, Optional
+
+
+# ---------------------------------------------------------------------------
+# Configuration helpers
+# ---------------------------------------------------------------------------
+
+def _env(key: str, default: str = "") -> str:
+    return os.environ.get(key, default).strip()
+
+
+def db_type() -> str:
+    return _env("MEALIE_DB_TYPE").lower()
+
+
+def is_db_enabled() -> bool:
+    return db_type() in {"postgres", "postgresql", "sqlite"}
+
+
+# ---------------------------------------------------------------------------
+# DBWrapper — thin abstraction over psycopg2 / sqlite3
+# ---------------------------------------------------------------------------
+
+class DBWrapper:
+    """Low-level connection wrapper for parameterised SQL execution.
+
+    Supports PostgreSQL (%s placeholders) and SQLite (? placeholders) via a
+    simple translation layer.  SQL can be written with %s and it will be
+    converted for SQLite automatically.
+    """
+
+    def __init__(self) -> None:
+        dtype = db_type()
+        self.conn: Any = None
+        self.cursor: Any = None
+        self._type: str = "postgres" if dtype in {"postgres", "postgresql"} else "sqlite"
+        self._ph: str = "%s" if self._type == "postgres" else "?"
+
+        if self._type == "postgres":
+            try:
+                import psycopg2  # type: ignore[import]
+            except ImportError as exc:
+                raise RuntimeError(
+                    "psycopg2 is required for PostgreSQL DB access.  "
+                    "Install it with:  pip install psycopg2-binary"
+                ) from exc
+            self.conn = psycopg2.connect(
+                host=_env("MEALIE_PG_HOST", "localhost"),
+                port=int(_env("MEALIE_PG_PORT", "5432")),
+                dbname=_env("MEALIE_PG_DB", "mealie_db"),
+                user=_env("MEALIE_PG_USER", "mealie__user"),
+                password=_env("MEALIE_PG_PASS"),
+            )
+            self.conn.autocommit = False
+        else:
+            import sqlite3  # stdlib
+            path = _env("MEALIE_SQLITE_PATH", "/app/data/mealie.db")
+            self.conn = sqlite3.connect(path)
+            self.conn.create_function("REGEXP", 2, self._sqlite_regexp)
+
+        self.cursor = self.conn.cursor()
+
+    # ------------------------------------------------------------------
+    # SQLite helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sqlite_regexp(expr: Optional[str], item: Optional[str]) -> bool:
+        if not expr or item is None:
+            return False
+        try:
+            return bool(re.compile(expr, re.IGNORECASE).search(item))
+        except re.error:
+            return False
+
+    def _translate_sql(self, sql: str) -> str:
+        """Convert %s placeholders and PostgreSQL-isms to SQLite syntax."""
+        if self._type != "sqlite":
+            return sql
+        sql = sql.replace("%s", "?")
+        sql = re.sub(r"gen_random_uuid\(\)", "lower(hex(randomblob(16)))", sql)
+        sql = sql.replace("::uuid", "")
+        sql = re.sub(r"(\w+)\s*~\*\s*'([^']+)'", r"\1 REGEXP '\2'", sql)
+        sql = re.sub(r"(\w+)\s*!~\*\s*'([^']+)'", r"NOT (\1 REGEXP '\2')", sql)
+        return sql
+
+    # ------------------------------------------------------------------
+    # Core execution interface
+    # ------------------------------------------------------------------
+
+    @property
+    def placeholder(self) -> str:
+        return self._ph
+
+    def execute(self, sql: str, params: tuple = ()) -> "DBWrapper":
+        self.cursor.execute(self._translate_sql(sql), params)
+        return self
+
+    def executemany(self, sql: str, params_seq: list[tuple]) -> "DBWrapper":
+        self.cursor.executemany(self._translate_sql(sql), params_seq)
+        return self
+
+    def fetchone(self) -> Optional[tuple]:
+        return self.cursor.fetchone()
+
+    def fetchall(self) -> list[tuple]:
+        return self.cursor.fetchall() or []
+
+    def commit(self) -> None:
+        self.conn.commit()
+
+    def rollback(self) -> None:
+        self.conn.rollback()
+
+    def close(self) -> None:
+        try:
+            if self.conn:
+                self.conn.close()
+        except Exception:
+            pass
+
+    def __enter__(self) -> "DBWrapper":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        self.close()
+
+
+# ---------------------------------------------------------------------------
+# MealieDBClient — high-level operations for cookdex tasks
+# ---------------------------------------------------------------------------
+
+class MealieDBClient:
+    """High-level Mealie DB client.
+
+    Instantiate and call the needed methods; close() when done.
+    Prefer using as a context manager (``with`` block) for automatic cleanup.
+    """
+
+    def __init__(self) -> None:
+        self._db = DBWrapper()
+
+    def close(self) -> None:
+        self._db.close()
+
+    def __enter__(self) -> "MealieDBClient":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is None:
+            self._db.commit()
+        else:
+            self._db.rollback()
+        self.close()
+
+    # ------------------------------------------------------------------
+    # Group helpers
+    # ------------------------------------------------------------------
+
+    def get_group_id(self) -> Optional[str]:
+        """Return the first group's id (UUID as string)."""
+        row = self._db.execute("SELECT id FROM groups LIMIT 1").fetchone()
+        return str(row[0]) if row else None
+
+    def get_group_id_for_api_key(self, api_user_id: str) -> Optional[str]:
+        """Return group_id for the user associated with the API key."""
+        row = self._db.execute(
+            "SELECT group_id FROM users WHERE id = %s",
+            (api_user_id,),
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    # ------------------------------------------------------------------
+    # Recipe quality reads
+    # ------------------------------------------------------------------
+
+    def get_recipe_rows(self, group_id: Optional[str] = None) -> list[dict]:
+        """Return all recipes with fields needed for gold-medallion scoring.
+
+        Includes tag, category, and tool counts via a single JOIN query —
+        orders of magnitude faster than N individual API calls.
+        """
+        p = self._db.placeholder
+
+        where = f"WHERE r.group_id = {p}" if group_id else ""
+        params: tuple = (group_id,) if group_id else ()
+
+        sql = f"""
+            SELECT
+                r.id,
+                r.slug,
+                r.name,
+                r.description,
+                r.recipe_yield,
+                r.recipe_yield_quantity,
+                r.recipe_servings,
+                r.prep_time,
+                r.total_time,
+                r.perform_time,
+                r.cook_time,
+                COUNT(DISTINCT rtag.tag_id)  AS tag_count,
+                COUNT(DISTINCT rcat.category_id) AS cat_count,
+                COUNT(DISTINCT rtool.tool_id) AS tool_count,
+                n.calories
+            FROM recipes r
+            LEFT JOIN recipes_to_tags       rtag  ON r.id = rtag.recipe_id
+            LEFT JOIN recipes_to_categories rcat  ON r.id = rcat.recipe_id
+            LEFT JOIN recipes_to_tools      rtool ON r.id = rtool.recipe_id
+            LEFT JOIN recipe_nutrition      n     ON r.id = n.recipe_id
+            {where}
+            GROUP BY
+                r.id, r.slug, r.name, r.description,
+                r.recipe_yield, r.recipe_yield_quantity, r.recipe_servings,
+                r.prep_time, r.total_time, r.perform_time, r.cook_time,
+                n.calories
+        """
+        rows = self._db.execute(sql, params).fetchall()
+        keys = (
+            "id", "slug", "name", "description",
+            "recipeYield", "recipeYieldQuantity", "recipeServings",
+            "prepTime", "totalTime", "performTime", "cookTime",
+            "tag_count", "cat_count", "tool_count",
+            "calories",
+        )
+        return [dict(zip(keys, row)) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Yield bulk update
+    # ------------------------------------------------------------------
+
+    def bulk_update_yield(
+        self,
+        updates: list[dict],
+        *,
+        group_id: Optional[str] = None,
+    ) -> tuple[int, int]:
+        """Bulk-update recipe yield fields in a single transaction.
+
+        Each ``update`` dict must contain:
+            recipe_id       : str (UUID) — preferred
+            OR slug + group_id : str
+
+        And at least one of:
+            recipe_yield            : str | None
+            recipe_yield_quantity   : float | None
+            recipe_servings         : float | None
+
+        Returns (applied, failed).
+        """
+        applied = 0
+        failed = 0
+        p = self._db.placeholder
+
+        for u in updates:
+            try:
+                sets: list[str] = []
+                vals: list[Any] = []
+
+                if "recipe_yield" in u:
+                    sets.append(f"recipe_yield = {p}")
+                    vals.append(u["recipe_yield"])
+                if "recipe_yield_quantity" in u:
+                    sets.append(f"recipe_yield_quantity = {p}")
+                    vals.append(u["recipe_yield_quantity"])
+                if "recipe_servings" in u:
+                    sets.append(f"recipe_servings = {p}")
+                    vals.append(u["recipe_servings"])
+
+                if not sets:
+                    continue
+
+                if "recipe_id" in u:
+                    vals.append(u["recipe_id"])
+                    where = f"id = {p}"
+                elif "slug" in u and (group_id or "group_id" in u):
+                    gid = u.get("group_id") or group_id
+                    vals.extend([u["slug"], gid])
+                    where = f"slug = {p} AND group_id = {p}"
+                else:
+                    raise ValueError(f"update missing recipe_id or slug: {u!r}")
+
+                sql = f"UPDATE recipes SET {', '.join(sets)} WHERE {where}"
+                self._db.execute(sql, tuple(vals))
+                applied += 1
+
+            except Exception as exc:
+                print(f"[db_error] yield update failed: {exc}", flush=True)
+                failed += 1
+
+        self._db.commit()
+        return applied, failed
+
+    # ------------------------------------------------------------------
+    # Ensure tag / tool exist (used by future tagger tasks)
+    # ------------------------------------------------------------------
+
+    def _slug(self, name: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+    def ensure_tag(self, name: str, group_id: str, *, dry_run: bool = True) -> Optional[str]:
+        """Return tag id, creating it if necessary (unless dry_run)."""
+        slug = self._slug(name)
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM tags WHERE slug = {p} AND group_id = {p}", (slug, group_id)
+        ).fetchone()
+        if row:
+            return str(row[0])
+        if dry_run:
+            return "dry-run-id"
+        new_id = str(uuid.uuid4())
+        self._db.execute(
+            f"INSERT INTO tags (id, group_id, name, slug) VALUES ({p}, {p}, {p}, {p})",
+            (new_id, group_id, name, slug),
+        )
+        return new_id
+
+    def ensure_tool(self, name: str, group_id: str, *, dry_run: bool = True) -> Optional[str]:
+        """Return tool id, creating it if necessary (unless dry_run)."""
+        slug = self._slug(name)
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM tools WHERE slug = {p} AND group_id = {p}", (slug, group_id)
+        ).fetchone()
+        if row:
+            return str(row[0])
+        if dry_run:
+            return "dry-run-id"
+        new_id = str(uuid.uuid4())
+        self._db.execute(
+            f"INSERT INTO tools (id, group_id, name, slug, on_hand) VALUES ({p}, {p}, {p}, {p}, FALSE)",
+            (new_id, group_id, name, slug),
+        )
+        return new_id
+
+    def link_tag(self, recipe_id: str, tag_id: str, *, dry_run: bool = True) -> None:
+        """Associate a tag with a recipe (idempotent)."""
+        if dry_run:
+            return
+        p = self._db.placeholder
+        exists = self._db.execute(
+            f"SELECT 1 FROM recipes_to_tags WHERE recipe_id = {p} AND tag_id = {p}",
+            (recipe_id, tag_id),
+        ).fetchone()
+        if not exists:
+            self._db.execute(
+                f"INSERT INTO recipes_to_tags (recipe_id, tag_id) VALUES ({p}, {p})",
+                (recipe_id, tag_id),
+            )
+
+    def link_tool(self, recipe_id: str, tool_id: str, *, dry_run: bool = True) -> None:
+        """Associate a tool with a recipe (idempotent)."""
+        if dry_run:
+            return
+        p = self._db.placeholder
+        exists = self._db.execute(
+            f"SELECT 1 FROM recipes_to_tools WHERE recipe_id = {p} AND tool_id = {p}",
+            (recipe_id, tool_id),
+        ).fetchone()
+        if not exists:
+            self._db.execute(
+                f"INSERT INTO recipes_to_tools (recipe_id, tool_id) VALUES ({p}, {p})",
+                (recipe_id, tool_id),
+            )
+
+
+# ---------------------------------------------------------------------------
+# Factory / connectivity check
+# ---------------------------------------------------------------------------
+
+def resolve_db_client() -> Optional[MealieDBClient]:
+    """Return a connected MealieDBClient or None if DB is not configured."""
+    if not is_db_enabled():
+        return None
+    try:
+        return MealieDBClient()
+    except Exception as exc:
+        print(f"[db] Connection failed: {exc}", flush=True)
+        return None

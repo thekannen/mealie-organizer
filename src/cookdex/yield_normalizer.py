@@ -14,7 +14,16 @@ Two gap patterns are detected and repaired:
   set_servings – recipe has yield text but no numeric value.
                  → parses the text with regex and writes the number back.
 
-Concurrent writes are used when --apply is set so bulk patching is fast.
+Write modes
+-----------
+  API mode (default, --apply)
+    Concurrent PATCH calls via Mealie HTTP API (8 workers).
+  DB mode (--use-db, --apply)
+    Direct UPDATE against Mealie's PostgreSQL/SQLite — all rows in a
+    single transaction; orders of magnitude faster for large libraries.
+    Requires MEALIE_DB_TYPE and connection vars in .env.
+    For remote PostgreSQL set up an SSH tunnel first:
+        ssh -N -L 5432:127.0.0.1:5432 user@mealie-host
 """
 from __future__ import annotations
 
@@ -28,6 +37,7 @@ from typing import Any
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .db_client import resolve_db_client
 
 DEFAULT_REPORT = "reports/yield_normalize_report.json"
 DEFAULT_WORKERS = 8
@@ -143,12 +153,14 @@ class YieldNormalizer:
         apply: bool = False,
         report_file: Path | str = DEFAULT_REPORT,
         workers: int = DEFAULT_WORKERS,
+        use_db: bool = False,
     ) -> None:
         self.client = client
         self.dry_run = dry_run
         self.apply = apply
         self.report_file = Path(report_file)
         self.workers = workers
+        self.use_db = use_db
 
     def _apply_concurrent(self, actions: list[YieldAction]) -> tuple[list[dict], int, int]:
         action_log: list[dict] = []
@@ -186,10 +198,59 @@ class YieldNormalizer:
 
         return action_log, applied, failed
 
+    def _apply_db(
+        self,
+        actions: list[YieldAction],
+        group_id: str | None,
+        db_client: Any,
+    ) -> tuple[list[dict], int, int]:
+        """Bulk-update all yield fields via a single DB transaction."""
+        updates = []
+        for action in actions:
+            p = action.payload
+            u: dict[str, Any] = {"slug": action.slug}
+            if "recipeYield" in p:
+                u["recipe_yield"] = p["recipeYield"]
+            if "recipeYieldQuantity" in p:
+                u["recipe_yield_quantity"] = p["recipeYieldQuantity"]
+            if "recipeServings" in p:
+                u["recipe_servings"] = p["recipeServings"]
+            updates.append(u)
+
+        applied, failed = db_client.bulk_update_yield(updates, group_id=group_id)
+        action_log = [
+            {
+                "status": "ok",
+                "slug": a.slug,
+                "action": a.action,
+                "new_yield": a.new_yield,
+                "new_servings": a.new_servings,
+                "mode": "db",
+            }
+            for a in actions
+        ]
+        return action_log, applied, failed
+
     def run(self) -> dict[str, Any]:
         executable = self.apply and not self.dry_run
-        print("[start] Fetching all recipes ...", flush=True)
-        recipes = self.client.get_recipes()
+
+        db_client = None
+        group_id = None
+        if self.use_db:
+            db_client = resolve_db_client()
+            if db_client is None:
+                print("[warn] --use-db requested but MEALIE_DB_TYPE is not set; falling back to API.", flush=True)
+                self.use_db = False
+            else:
+                group_id = db_client.get_group_id()
+
+        if self.use_db and db_client is not None:
+            print("[start] Fetching recipes from DB ...", flush=True)
+            recipes = db_client.get_recipe_rows(group_id)
+        else:
+            print("[start] Fetching all recipes from API ...", flush=True)
+            recipes = self.client.get_recipes()
+
         total = len(recipes)
 
         actions: list[YieldAction] = []
@@ -211,9 +272,17 @@ class YieldNormalizer:
         failed = 0
 
         if executable:
-            print(f"[start] Applying {len(actions)} yield patches (workers={self.workers}) ...", flush=True)
-            action_log, applied, failed = self._apply_concurrent(actions)
+            if self.use_db and db_client is not None:
+                print(f"[start] Applying {len(actions)} yield patches via DB (single transaction) ...", flush=True)
+                action_log, applied, failed = self._apply_db(actions, group_id, db_client)
+                print(f"[ok] DB transaction committed: {applied} applied, {failed} failed.", flush=True)
+                db_client.close()
+            else:
+                print(f"[start] Applying {len(actions)} yield patches via API (workers={self.workers}) ...", flush=True)
+                action_log, applied, failed = self._apply_concurrent(actions)
         else:
+            if db_client is not None:
+                db_client.close()
             for action in actions:
                 action_log.append({
                     "status": "planned",
@@ -261,7 +330,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         default=DEFAULT_WORKERS,
-        help="Concurrent workers when applying patches.",
+        help="Concurrent workers when applying patches via API (ignored with --use-db).",
+    )
+    parser.add_argument(
+        "--use-db",
+        action="store_true",
+        help=(
+            "Write directly to Mealie's PostgreSQL/SQLite in a single transaction "
+            "instead of individual API PATCH calls.  Requires MEALIE_DB_TYPE and "
+            "MEALIE_PG_* (or MEALIE_SQLITE_PATH) in .env."
+        ),
     )
     return parser
 
@@ -283,6 +361,7 @@ def main() -> None:
         apply=bool(args.apply),
         report_file=resolve_repo_path(DEFAULT_REPORT),
         workers=args.workers,
+        use_db=bool(args.use_db),
     )
     manager.run()
 

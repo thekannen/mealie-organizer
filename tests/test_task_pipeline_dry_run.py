@@ -352,6 +352,16 @@ def test_recipe_quality_nutrition_sample_absent_by_default() -> None:
     assert "--nutrition-sample" not in execution.command
 
 
+def test_recipe_quality_use_db_flag() -> None:
+    execution = _build("recipe-quality", {"use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_recipe_quality_use_db_absent_by_default() -> None:
+    execution = _build("recipe-quality")
+    assert "--use-db" not in execution.command
+
+
 # ---------------------------------------------------------------------------
 # Command construction: yield-normalize
 # ---------------------------------------------------------------------------
@@ -372,6 +382,16 @@ def test_yield_normalize_default_no_apply() -> None:
     execution = _build("yield-normalize")
     assert "--apply" not in execution.command
     assert execution.dangerous_requested is False
+
+
+def test_yield_normalize_use_db_flag() -> None:
+    execution = _build("yield-normalize", {"use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_yield_normalize_use_db_absent_by_default() -> None:
+    execution = _build("yield-normalize")
+    assert "--use-db" not in execution.command
 
 
 # ---------------------------------------------------------------------------

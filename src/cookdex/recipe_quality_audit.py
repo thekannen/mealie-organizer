@@ -11,6 +11,12 @@ Tiers:
   Bronze = 0-2 / 6  (needs work)
 
 No writes are performed; this is a read-only audit.
+
+DB mode (--use-db)
+------------------
+  Replaces ~200 individual recipe GET calls (nutrition sampling) with a
+  single JOIN query.  Nutrition coverage is computed exactly (every recipe)
+  rather than estimated from a sample.  Requires MEALIE_DB_TYPE in .env.
 """
 from __future__ import annotations
 
@@ -24,6 +30,7 @@ from typing import Any
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path
+from .db_client import resolve_db_client
 
 GOLD_DIMS = ["category", "tags", "tools", "description", "time", "yield"]
 MAX_SCORE = len(GOLD_DIMS)  # 6
@@ -87,6 +94,19 @@ def _check_nutrition(client: MealieApiClient, slug: str) -> bool:
         return False
 
 
+def _score_recipe_db(r: dict) -> tuple[int, dict[str, bool]]:
+    """Score a recipe row returned by MealieDBClient.get_recipe_rows()."""
+    dims: dict[str, bool] = {
+        "category": int(r.get("cat_count") or 0) > 0,
+        "tags":     int(r.get("tag_count") or 0) > 0,
+        "tools":    int(r.get("tool_count") or 0) > 0,
+        "description": bool(str(_gs(r, "description", "") or "").strip()),
+        "time": _has_time(r),
+        "yield": _has_yield(r),
+    }
+    return sum(dims.values()), dims
+
+
 @dataclass
 class RecipeScore:
     slug: str
@@ -103,16 +123,52 @@ class RecipeQualityAuditor:
         report_file: Path | str = DEFAULT_REPORT,
         nutrition_sample_size: int = DEFAULT_NUTRITION_SAMPLE,
         workers: int = DEFAULT_WORKERS,
+        use_db: bool = False,
     ) -> None:
         self.client = client
         self.report_file = Path(report_file)
         self.nutrition_sample_size = nutrition_sample_size
         self.workers = workers
+        self.use_db = use_db
 
-    def run(self) -> dict[str, Any]:
-        print("[start] Fetching all recipes ...", flush=True)
+    def _run_api(self) -> tuple[list[dict], int, int, float]:
+        """Fetch and score via API.  Returns (recipes, nutr_hits, sample_n, total)."""
         recipes = self.client.get_recipes()
         total = len(recipes)
+        sample_n = min(self.nutrition_sample_size, total)
+        print(f"[start] Sampling {sample_n} full recipes for nutrition (workers={self.workers}) ...", flush=True)
+        sample_slugs = [recipes[i]["slug"] for i in random.sample(range(total), sample_n)]
+        nutr_hits = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            futures = {pool.submit(_check_nutrition, self.client, slug): slug for slug in sample_slugs}
+            for fut in concurrent.futures.as_completed(futures):
+                if fut.result():
+                    nutr_hits += 1
+        return recipes, nutr_hits, sample_n, total
+
+    def run(self) -> dict[str, Any]:
+        db_client = None
+        if self.use_db:
+            db_client = resolve_db_client()
+            if db_client is None:
+                print("[warn] --use-db requested but MEALIE_DB_TYPE is not set; falling back to API.", flush=True)
+                self.use_db = False
+
+        if self.use_db and db_client is not None:
+            print("[start] Fetching all recipes from DB (single JOIN query) ...", flush=True)
+            group_id = db_client.get_group_id()
+            recipes = db_client.get_recipe_rows(group_id)
+            db_client.close()
+            total = len(recipes)
+            score_fn = _score_recipe_db
+            # Nutrition is included in the JOIN result — exact, not estimated
+            nutr_hits = sum(1 for r in recipes if r.get("calories"))
+            sample_n = total
+        else:
+            print("[start] Fetching all recipes from API ...", flush=True)
+            recipes, nutr_hits, sample_n, total = self._run_api()
+            score_fn = _score_recipe
+
         print(f"[start] Scoring {total} recipes on {MAX_SCORE} gold medallion dimensions ...", flush=True)
 
         tier_counts: dict[str, int] = {"bronze": 0, "silver": 0, "gold": 0}
@@ -121,7 +177,7 @@ class RecipeQualityAuditor:
         recipe_scores: list[RecipeScore] = []
 
         for r in recipes:
-            pts, dims = _score_recipe(r)
+            pts, dims = score_fn(r)
             score_dist[pts] += 1
             tier_counts[_tier(pts)] += 1
             for d, ok in dims.items():
@@ -134,18 +190,7 @@ class RecipeQualityAuditor:
                 missing=[d for d, ok in dims.items() if not ok],
             ))
 
-        # Estimate nutrition coverage concurrently via sampling
-        sample_n = min(self.nutrition_sample_size, total)
-        print(f"[start] Sampling {sample_n} full recipes for nutrition coverage (workers={self.workers}) ...", flush=True)
-        sample_slugs = [recipes[i]["slug"] for i in random.sample(range(total), sample_n)]
-        nutr_hits = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
-            futures = {pool.submit(_check_nutrition, self.client, slug): slug for slug in sample_slugs}
-            for fut in concurrent.futures.as_completed(futures):
-                if fut.result():
-                    nutr_hits += 1
-
-        nutrition_pct = round(nutr_hits / sample_n * 100, 1) if sample_n else 0.0
+        nutrition_pct = round(nutr_hits / max(sample_n, 1) * 100, 1)
         estimated_no_nutrition = int((1.0 - nutr_hits / max(sample_n, 1)) * total)
 
         # Gap ranking (most impactful = most missing)
@@ -233,13 +278,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--nutrition-sample",
         type=int,
         default=int(env_or_config("QUALITY_NUTRITION_SAMPLE", "quality.nutrition_sample", DEFAULT_NUTRITION_SAMPLE)),
-        help="Number of full recipes to fetch for nutrition coverage estimate.",
+        help="Number of full recipes to fetch for nutrition (ignored with --use-db).",
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=DEFAULT_WORKERS,
-        help="Concurrent workers for nutrition sampling.",
+        help="Concurrent workers for nutrition sampling (ignored with --use-db).",
+    )
+    parser.add_argument(
+        "--use-db",
+        action="store_true",
+        help=(
+            "Read directly from Mealie's PostgreSQL/SQLite via a single JOIN query "
+            "instead of N API calls.  Provides exact (not sampled) nutrition coverage. "
+            "Requires MEALIE_DB_TYPE and connection vars in .env."
+        ),
     )
     return parser
 
@@ -257,6 +311,7 @@ def main() -> None:
         report_file=resolve_repo_path(args.output),
         nutrition_sample_size=args.nutrition_sample,
         workers=args.workers,
+        use_db=bool(args.use_db),
     )
     manager.run()
 
