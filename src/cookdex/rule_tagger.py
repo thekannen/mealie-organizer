@@ -216,7 +216,12 @@ class RecipeRuleTagger:
                 break
             recipes.extend(data.get("items") or [])
             next_link = data.get("next")
-            url = next_link if isinstance(next_link, str) and next_link else None
+            if not (isinstance(next_link, str) and next_link):
+                url = None
+            elif next_link.startswith("/"):
+                url = mealie_url + next_link
+            else:
+                url = next_link
         return recipes
 
     def _api_get_or_create_tag(
@@ -232,7 +237,7 @@ class RecipeRuleTagger:
             return cache[key]
 
         resp = _requests.get(
-            f"{mealie_url}/tags?perPage=1000", headers=headers, timeout=30
+            f"{mealie_url}/organizers/tags?perPage=1000", headers=headers, timeout=30
         )
         resp.raise_for_status()
         data = resp.json()
@@ -249,7 +254,7 @@ class RecipeRuleTagger:
             return placeholder
 
         resp = _requests.post(
-            f"{mealie_url}/tags",
+            f"{mealie_url}/organizers/tags",
             json={"name": tag_name},
             headers=headers,
             timeout=30,

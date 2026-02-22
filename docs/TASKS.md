@@ -74,6 +74,7 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 | `data-maintenance` | Data Maintenance | Run full staged maintenance pipeline |
 | `recipe-quality` | Recipe Quality Audit | Score recipes on gold-medallion dimensions; estimate nutrition coverage |
 | `yield-normalize` | Yield Normalizer | Fill missing yield text from servings, or parse yield text to set numeric servings |
+| `rule-tag` | Rule-Based Tagger | Tag and tool-assign recipes using regex rules — no LLM required |
 
 ### recipe-quality options
 
@@ -90,6 +91,15 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 | `dry_run` | boolean | `true` | Preview changes without writing |
 | `apply` | boolean | `false` | Write changes (dangerous — requires policy unlock) |
 | `use_db` | boolean | `false` | Write directly to Mealie DB in a single transaction instead of individual API PATCH calls; requires `MEALIE_DB_TYPE` |
+
+### rule-tag options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview matches without writing |
+| `apply` | boolean | `false` | Write tag and tool assignments to Mealie (dangerous) |
+| `use_db` | boolean | `false` | Enable ingredient and tool matching via direct DB queries; without this only `text_tags` rules run via the Mealie API; requires `MEALIE_DB_TYPE` |
+| `config_file` | string | `configs/taxonomy/tag_rules.json` | Path to rules JSON file; leave blank for default |
 
 The `use_db` option requires the `db` extras (`pip install 'cookdex[db]'`) and DB credentials in `.env`. See [Direct DB Access](DIRECT_DB.md) for setup.
 

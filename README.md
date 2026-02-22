@@ -47,6 +47,7 @@ Open `http://localhost:4820/cookdex` and log in with the bootstrap credentials.
 | `data-maintenance` | Run full staged maintenance pipeline |
 | `recipe-quality` | Score recipes on gold-medallion dimensions and estimate nutrition coverage |
 | `yield-normalize` | Fill missing yield text from servings count or parse yield text to set numeric servings |
+| `rule-tag` | Tag and tool-assign recipes using regex rules — no LLM required |
 
 ## API
 
@@ -114,7 +115,7 @@ After first login, provider keys and runtime settings can be managed from the Se
 
 ## Direct DB Access (Optional)
 
-The `recipe-quality` and `yield-normalize` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes.
+The `recipe-quality`, `yield-normalize`, and `rule-tag` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `rule-tag`, it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
 
 To enable it:
 
@@ -131,7 +132,7 @@ To enable it:
    MEALIE_DB_SSH_HOST=192.168.1.100   # omit if Postgres is directly reachable
    ```
 
-3. In the Web UI, enable **Use Direct DB** when queuing `recipe-quality` or `yield-normalize` runs.
+3. In the Web UI, enable **Use Direct DB** when queuing the relevant task.
 
 See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including SSH tunnel configuration, SQLite support, and key generation.
 
