@@ -547,10 +547,24 @@ export default function App() {
     } catch { return false; }
   }
 
+  const prevRunsRef = React.useRef([]);
+
   async function refreshRuns() {
     try {
       const payload = await api("/runs");
-      setRuns(payload?.items || []);
+      const nextRuns = payload?.items || [];
+      const prev = prevRunsRef.current;
+      const qualityJustFinished = nextRuns.some((run) => {
+        if (run.task_id !== "recipe-quality") return false;
+        if (run.status !== "completed") return false;
+        const old = prev.find((r) => r.run_id === run.run_id);
+        return !old || old.status !== "completed";
+      });
+      prevRunsRef.current = nextRuns;
+      setRuns(nextRuns);
+      if (qualityJustFinished) {
+        api("/metrics/quality").then((q) => setQualityMetrics(q)).catch(() => {});
+      }
     } catch (exc) { handleError(exc); }
   }
 
@@ -1264,10 +1278,15 @@ export default function App() {
 
         <article className="card chart-panel">
           <h3>Coverage</h3>
-          <div className="coverage-grid">
+          <div className={`coverage-grid ${qualityMetrics?.available ? "coverage-grid-6" : ""}`}>
             <CoverageRing label="Categories" value={overviewCoverage.categories} tone="accent" />
             <CoverageRing label="Tags" value={overviewCoverage.tags} tone="olive" />
             <CoverageRing label="Tools" value={overviewCoverage.tools} tone="terracotta" />
+            {qualityMetrics?.available && <>
+              <CoverageRing label="Description" value={qualityMetrics.dimension_coverage?.description?.pct_have ?? 0} tone="accent" />
+              <CoverageRing label="Cook Time" value={qualityMetrics.dimension_coverage?.time?.pct_have ?? 0} tone="olive" />
+              <CoverageRing label="Yield" value={qualityMetrics.dimension_coverage?.yield?.pct_have ?? 0} tone="terracotta" />
+            </>}
           </div>
         </article>
 
@@ -1275,7 +1294,7 @@ export default function App() {
           <h3>Recipe Quality</h3>
           {qualityMetrics?.available ? (() => {
             const { total, gold, silver, bronze, gold_pct, dimension_coverage } = qualityMetrics;
-            const tier = gold_pct >= 50 ? "gold" : bronze > silver + gold ? "bronze" : "silver";
+            const tier = gold_pct >= 80 ? "gold" : gold_pct >= 50 ? "silver" : "bronze";
             const DIMS = ["category", "tags", "tools", "description", "time", "yield"];
             const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", description: "Description", time: "Cook Time", yield: "Yield" };
             return (

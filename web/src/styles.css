@@ -1082,6 +1082,7 @@ button.danger {
 
 .library-metrics {
   grid-column: 1;
+  grid-row: auto;
 }
 
 .intro-card {
@@ -1108,6 +1109,7 @@ button.danger {
 }
 
 .chart-panel {
+  grid-column: 1;
   min-width: 0;
   align-self: start;
 }
@@ -1116,6 +1118,10 @@ button.danger {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.58rem;
+}
+
+.coverage-grid-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .coverage-card {
@@ -1179,12 +1185,13 @@ button.danger {
 }
 
 .quick-view {
-  grid-row: span 2;
+  grid-column: 2;
   align-content: start;
 }
 
 /* Medallion quality card */
 .medallion-card {
+  grid-column: 2;
   align-content: start;
 }
 
