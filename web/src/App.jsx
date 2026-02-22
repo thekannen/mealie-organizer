@@ -1284,13 +1284,11 @@ export default function App() {
                     className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
                     onClick={() => setSelectedTask(task.task_id)}
                   >
-                    <span className="task-item-icon">
-                      <Icon name={TASK_ICONS[task.task_id] || "zap"} />
+                    <span className="task-item-title">
+                      <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-item-icon" />
+                      {task.title}
                     </span>
-                    <span className="task-item-body">
-                      <span className="task-item-title">{task.title}</span>
-                      <span className="task-item-desc">{task.description}</span>
-                    </span>
+                    <span className="task-item-desc">{task.description}</span>
                   </button>
                 ))}
               </div>

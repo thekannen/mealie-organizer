@@ -561,9 +561,8 @@ textarea {
 }
 
 .task-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
+  display: grid;
+  gap: 0.1rem;
   width: 100%;
   text-align: left;
   padding: 0.5rem 0.6rem;
@@ -584,23 +583,10 @@ textarea {
   background: var(--accent-soft);
 }
 
-.task-item-icon {
-  flex-shrink: 0;
-  margin-top: 0.05rem;
-  color: var(--muted);
-}
-
-.task-item.active .task-item-icon {
-  color: var(--accent);
-}
-
-.task-item-body {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
 .task-item-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.86rem;
   font-weight: 600;
   color: var(--fg);
@@ -608,6 +594,17 @@ textarea {
 
 .task-item.active .task-item-title {
   color: var(--accent-strong);
+}
+
+.task-item-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.task-item.active .task-item-icon {
+  color: var(--accent);
 }
 
 .task-item-desc {
