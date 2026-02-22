@@ -176,6 +176,12 @@ class RunQueueManager:
         env = os.environ.copy()
         env.update(self.environment_provider())
         env.update(execution.env)
+        # Suppress urllib3's LibreSSL warning — macOS ships LibreSSL which triggers
+        # a noisy NotOpenSSLWarning on every import; it's harmless and clutters logs.
+        # Filter format: action:message:category:module:lineno
+        _suppress = "ignore:::urllib3"
+        _existing = env.get("PYTHONWARNINGS", "")
+        env["PYTHONWARNINGS"] = f"{_existing},{_suppress}" if _existing else _suppress
         command = execution.command
 
         with log_path.open("w", encoding="utf-8") as log_file:

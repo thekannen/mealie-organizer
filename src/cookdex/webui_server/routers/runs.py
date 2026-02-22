@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ..deps import Services, build_runtime_env, enforce_safety, require_services, require_session
@@ -110,6 +111,34 @@ async def get_run_log(
     except KeyError:
         raise HTTPException(status_code=404, detail="Run not found.")
     return PlainTextResponse(text)
+
+
+@router.get("/runs/{run_id}/log/tail")
+async def get_run_log_tail(
+    run_id: str,
+    offset: int = Query(default=0, ge=0),
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    """Return log bytes from `offset` onwards, plus the current total file size."""
+    record = services.state.get_run(run_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    log_path = record.get("log_path")
+    if not log_path:
+        return {"content": "", "size": 0}
+    path = Path(str(log_path))
+    if not path.exists():
+        return {"content": "", "size": 0}
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            total = fh.tell()
+            fh.seek(min(offset, total))
+            chunk = fh.read(200_000)
+        return {"content": chunk.decode("utf-8", errors="replace"), "size": total}
+    except OSError:
+        return {"content": "", "size": 0}
 
 
 @router.post("/runs/{run_id}/cancel")

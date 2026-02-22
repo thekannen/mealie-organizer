@@ -1,29 +1,30 @@
 """Rule-based recipe tagger — no LLM required.
 
-Assigns tags and tools to Mealie recipes using configurable regex rules.
-Works in two modes:
+Assigns tags, categories, and tools to Mealie recipes using configurable
+regex rules.  Works in two modes:
 
 API mode (default, no extra setup)
-    Runs ``text_tags`` rules against recipe name and description via the
-    Mealie HTTP API.  Fast for that phase; ingredient and tool rules are
+    Runs ``text_tags`` and ``text_categories`` rules against recipe name
+    and description via the Mealie HTTP API.  Ingredient and tool rules are
     skipped with an informational note.
 
 DB mode (``--use-db``, requires ``cookdex[db]`` extras + DB config)
-    Runs all three rule types (ingredient, text, tool) via direct SQL
-    queries — dramatically faster on large libraries and enables
-    ingredient-food matching and instruction-text tool detection.
+    Runs all rule types (ingredient, text, tool — for both tags and
+    categories) via direct SQL queries — dramatically faster on large
+    libraries and enables ingredient-food matching and instruction-text
+    tool detection.
 
 In both modes dry-run is the default; use ``--apply`` to write changes.
 
 Usage
 -----
-    # Preview text-tag matches via API (no DB required)
+    # Preview text-tag/category matches via API (no DB required)
     python -m cookdex.rule_tagger
 
-    # Apply text tags via API
+    # Apply text tags and categories via API
     python -m cookdex.rule_tagger --apply
 
-    # Apply all rules via DB (ingredient + text + tool)
+    # Apply all rules via DB (ingredient + text + tool, tags + categories)
     python -m cookdex.rule_tagger --apply --use-db
 
     # Custom rules file
@@ -46,6 +47,19 @@ Config file schema (JSON)
           "pattern": "breakfast|pancake|waffle|omelet"
         }
       ],
+      "text_categories": [
+        {
+          "category": "Breakfast",
+          "pattern": "breakfast|pancake|waffle|omelet"
+        }
+      ],
+      "ingredient_categories": [
+        {
+          "category": "Seafood",
+          "pattern": "salmon|tuna|shrimp",
+          "min_matches": 1
+        }
+      ],
       "tool_tags": [
         {
           "tool": "Air Fryer",
@@ -64,6 +78,15 @@ ingredient_tags
 text_tags
     Match against ``recipes.name`` and ``recipes.description``.
     Works in both API mode and DB mode.
+
+text_categories
+    Same matching as ``text_tags`` but assigns a Mealie **category**
+    (``recipes_to_categories``) instead of a tag.
+    Works in both API mode and DB mode.
+
+ingredient_categories
+    Same as ``ingredient_tags`` but assigns a **category** instead of a tag.
+    Requires ``--use-db``.
 
 tool_tags
     Match against ``recipe_instructions.text`` and assign a kitchen
@@ -113,11 +136,11 @@ def _load_rules(path: str) -> dict[str, Any]:
 
 
 class RecipeRuleTagger:
-    """Apply rule-based tags and tool assignments to Mealie recipes.
+    """Apply rule-based tags, categories, and tool assignments to Mealie recipes.
 
     Supports two modes:
-      - API mode (default): ``text_tags`` only, writes via Mealie PATCH API
-      - DB mode (``use_db=True``): all rule types, direct SQL reads/writes
+      - API mode (default): ``text_tags`` + ``text_categories``, writes via Mealie PATCH API
+      - DB mode (``use_db=True``): all rule types (tags, categories, tools), direct SQL
     """
 
     def __init__(
@@ -148,16 +171,20 @@ class RecipeRuleTagger:
     # ------------------------------------------------------------------
 
     def _run_api(self, rules: dict[str, Any]) -> dict[str, Any]:
-        """API-only path: text_tags via Mealie HTTP API."""
+        """API-only path: text_tags + text_categories via Mealie HTTP API."""
         stats: dict[str, Any] = {
             "ingredient_tags": {},
             "text_tags": {},
+            "text_categories": {},
+            "ingredient_categories": {},
             "tool_tags": {},
         }
 
         skipped: list[str] = []
         if rules.get("ingredient_tags"):
             skipped.append("ingredient_tags")
+        if rules.get("ingredient_categories"):
+            skipped.append("ingredient_categories")
         if rules.get("tool_tags"):
             skipped.append("tool_tags")
         if skipped:
@@ -180,7 +207,8 @@ class RecipeRuleTagger:
         )
 
         text_rules = rules.get("text_tags", [])
-        if text_rules:
+        category_rules = rules.get("text_categories", [])
+        if text_rules or category_rules:
             all_recipes = self._api_get_all_recipes(mealie_url, headers)
             tag_cache: dict[str, Optional[dict]] = {}
             for rule in text_rules:
@@ -189,12 +217,20 @@ class RecipeRuleTagger:
                     all_recipes, rule, mealie_url, headers, tag_cache
                 )
                 stats["text_tags"][tag_name] = count
+            cat_cache: dict[str, Optional[dict]] = {}
+            for rule in category_rules:
+                cat_name = rule.get("category", "")
+                count = self._api_apply_text_category_rule(
+                    all_recipes, rule, mealie_url, headers, cat_cache
+                )
+                stats["text_categories"][cat_name] = count
 
-        total = sum(stats["text_tags"].values())
+        total_tags = sum(stats["text_tags"].values())
+        total_cats = sum(stats["text_categories"].values())
         action = "Would apply" if self.dry_run else "Applied"
         print(
-            f"[summary] {action} {total} tag assignments "
-            f"({len(stats['text_tags'])} text rules)",
+            f"[summary] {action} {total_tags + total_cats} assignments "
+            f"({len(stats['text_tags'])} text-tag, {len(stats['text_categories'])} text-category rules)",
             flush=True,
         )
         if self.dry_run:
@@ -330,12 +366,116 @@ class RecipeRuleTagger:
 
         return count
 
+    def _api_get_or_create_category(
+        self,
+        cat_name: str,
+        mealie_url: str,
+        headers: dict,
+        cache: dict[str, Optional[dict]],
+    ) -> Optional[dict]:
+        """Return existing category dict (by name) or create it; cached."""
+        key = cat_name.lower()
+        if key in cache:
+            return cache[key]
+
+        resp = _requests.get(
+            f"{mealie_url}/organizers/categories?perPage=1000", headers=headers, timeout=30
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        all_cats = data.get("items", data) if isinstance(data, dict) else data
+        for c in all_cats:
+            cache[c["name"].lower()] = c
+
+        if key in cache:
+            return cache[key]
+
+        if self.dry_run:
+            placeholder = {"id": "dry-run-id", "name": cat_name, "slug": "dry-run"}
+            cache[key] = placeholder
+            return placeholder
+
+        resp = _requests.post(
+            f"{mealie_url}/organizers/categories",
+            json={"name": cat_name},
+            headers=headers,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        cat = resp.json()
+        cache[cat["name"].lower()] = cat
+        return cat
+
+    def _api_apply_text_category_rule(
+        self,
+        all_recipes: list[dict],
+        rule: dict[str, Any],
+        mealie_url: str,
+        headers: dict,
+        cat_cache: dict[str, Optional[dict]],
+    ) -> int:
+        """Match text pattern against recipe name/description; add category via API."""
+        cat_name: str = rule["category"]
+        pattern: str = rule["pattern"]
+
+        py_pattern = pattern.replace(r"\y", r"\b")
+        compiled = re.compile(py_pattern, re.IGNORECASE)
+
+        matched = [
+            r
+            for r in all_recipes
+            if compiled.search(r.get("name") or "")
+            or compiled.search(r.get("description") or "")
+        ]
+        count = len(matched)
+        if count:
+            print(
+                f"[category] '{cat_name}': {count} recipe(s) matched"
+                f"{' (dry-run)' if self.dry_run else ''}",
+                flush=True,
+            )
+
+        if not matched:
+            return 0
+
+        cat = self._api_get_or_create_category(cat_name, mealie_url, headers, cat_cache)
+        if cat is None:
+            return 0
+        cat_id = cat["id"]
+
+        if not self.dry_run:
+            for recipe in matched:
+                existing_ids = {c.get("id") for c in (recipe.get("recipeCategory") or [])}
+                if cat_id in existing_ids:
+                    continue
+                slug = recipe["slug"]
+                resp = _requests.get(
+                    f"{mealie_url}/recipes/{slug}", headers=headers, timeout=30
+                )
+                if not resp.ok:
+                    print(f"[warn] Could not fetch '{slug}': {resp.status_code}", flush=True)
+                    continue
+                full = resp.json()
+                full["recipeCategory"] = (full.get("recipeCategory") or []) + [
+                    {"id": cat_id, "name": cat["name"], "slug": cat.get("slug", "")}
+                ]
+                patch = _requests.patch(
+                    f"{mealie_url}/recipes/{slug}",
+                    json=full,
+                    headers=headers,
+                    timeout=30,
+                )
+                if not patch.ok:
+                    print(f"[warn] PATCH failed for '{slug}': {patch.status_code}", flush=True)
+
+        return count
+
     # ------------------------------------------------------------------
     # DB mode
     # ------------------------------------------------------------------
 
     def _run_db(self, rules: dict[str, Any]) -> dict[str, Any]:
-        """DB-accelerated path: all three rule types via direct SQL."""
+        """DB-accelerated path: all rule types (tags, categories, tools) via direct SQL."""
         if not is_db_enabled():
             print(
                 "[error] --use-db requires direct DB access.\n"
@@ -348,6 +488,8 @@ class RecipeRuleTagger:
         stats: dict[str, Any] = {
             "ingredient_tags": {},
             "text_tags": {},
+            "text_categories": {},
+            "ingredient_categories": {},
             "tool_tags": {},
         }
 
@@ -372,6 +514,18 @@ class RecipeRuleTagger:
                 tag = rule.get("tag", "")
                 stats["text_tags"][tag] = self._db_apply_text_rule(db, group_id, rule)
 
+            for rule in rules.get("text_categories", []):
+                cat = rule.get("category", "")
+                stats["text_categories"][cat] = self._db_apply_text_category_rule(
+                    db, group_id, rule
+                )
+
+            for rule in rules.get("ingredient_categories", []):
+                cat = rule.get("category", "")
+                stats["ingredient_categories"][cat] = self._db_apply_ingredient_category_rule(
+                    db, group_id, rule
+                )
+
             for rule in rules.get("tool_tags", []):
                 tool = rule.get("tool", "")
                 stats["tool_tags"][tool] = self._db_apply_tool_rule(db, group_id, rule)
@@ -379,13 +533,17 @@ class RecipeRuleTagger:
         total = (
             sum(stats["ingredient_tags"].values())
             + sum(stats["text_tags"].values())
+            + sum(stats["text_categories"].values())
+            + sum(stats["ingredient_categories"].values())
             + sum(stats["tool_tags"].values())
         )
         action = "Would apply" if self.dry_run else "Applied"
         print(
-            f"[summary] {action} {total} tag/tool assignments  "
-            f"({len(stats['ingredient_tags'])} ingredient, "
-            f"{len(stats['text_tags'])} text, "
+            f"[summary] {action} {total} tag/category/tool assignments  "
+            f"({len(stats['ingredient_tags'])} ingredient-tag, "
+            f"{len(stats['text_tags'])} text-tag, "
+            f"{len(stats['text_categories'])} text-category, "
+            f"{len(stats['ingredient_categories'])} ingredient-category, "
             f"{len(stats['tool_tags'])} tool rules)",
             flush=True,
         )
@@ -464,6 +622,57 @@ class RecipeRuleTagger:
         tool_id = db.ensure_tool(tool_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_tool(recipe_id, tool_id, dry_run=self.dry_run)
+        return count
+
+    def _db_apply_text_category_rule(
+        self,
+        db: MealieDBClient,
+        group_id: str,
+        rule: dict[str, Any],
+    ) -> int:
+        cat_name: str = rule["category"]
+        pattern: str = rule["pattern"]
+
+        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern)
+        count = len(recipe_ids)
+        if count:
+            print(
+                f"[category] '{cat_name}': {count} recipe(s) matched"
+                f"{' (dry-run)' if self.dry_run else ''}",
+                flush=True,
+            )
+        cat_id = db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
+        for recipe_id in recipe_ids:
+            db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
+        return count
+
+    def _db_apply_ingredient_category_rule(
+        self,
+        db: MealieDBClient,
+        group_id: str,
+        rule: dict[str, Any],
+    ) -> int:
+        cat_name: str = rule["category"]
+        pattern: str = rule["pattern"]
+        exclude: str = rule.get("exclude_pattern", "")
+        min_matches: int = int(rule.get("min_matches", 1))
+
+        recipe_ids = db.find_recipe_ids_by_ingredient(
+            group_id,
+            pattern,
+            exclude_pattern=exclude,
+            min_matches=min_matches,
+        )
+        count = len(recipe_ids)
+        if count:
+            print(
+                f"[ingredient-category] '{cat_name}': {count} recipe(s) matched"
+                f"{' (dry-run)' if self.dry_run else ''}",
+                flush=True,
+            )
+        cat_id = db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
+        for recipe_id in recipe_ids:
+            db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
         return count
 
 

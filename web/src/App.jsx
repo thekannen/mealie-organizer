@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import wordmark from "./assets/CookDex_wordmark.png";
 import emblem from "./assets/CookDex_light.png";
 
@@ -31,6 +31,98 @@ import {
 } from "./utils.jsx";
 import Icon from "./components/Icon";
 import CoverageRing from "./components/CoverageRing";
+
+// ─── Structured log parser ────────────────────────────────────────────────────
+function parseLogEvents(text) {
+  const lines = text.split("\n");
+  const events = [];
+  let summaryBuf = null;
+  for (const line of lines) {
+    if (summaryBuf !== null) {
+      summaryBuf += "\n" + line;
+      try {
+        const data = JSON.parse(summaryBuf.trim());
+        events.push({ type: "summary", data, raw: "[summary] " + summaryBuf });
+        summaryBuf = null;
+      } catch {
+        if (summaryBuf.split("\n").length > 50) {
+          events.push({ type: "summary", data: null, raw: "[summary] " + summaryBuf });
+          summaryBuf = null;
+        }
+      }
+      continue;
+    }
+    if (line.startsWith("$ "))             events.push({ type: "command",  text: line.slice(2) });
+    else if (line.startsWith("[start] "))  events.push({ type: "start",    text: line.slice(8) });
+    else if (line.startsWith("[done] "))   events.push({ type: "done",     text: line.slice(7) });
+    else if (line.startsWith("[error] "))  events.push({ type: "error",    text: line.slice(8) });
+    else if (line.startsWith("[warning] "))events.push({ type: "warning",  text: line.slice(10) });
+    else if (line.startsWith("[warn] "))   events.push({ type: "warning",  text: line.slice(7) });
+    else if (line.startsWith("[db] "))     events.push({ type: "db",       text: line.slice(5) });
+    else if (line.startsWith("[skip] "))   events.push({ type: "skip",     text: line.slice(7) });
+    else if (line.startsWith("[info] "))   events.push({ type: "info",     text: line.slice(7) });
+    else if (line.startsWith("[dry-run] "))events.push({ type: "dryrun",   text: line.slice(10) });
+    else if (line.startsWith("[plan] ")) {
+      const rest = line.slice(7);
+      const colonIdx = rest.indexOf(":");
+      const slug = colonIdx >= 0 ? rest.slice(0, colonIdx).trim() : rest.trim();
+      const attrs = colonIdx >= 0 ? rest.slice(colonIdx + 1).trim() : "";
+      events.push({ type: "plan", slug, attrs });
+    } else if (line.startsWith("[ok] ")) {
+      const rest = line.slice(5).trim();
+      const m = rest.match(/^(\d+)\/(\d+)\s+/);
+      if (m) {
+        const current = parseInt(m[1], 10);
+        const total = parseInt(m[2], 10);
+        const after = rest.slice(m[0].length);
+        const sp = after.indexOf(" ");
+        const slug = sp >= 0 ? after.slice(0, sp) : after;
+        const attrs = sp >= 0 ? after.slice(sp + 1) : "";
+        const dm = attrs.match(/duration=([\d.]+)s/);
+        const duration = dm ? parseFloat(dm[1]) : null;
+        events.push({ type: "ok", current, total, slug, attrs, duration });
+      } else {
+        events.push({ type: "verbose", text: line });
+      }
+    } else if (line.startsWith("[summary] ")) {
+      const rest = line.slice(10).trim();
+      try { events.push({ type: "summary", data: JSON.parse(rest), raw: line }); }
+      catch { summaryBuf = rest; }
+    } else if (line.trim()) {
+      events.push({ type: "verbose", text: line });
+    }
+  }
+  if (summaryBuf !== null) events.push({ type: "summary", data: null, raw: "[summary] " + summaryBuf });
+  return events;
+}
+
+function groupLogEvents(events) {
+  const out = [];
+  let i = 0;
+  while (i < events.length) {
+    if (events[i].type === "plan" || events[i].type === "ok") {
+      // Collect plan/ok events into one batch, absorbing interleaved non-progress
+      // events (e.g. warnings) as long as more plan/ok lines follow.
+      const items = [];
+      while (i < events.length) {
+        if (events[i].type === "plan" || events[i].type === "ok") {
+          items.push(events[i++]);
+        } else {
+          const hasMore = events.slice(i + 1).some(e => e.type === "plan" || e.type === "ok");
+          if (hasMore) { items.push(events[i++]); } else { break; }
+        }
+      }
+      out.push({ type: "progress-batch", items });
+    } else if (events[i].type === "verbose") {
+      const lines = [];
+      while (i < events.length && events[i].type === "verbose") lines.push(events[i++].text);
+      out.push({ type: "verbose-group", lines });
+    } else {
+      out.push(events[i++]);
+    }
+  }
+  return out;
+}
 
 export default function App() {
   const [error, setError] = useState("");
@@ -67,7 +159,11 @@ export default function App() {
   const [taskValues, setTaskValues] = useState({});
   const [runSearch, setRunSearch] = useState("");
   const [runTypeFilter, setRunTypeFilter] = useState("all");
-  const [runLog, setRunLog] = useState("");
+  const [logBuffer, setLogBuffer] = useState("");
+  const [logMaximized, setLogMaximized] = useState(false);
+  const logOffsetRef = useRef(0);
+  const logPollRef = useRef(null);
+  const selectedRunStatusRef = useRef(null);
   const [selectedRunId, setSelectedRunId] = useState("");
 
   const [scheduleMode, setScheduleMode] = useState(false);
@@ -422,6 +518,55 @@ export default function App() {
     liveRunsTimer.current = setInterval(() => { refreshRuns(); }, 3000);
     return () => clearInterval(liveRunsTimer.current);
   }, [activePage, session]);
+
+  // Keep a ref to the latest selected run status so the log poll interval
+  // can detect completion without a stale closure.
+  useEffect(() => {
+    const run = runs.find(r => r.run_id === selectedRunId) || null;
+    selectedRunStatusRef.current = run ? run.status : null;
+  }, [runs, selectedRunId]);
+
+  // Log fetch + live tail polling.
+  // Re-runs when selectedRunId or activePage changes.
+  useEffect(() => {
+    if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; }
+
+    if (activePage !== "tasks" || !selectedRunId) {
+      setLogBuffer("");
+      logOffsetRef.current = 0;
+      return;
+    }
+
+    setLogBuffer("");
+    logOffsetRef.current = 0;
+
+    async function doTail(append) {
+      try {
+        const data = await api(`/runs/${selectedRunId}/log/tail?offset=${logOffsetRef.current}`);
+        if (data.content) setLogBuffer(prev => append ? prev + data.content : data.content);
+        logOffsetRef.current = data.size;
+      } catch {}
+    }
+
+    doTail(false);
+
+    const run = runs.find(r => r.run_id === selectedRunId);
+    if (run && (run.status === "running" || run.status === "queued")) {
+      logPollRef.current = setInterval(async () => {
+        const status = selectedRunStatusRef.current;
+        if (status !== "running" && status !== "queued") {
+          clearInterval(logPollRef.current);
+          logPollRef.current = null;
+          await doTail(true);
+          return;
+        }
+        await doTail(true);
+      }, 1500);
+    }
+
+    return () => { if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; } };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRunId, activePage]);
 
   const bannerTimer = React.useRef(null);
 
@@ -832,17 +977,6 @@ export default function App() {
       await api(`/runs/${runId}/cancel`, { method: "POST" });
       await refreshRuns();
       showNotice("Run canceled.");
-    } catch (exc) {
-      handleError(exc);
-    }
-  }
-
-  async function fetchLog(runId) {
-    try {
-      clearBanners();
-      const payload = await api(`/runs/${runId}/log`);
-      setRunLog(payload || "");
-      setSelectedRunId(runId);
     } catch (exc) {
       handleError(exc);
     }
@@ -1777,7 +1911,7 @@ export default function App() {
                       <tr
                         key={run.run_id}
                         className={selectedRunId === run.run_id ? "selected-row" : ""}
-                        onClick={() => fetchLog(run.run_id)}
+                        onClick={() => { if (selectedRunId !== run.run_id) setSelectedRunId(run.run_id); }}
                       >
                         <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
                         <td>{runTypeLabel(run)}</td>
@@ -1809,19 +1943,218 @@ export default function App() {
               </tbody>
             </table>
           </div>
+        </article>
 
+        <article
+          className={`card log-output-card${logMaximized ? " log-card-maximized" : ""}`}
+          style={logMaximized ? { "--sidebar-offset": sidebarCollapsed ? "72px" : "280px" } : undefined}
+        >
           <div className="log-section">
             <div className="log-head">
-              <h4>Selected Run Output</h4>
-              <span className="muted tiny">
-                {selectedRun
-                  ? `${taskTitleById.get(selectedRun.task_id) || selectedRun.task_id} | ${runTypeLabel(
-                      selectedRun
-                    )} | ${formatRunTime(selectedRun)}`
-                  : "Select any row above to inspect its full formatted output."}
-              </span>
+              <div className="log-head-left">
+                <h4>Run Output</h4>
+                {selectedRun && (
+                  <span className="muted tiny">
+                    {taskTitleById.get(selectedRun.task_id) || selectedRun.task_id} | {runTypeLabel(selectedRun)} | {formatRunTime(selectedRun)}
+                  </span>
+                )}
+              </div>
+              <div className="log-head-actions">
+                {selectedRun && logBuffer && (
+                  <>
+                    <button
+                      className="ghost small"
+                      title="Copy log to clipboard"
+                      onClick={() => {
+                        navigator.clipboard.writeText(logBuffer).catch(() => {});
+                        showNotice("Log copied to clipboard.");
+                      }}
+                    >
+                      <Icon name="copy" />
+                    </button>
+                    <button
+                      className="ghost small"
+                      title="Download log file"
+                      onClick={() => {
+                        const name = (taskTitleById.get(selectedRun.task_id) || selectedRun.task_id)
+                          .replace(/\s+/g, "-").toLowerCase();
+                        const blob = new Blob([logBuffer], { type: "text/plain" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `cookdex-run-${name}.log`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <Icon name="download" />
+                    </button>
+                  </>
+                )}
+                <button
+                  className="ghost small"
+                  title={logMaximized ? "Restore" : "Maximize"}
+                  onClick={() => setLogMaximized(prev => !prev)}
+                >
+                  <Icon name={logMaximized ? "minimize" : "maximize"} />
+                </button>
+              </div>
             </div>
-            <pre className="log-viewer">{runLog || "Select any row above to inspect its full formatted output."}</pre>
+            <div className="log-box">
+              {!selectedRunId ? (
+                <span className="log-empty">Select a run above to inspect its output.</span>
+              ) : !logBuffer ? (
+                <span className="log-empty">
+                  {selectedRun?.status === "queued" ? "Waiting to start\u2026" : "Loading\u2026"}
+                </span>
+              ) : (() => {
+                const isLive = selectedRun && (selectedRun.status === "running" || selectedRun.status === "queued");
+                const rawEvents = parseLogEvents(logBuffer);
+                // Mark the last [start] as spinning if run is still active
+                const events = isLive
+                  ? rawEvents.map((e, i) =>
+                      e.type === "start" && rawEvents.slice(i + 1).every(x => x.type !== "start")
+                        ? { ...e, type: "start-live" }
+                        : e
+                    )
+                  : rawEvents;
+                const grouped = groupLogEvents(events);
+                const iconMap = {
+                  start: "info", "start-live": "loader", done: "check-circle",
+                  error: "x-circle", warning: "alertTriangle", db: "database",
+                  skip: "x", info: "info", dryrun: "eye",
+                };
+                const classMap = {
+                  start: "step-start", "start-live": "step-live", done: "step-done",
+                  error: "step-error", warning: "step-warning", db: "step-db",
+                  skip: "step-skip", info: "step-info", dryrun: "step-dryrun",
+                };
+                return (
+                  <>
+                    {grouped.map((evt, i) => {
+                      if (evt.type === "command") {
+                        return <div key={i} className="log-command">{evt.text}</div>;
+                      }
+                      if (evt.type === "summary") {
+                        if (!evt.data) return <pre key={i} className="log-verbose">{evt.raw}</pre>;
+                        const entries = Object.entries(evt.data).filter(([, v]) => v !== null && typeof v !== "object");
+                        return (
+                          <div key={i} className="log-summary-card">
+                            <div className="log-summary-head">
+                              <Icon name="check-circle" /> Run Summary
+                            </div>
+                            <div className="log-summary-grid">
+                              {entries.map(([k, v]) => (
+                                <div key={k} className="log-summary-row">
+                                  <span className="log-summary-key">{k.replace(/_/g, " ")}</span>
+                                  <span className="log-summary-val">
+                                    {typeof v === "number" ? v.toLocaleString() : String(v)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (evt.type === "progress-batch") {
+                        const okItems = evt.items.filter(e => e.type === "ok");
+                        const lastOk = okItems[okItems.length - 1];
+                        const total = lastOk ? lastOk.total : 0;
+                        const current = lastOk ? lastOk.current : 0;
+                        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                        // Show items from the 8th-to-last ok onwards (includes interleaved events in that range)
+                        const okIndices = evt.items.map((item, idx) => (item.type === "ok" ? idx : -1)).filter(idx => idx >= 0);
+                        const startIdx = okIndices.length > 8 ? okIndices[okIndices.length - 8] : 0;
+                        const displayItems = evt.items.slice(startIdx);
+                        const intIconMap = { warning: "alertTriangle", error: "x-circle", db: "database", info: "info", skip: "x" };
+                        const intClassMap = { warning: "step-warning", error: "step-error", db: "step-db", info: "step-info", skip: "step-skip" };
+                        return (
+                          <div key={i} className="log-progress-batch">
+                            <div className="log-progress-sticky">
+                              {total > 0 && (
+                                <div className="log-progress-header">
+                                  <span className="log-progress-count">{current.toLocaleString()} / {total.toLocaleString()}</span>
+                                  <span className="log-progress-pct">{pct}%</span>
+                                </div>
+                              )}
+                              {total > 0 && (
+                                <div className="log-progress-bar">
+                                  <div className="log-progress-fill" style={{ width: `${pct}%` }} />
+                                </div>
+                              )}
+                            </div>
+                            <div className="log-progress-items">
+                              {displayItems.map((item, j) => {
+                                if (item.type === "ok") {
+                                  return (
+                                    <details key={j} className="log-progress-detail">
+                                      <summary className="log-progress-item log-progress-item-done">
+                                        <Icon name="check-circle" />
+                                        <span className="log-progress-slug">{item.slug}</span>
+                                        {item.duration != null && <span className="log-progress-dur">{item.duration.toFixed(2)}s</span>}
+                                        <span className="log-progress-chevron">▶</span>
+                                      </summary>
+                                      {item.attrs && <div className="log-progress-raw">{item.attrs}</div>}
+                                    </details>
+                                  );
+                                }
+                                if (item.type === "plan") {
+                                  return (
+                                    <details key={j} className="log-progress-detail">
+                                      <summary className={`log-progress-item log-progress-item-${isLive ? "live" : "pending"}`}>
+                                        <Icon name={isLive ? "loader" : "info"} />
+                                        <span className="log-progress-slug">{item.slug}</span>
+                                        <span className="log-progress-chevron">▶</span>
+                                      </summary>
+                                      {item.attrs && <div className="log-progress-raw">{item.attrs}</div>}
+                                    </details>
+                                  );
+                                }
+                                return (
+                                  <div key={j} className={`log-step ${intClassMap[item.type] || ""}`}>
+                                    <Icon name={intIconMap[item.type] || "info"} />
+                                    <span>{item.text}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (evt.type === "verbose-group") {
+                        if (evt.lines.length <= 3) {
+                          return (
+                            <div key={i}>
+                              {evt.lines.map((l, j) => <div key={j} className="log-verbose">{l}</div>)}
+                            </div>
+                          );
+                        }
+                        return (
+                          <details key={i} className="log-verbose-details">
+                            <summary>{evt.lines.length} lines of output</summary>
+                            {evt.lines.map((l, j) => <div key={j} className="log-verbose">{l}</div>)}
+                          </details>
+                        );
+                      }
+                      if (iconMap[evt.type]) {
+                        return (
+                          <div key={i} className={`log-step ${classMap[evt.type] || ""}`}>
+                            <Icon name={iconMap[evt.type]} />
+                            <span>{evt.text}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                    {isLive && (
+                      <div className="log-live-tail">
+                        <span className="log-live-dot" /> live
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </article>
         </div>

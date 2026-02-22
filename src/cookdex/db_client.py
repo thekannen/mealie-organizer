@@ -527,6 +527,39 @@ class MealieDBClient:
                 (recipe_id, tool_id),
             )
 
+    def ensure_category(self, name: str, group_id: str, *, dry_run: bool = True) -> Optional[str]:
+        """Return category id, creating it if necessary (unless dry_run)."""
+        slug = self._slug(name)
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM categories WHERE slug = {p} AND group_id = {p}", (slug, group_id)
+        ).fetchone()
+        if row:
+            return str(row[0])
+        if dry_run:
+            return "dry-run-id"
+        new_id = str(uuid.uuid4())
+        self._db.execute(
+            f"INSERT INTO categories (id, group_id, name, slug) VALUES ({p}, {p}, {p}, {p})",
+            (new_id, group_id, name, slug),
+        )
+        return new_id
+
+    def link_category(self, recipe_id: str, category_id: str, *, dry_run: bool = True) -> None:
+        """Associate a category with a recipe (idempotent)."""
+        if dry_run:
+            return
+        p = self._db.placeholder
+        exists = self._db.execute(
+            f"SELECT 1 FROM recipes_to_categories WHERE recipe_id = {p} AND category_id = {p}",
+            (recipe_id, category_id),
+        ).fetchone()
+        if not exists:
+            self._db.execute(
+                f"INSERT INTO recipes_to_categories (recipe_id, category_id) VALUES ({p}, {p})",
+                (recipe_id, category_id),
+            )
+
 
 # ---------------------------------------------------------------------------
 # Factory / connectivity check

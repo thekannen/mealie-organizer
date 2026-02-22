@@ -104,6 +104,48 @@
       "pattern": "no.cook|no.bake|\\yraw\\y|\\yuncooked\\y|\\yno heat\\y"
     }
   ],
+  "text_categories": [
+    {
+      "category": "Breakfast",
+      "pattern": "\\ybreakfast\\y|\\ypancake\\y|\\ywaffle\\y|\\yomelet\\y|\\yomelette\\y|\\yfrench toast\\y|\\ybenedict\\y|\\ygranola\\y|\\yoatmeal\\y|\\yfrittata\\y|\\yquiche\\y"
+    },
+    {
+      "category": "Lunch",
+      "pattern": "\\ylunch\\y|\\ysandwich\\y|\\ywrap\\y|\\yburrito\\y|\\ytaco\\y|\\ypanini\\y"
+    },
+    {
+      "category": "Dinner",
+      "pattern": "\\ydinner\\y|\\yentrée\\y|\\yentree\\y|\\ymain course\\y|\\ymain dish\\y|\\ysupper\\y"
+    },
+    {
+      "category": "Dessert",
+      "pattern": "\\ydessert\\y|\\ycake\\y|\\ycookie\\y|\\ybrownie\\y|\\yice cream\\y|\\ytiramisu\\y|\\ycheesecake\\y|\\ymousse\\y|\\ycustard\\y|\\yflan\\y|\\ypanna cotta\\y|\\ybaklava\\y|\\ymochi\\y|\\ysorbet\\y|\\ygelato\\y|\\ypudding\\y|\\ytart\\y|\\ycobbler\\y"
+    },
+    {
+      "category": "Appetizer",
+      "pattern": "\\yappetizer\\y|\\ystarter\\y|\\yhors d.oeuvre\\y|\\ycrostini\\y|\\ybruschetta\\y|\\ydip\\y|\\yspread\\y|\\yfingers\\y"
+    },
+    {
+      "category": "Side Dish",
+      "pattern": "\\yside dish\\y|\\yside salad\\y|\\yaccompaniment\\y"
+    },
+    {
+      "category": "Soup & Stew",
+      "pattern": "\\ysoup\\y|\\ystew\\y|\\ychowder\\y|\\ybisque\\y|\\ygazpacho\\y|\\ypho\\y|\\yminestrone\\y|\\yramen\\y|\\ypotage\\y|\\ybouillabaisse\\y|\\ygoulash\\y"
+    },
+    {
+      "category": "Salad",
+      "pattern": "\\ysalad\\y"
+    },
+    {
+      "category": "Snack",
+      "pattern": "\\ysnack\\y|\\ytrail mix\\y|\\ypopcorn\\y|\\ygranola bar\\y|\\yenergy ball\\y|\\yprotein ball\\y"
+    },
+    {
+      "category": "Beverage",
+      "pattern": "\\ybeverage\\y|\\ydrink\\y|\\ycocktail\\y|\\ymocktail\\y|\\ysmoothie\\y|\\yjuice\\y|\\ylemonade\\y|\\yinfusion\\y|\\ymilkshake\\y|\\yshake\\y"
+    }
+  ],
   "tool_tags": [
     {
       "tool": "Air Fryer",
