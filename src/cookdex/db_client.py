@@ -144,7 +144,9 @@ class DBWrapper:
         if not expr or item is None:
             return False
         try:
-            return bool(re.compile(expr, re.IGNORECASE).search(item))
+            # Translate PostgreSQL word-boundary markers (\y) to Python's \b
+            py_expr = expr.replace(r"\y", r"\b")
+            return bool(re.compile(py_expr, re.IGNORECASE).search(item))
         except re.error:
             return False
 
@@ -155,8 +157,12 @@ class DBWrapper:
         sql = sql.replace("%s", "?")
         sql = re.sub(r"gen_random_uuid\(\)", "lower(hex(randomblob(16)))", sql)
         sql = sql.replace("::uuid", "")
-        sql = re.sub(r"(\w+)\s*~\*\s*'([^']+)'", r"\1 REGEXP '\2'", sql)
-        sql = re.sub(r"(\w+)\s*!~\*\s*'([^']+)'", r"NOT (\1 REGEXP '\2')", sql)
+        # Inline literal patterns:  col ~* 'pattern'
+        sql = re.sub(r"([\w.]+)\s*~\*\s*'([^']+)'", r"\1 REGEXP '\2'", sql)
+        sql = re.sub(r"([\w.]+)\s*!~\*\s*'([^']+)'", r"NOT (\1 REGEXP '\2')", sql)
+        # Parameterized patterns:  col ~* ?  (after %s → ? conversion above)
+        sql = re.sub(r"([\w.]+)\s*~\*\s*\?", r"\1 REGEXP ?", sql)
+        sql = re.sub(r"([\w.]+)\s*!~\*\s*\?", r"NOT (\1 REGEXP ?)", sql)
         return sql
 
     # ------------------------------------------------------------------
@@ -432,6 +438,79 @@ class MealieDBClient:
                 f"INSERT INTO recipes_to_tags (recipe_id, tag_id) VALUES ({p}, {p})",
                 (recipe_id, tag_id),
             )
+
+    # ------------------------------------------------------------------
+    # Rule-based tagger queries
+    # ------------------------------------------------------------------
+
+    def find_recipe_ids_by_ingredient(
+        self,
+        group_id: str,
+        pattern: str,
+        *,
+        exclude_pattern: str = "",
+        min_matches: int = 1,
+    ) -> list[str]:
+        """Return recipe IDs where parsed ingredient food names match *pattern*.
+
+        Matching is case-insensitive regex (``~*`` on PostgreSQL; REGEXP on SQLite).
+        Patterns may use ``\\y`` for word boundaries (PostgreSQL syntax); these are
+        automatically translated to ``\\b`` for SQLite.
+
+        If *exclude_pattern* is given, foods matching it are excluded from the
+        matching set first.  *min_matches* sets the minimum number of distinct
+        foods that must match before the recipe is included (use 2+ for cuisine
+        fingerprinting).
+        """
+        p = self._db.placeholder
+        where_parts = [f"r.group_id = {p}", f"f.name ~* {p}"]
+        params: list = [group_id, pattern]
+        if exclude_pattern:
+            where_parts.append(f"NOT (f.name ~* {p})")
+            params.append(exclude_pattern)
+        where = " AND ".join(where_parts)
+        params.append(min_matches)
+        sql = f"""
+            SELECT ri.recipe_id
+            FROM recipes_ingredients ri
+            JOIN recipes r ON r.id = ri.recipe_id
+            JOIN ingredient_foods f ON ri.food_id = f.id
+            WHERE {where}
+            GROUP BY ri.recipe_id
+            HAVING COUNT(DISTINCT f.id) >= {p}
+        """
+        return [str(row[0]) for row in self._db.execute(sql, tuple(params)).fetchall()]
+
+    def find_recipe_ids_by_text(
+        self,
+        group_id: str,
+        pattern: str,
+    ) -> list[str]:
+        """Return recipe IDs where name or description matches *pattern* (case-insensitive)."""
+        p = self._db.placeholder
+        sql = f"""
+            SELECT id
+            FROM recipes
+            WHERE group_id = {p}
+              AND (name ~* {p} OR description ~* {p})
+        """
+        return [str(row[0]) for row in self._db.execute(sql, (group_id, pattern, pattern)).fetchall()]
+
+    def find_recipe_ids_by_instruction(
+        self,
+        group_id: str,
+        pattern: str,
+    ) -> list[str]:
+        """Return recipe IDs where any instruction step text matches *pattern* (case-insensitive)."""
+        p = self._db.placeholder
+        sql = f"""
+            SELECT DISTINCT inst.recipe_id
+            FROM recipe_instructions inst
+            JOIN recipes r ON r.id = inst.recipe_id
+            WHERE r.group_id = {p}
+              AND inst.text ~* {p}
+        """
+        return [str(row[0]) for row in self._db.execute(sql, (group_id, pattern)).fetchall()]
 
     def link_tool(self, recipe_id: str, tool_id: str, *, dry_run: bool = True) -> None:
         """Associate a tool with a recipe (idempotent)."""

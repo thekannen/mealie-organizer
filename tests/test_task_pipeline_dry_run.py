@@ -27,6 +27,7 @@ ALL_TASK_IDS = [
     "ingredient-parse",
     "labels-sync",
     "recipe-quality",
+    "rule-tag",
     "taxonomy-audit",
     "taxonomy-refresh",
     "tools-sync",
@@ -35,7 +36,7 @@ ALL_TASK_IDS = [
 ]
 
 # Tasks that expose an `apply` flag that marks the execution as dangerous
-APPLY_TASKS = ["foods-cleanup", "labels-sync", "tools-sync", "units-cleanup", "yield-normalize"]
+APPLY_TASKS = ["foods-cleanup", "labels-sync", "rule-tag", "tools-sync", "units-cleanup", "yield-normalize"]
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +392,45 @@ def test_yield_normalize_use_db_flag() -> None:
 
 def test_yield_normalize_use_db_absent_by_default() -> None:
     execution = _build("yield-normalize")
+    assert "--use-db" not in execution.command
+
+
+# ---------------------------------------------------------------------------
+# rule-tag
+# ---------------------------------------------------------------------------
+
+
+def test_rule_tag_dry_run_default() -> None:
+    execution = _build("rule-tag")
+    _assert_dry_run_safe(execution)
+    assert "--apply" not in execution.command
+
+
+def test_rule_tag_apply_is_dangerous() -> None:
+    execution = _build("rule-tag", {"apply": True})
+    assert "--apply" in execution.command
+    assert execution.dangerous_requested is True
+
+
+def test_rule_tag_custom_config_file() -> None:
+    execution = _build("rule-tag", {"config_file": "configs/taxonomy/my_rules.json"})
+    assert "--config" in execution.command
+    idx = execution.command.index("--config")
+    assert execution.command[idx + 1] == "configs/taxonomy/my_rules.json"
+
+
+def test_rule_tag_default_config_not_passed_explicitly() -> None:
+    execution = _build("rule-tag")
+    assert "--config" not in execution.command
+
+
+def test_rule_tag_use_db_flag() -> None:
+    execution = _build("rule-tag", {"use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_rule_tag_use_db_absent_by_default() -> None:
+    execution = _build("rule-tag")
     assert "--use-db" not in execution.command
 
 

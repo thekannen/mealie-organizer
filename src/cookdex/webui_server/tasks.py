@@ -262,6 +262,22 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups))
 
 
+def _build_rule_tag(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "apply", "use_db", "config_file"})
+    env, dangerous = _common_env(options)
+    apply = _bool_option(options, "apply", False)
+    use_db = _bool_option(options, "use_db", False)
+    config_file = _str_option(options, "config_file", "")
+    cmd = _py_module("cookdex.rule_tagger")
+    if apply:
+        cmd.append("--apply")
+    if use_db:
+        cmd.append("--use-db")
+    if config_file:
+        cmd.extend(["--config", config_file])
+    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
+
+
 def _build_recipe_quality(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "nutrition_sample", "use_db"})
     env, dangerous = _common_env(options)
@@ -422,6 +438,50 @@ class TaskRegistry:
                                help_text="Skip categorize even if a provider is configured."),
                 ],
                 build=_build_data_maintenance,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="rule-tag",
+                title="Rule-Based Tagger",
+                description=(
+                    "Tag and tool-assign recipes using regex rules — no LLM required. "
+                    "API mode (default): runs text_tags rules via the Mealie API. "
+                    "Add use_db for ingredient and tool matching via direct DB queries."
+                ),
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
+                    OptionSpec(
+                        "apply",
+                        "Apply Changes",
+                        "boolean",
+                        default=False,
+                        dangerous=True,
+                        help_text="Write tag and tool assignments to Mealie.",
+                    ),
+                    OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
+                        "boolean",
+                        default=False,
+                        help_text=(
+                            "Enable ingredient and tool matching via direct DB queries. "
+                            "Without this, only text_tags rules run (via Mealie API). "
+                            "Requires MEALIE_DB_TYPE in .env and cookdex[db] extras."
+                        ),
+                    ),
+                    OptionSpec(
+                        "config_file",
+                        "Rules Config",
+                        "string",
+                        default="configs/taxonomy/tag_rules.json",
+                        help_text=(
+                            "Path to tag_rules.json (relative to working directory). "
+                            "Leave blank for the default file."
+                        ),
+                    ),
+                ],
+                build=_build_rule_tag,
             )
         )
         self._register(
