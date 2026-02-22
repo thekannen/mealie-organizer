@@ -17,7 +17,7 @@
     "description": "",
     "fraction": true,
     "useAbbreviation": false,
-    "aliases": ["T", "T.", "tablespoons", "tbsp", "tbsp."]
+    "aliases": ["tablespoons", "tbsp", "tbsp."]
   },
   {
     "name": "Cup",

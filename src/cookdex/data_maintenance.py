@@ -8,8 +8,15 @@ from typing import Sequence
 
 from .config import env_or_config
 
-VALID_STAGES = {"parse", "foods", "units", "labels", "tools", "taxonomy", "categorize", "cookbooks", "audit"}
-DEFAULT_STAGE_ORDER = ["parse", "foods", "units", "taxonomy", "categorize", "cookbooks", "audit"]
+VALID_STAGES = {
+    "parse", "foods", "units", "labels", "tools",
+    "taxonomy", "categorize", "cookbooks",
+    "yield", "quality", "audit",
+}
+DEFAULT_STAGE_ORDER = [
+    "parse", "foods", "units", "taxonomy", "categorize",
+    "cookbooks", "yield", "quality", "audit",
+]
 
 
 @dataclass
@@ -27,6 +34,14 @@ def parse_stage_list(raw: str) -> list[str]:
     if unknown:
         raise ValueError(f"Unknown stage(s): {', '.join(unknown)}")
     return stages
+
+
+def _categorizer_provider_active() -> bool:
+    """Return True when a usable AI provider is configured."""
+    provider = str(
+        env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "")
+    ).strip().lower()
+    return bool(provider) and provider not in {"none", "off", "false", "0", "disabled"}
 
 
 def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
@@ -75,6 +90,13 @@ def stage_command(stage: str, *, apply_cleanups: bool) -> list[str]:
         return python_cmd + ["cookdex.recipe_categorizer"]
     if stage == "cookbooks":
         return python_cmd + ["cookdex.cookbook_manager", "sync"]
+    if stage == "yield":
+        cmd = python_cmd + ["cookdex.yield_normalizer"]
+        if apply_cleanups:
+            cmd.append("--apply")
+        return cmd
+    if stage == "quality":
+        return python_cmd + ["cookdex.recipe_quality_audit"]
     if stage == "audit":
         return python_cmd + ["cookdex.audit_taxonomy"]
     raise ValueError(f"Unsupported stage: {stage}")
@@ -89,17 +111,35 @@ def default_stage_string() -> str:
     return ",".join(DEFAULT_STAGE_ORDER)
 
 
-def run_stage(stage: str, *, apply_cleanups: bool) -> StageResult:
+def run_stage(stage: str, *, apply_cleanups: bool, skip_ai: bool = False) -> StageResult:
+    if stage == "categorize":
+        if skip_ai:
+            print(f"[skip] {stage}: skipped (--skip-ai flag set)", flush=True)
+            return StageResult(stage=stage, command=[], exit_code=0)
+        if not _categorizer_provider_active():
+            print(
+                f"[skip] {stage}: no AI provider configured "
+                "(set CATEGORIZER_PROVIDER to enable)",
+                flush=True,
+            )
+            return StageResult(stage=stage, command=[], exit_code=0)
+
     cmd = stage_command(stage, apply_cleanups=apply_cleanups)
     print(f"[stage] {stage}: {' '.join(cmd)}", flush=True)
     completed = subprocess.run(cmd, check=False)
     return StageResult(stage=stage, command=cmd, exit_code=completed.returncode)
 
 
-def run_pipeline(stages: Sequence[str], *, continue_on_error: bool, apply_cleanups: bool) -> list[StageResult]:
+def run_pipeline(
+    stages: Sequence[str],
+    *,
+    continue_on_error: bool,
+    apply_cleanups: bool,
+    skip_ai: bool = False,
+) -> list[StageResult]:
     results: list[StageResult] = []
     for stage in stages:
-        result = run_stage(stage, apply_cleanups=apply_cleanups)
+        result = run_stage(stage, apply_cleanups=apply_cleanups, skip_ai=skip_ai)
         results.append(result)
         if result.exit_code != 0 and not continue_on_error:
             print(f"[error] Stage '{stage}' failed with exit code {result.exit_code}. Failing fast.", flush=True)
@@ -118,7 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--apply-cleanups",
         action="store_true",
-        help="Apply cleanup writes for foods/units/labels/tools/taxonomy cleanup.",
+        help="Apply cleanup writes for foods/units/labels/tools/taxonomy/yield cleanup.",
+    )
+    parser.add_argument(
+        "--skip-ai",
+        action="store_true",
+        help="Skip the categorize stage regardless of provider configuration.",
     )
     return parser
 
@@ -126,11 +171,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     stages = parse_stage_list(str(args.stages))
-    print(f"[start] data-maintenance stages={','.join(stages)} apply_cleanups={bool(args.apply_cleanups)}", flush=True)
+    skip_ai = bool(args.skip_ai)
+    print(
+        f"[start] data-maintenance stages={','.join(stages)} "
+        f"apply_cleanups={bool(args.apply_cleanups)} skip_ai={skip_ai}",
+        flush=True,
+    )
     results = run_pipeline(
         stages,
         continue_on_error=bool(args.continue_on_error),
         apply_cleanups=bool(args.apply_cleanups),
+        skip_ai=skip_ai,
     )
     failed = [item for item in results if item.exit_code != 0]
     if failed:

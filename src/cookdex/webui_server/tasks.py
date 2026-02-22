@@ -239,12 +239,13 @@ def _build_tools_sync(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "stages", "continue_on_error", "apply_cleanups"})
+    _validate_allowed(options, {"dry_run", "stages", "continue_on_error", "apply_cleanups", "skip_ai"})
     env, dangerous = _common_env(options)
     cmd = _py_module("cookdex.data_maintenance")
     stages = options.get("stages")
     continue_on_error = _bool_option(options, "continue_on_error", False)
     apply_cleanups = _bool_option(options, "apply_cleanups", False)
+    skip_ai = _bool_option(options, "skip_ai", False)
     if stages:
         if isinstance(stages, list):
             stage_value = ",".join(str(item).strip() for item in stages if str(item).strip())
@@ -256,7 +257,29 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
         cmd.append("--continue-on-error")
     if apply_cleanups:
         cmd.append("--apply-cleanups")
+    if skip_ai:
+        cmd.append("--skip-ai")
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups))
+
+
+def _build_recipe_quality(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "nutrition_sample"})
+    env, dangerous = _common_env(options)
+    nutrition_sample = _int_option(options, "nutrition_sample")
+    cmd = _py_module("cookdex.recipe_quality_audit")
+    if nutrition_sample is not None:
+        cmd.extend(["--nutrition-sample", str(nutrition_sample)])
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
+def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "apply"})
+    env, dangerous = _common_env(options)
+    apply = _bool_option(options, "apply", False)
+    cmd = _py_module("cookdex.yield_normalizer")
+    if apply:
+        cmd.append("--apply")
+    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply))
 
 
 class TaskRegistry:
@@ -389,8 +412,46 @@ class TaskRegistry:
                     OptionSpec("stages", "Stages", "string"),
                     OptionSpec("continue_on_error", "Continue on Error", "boolean", default=False),
                     OptionSpec("apply_cleanups", "Apply Cleanup Writes", "boolean", default=False, dangerous=True),
+                    OptionSpec("skip_ai", "Skip AI Categorize Stage", "boolean", default=False,
+                               help_text="Skip categorize even if a provider is configured."),
                 ],
                 build=_build_data_maintenance,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="recipe-quality",
+                title="Recipe Quality Audit",
+                description=(
+                    "Score all recipes on gold medallion dimensions "
+                    "(category/tags/tools/description/time/yield) and estimate nutrition coverage."
+                ),
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
+                    OptionSpec(
+                        "nutrition_sample",
+                        "Nutrition Sample Size",
+                        "integer",
+                        default=200,
+                        help_text="Number of full recipes to fetch for nutrition coverage estimate.",
+                    ),
+                ],
+                build=_build_recipe_quality,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="yield-normalize",
+                title="Yield Normalizer",
+                description=(
+                    "Fill missing recipe yield text from servings count, "
+                    "or parse yield text to set numeric servings. Uses concurrent writes."
+                ),
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True),
+                    OptionSpec("apply", "Apply Changes", "boolean", default=False, dangerous=True),
+                ],
+                build=_build_yield_normalize,
             )
         )
 
