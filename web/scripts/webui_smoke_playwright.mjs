@@ -63,6 +63,15 @@ const REQUIRED_MARKERS = [
   "api:schedule-create-delete",
   "api:user-create-reset-delete",
   "auth:relogin",
+  "recipe:label-color-picker",
+  "recipe:tool-on-hand",
+  "users:role-dropdown",
+  "users:password-show-hide",
+  "users:force-reset-checkbox",
+  "users:search",
+  "global:modal-cancel",
+  "about:github-link-href",
+  "about:sponsor-link-href",
 ];
 
 function parseArgs(argv) {
@@ -688,6 +697,22 @@ async function main() {
     await expectVisible(page.locator(".coverage-grid"), "Coverage visualization not rendered on overview.");
     await clickButtonByRole("overview", "Refresh", "overview:header-refresh");
     await ensureNoErrorBanner("Overview refresh failed");
+
+    // "Run Quality Audit →" CTA — shown in empty-state medallion when no recipes have been processed
+    const qualityAuditBtn = page.getByRole("button", { name: /run quality audit/i }).first();
+    if (await qualityAuditBtn.isVisible().catch(() => false)) {
+      await qualityAuditBtn.click();
+      rememberButtonClick("overview", "Run Quality Audit");
+      markControl("overview", "overview:run-quality-audit");
+      await page.waitForTimeout(400);
+      await expectVisible(page.locator(".task-picker").first(), "'Run Quality Audit →' did not navigate to Tasks page.");
+      markInteraction("overview", "quality-audit-nav", "tasks-page-reached");
+      await clickNav("Overview");
+      await page.waitForTimeout(250);
+    } else {
+      markInteraction("overview", "quality-audit-btn", "not-in-empty-state");
+    }
+
     await registerVisibleButtons("overview");
     await screenshot("overview");
   });
@@ -779,6 +804,47 @@ async function main() {
     }
 
     await expectVisible(page.locator(".log-viewer"), "Run output viewer not rendered.");
+
+    // Log output card action buttons
+    const copyLogBtn = page.locator('button[title="Copy log to clipboard"]').first();
+    if (await copyLogBtn.isVisible().catch(() => false)) {
+      await copyLogBtn.click();
+      markControl("tasks", "tasks:log-copy");
+      rememberButtonClick("tasks", "Copy log to clipboard");
+      await page.waitForTimeout(150);
+    }
+
+    const downloadLogBtn = page.locator('button[title="Download log file"]').first();
+    if (await downloadLogBtn.isVisible().catch(() => false)) {
+      await downloadLogBtn.click();
+      markControl("tasks", "tasks:log-download");
+      rememberButtonClick("tasks", "Download log file");
+      await page.waitForTimeout(150);
+    }
+
+    const maximizeLogBtn = page.locator('button[title="Maximize"]').first();
+    if (await maximizeLogBtn.isVisible().catch(() => false)) {
+      await maximizeLogBtn.click();
+      markControl("tasks", "tasks:log-maximize");
+      rememberButtonClick("tasks", "Maximize");
+      await page.waitForTimeout(200);
+      const restoreLogBtn = page.locator('button[title="Restore"]').first();
+      if (await restoreLogBtn.isVisible().catch(() => false)) {
+        await restoreLogBtn.click();
+        await page.waitForTimeout(150);
+      }
+    }
+
+    // Cancel button for queued/running runs (may not always be visible if all runs completed)
+    const cancelRunBtn = page.locator('button[title="Cancel run"]').first();
+    if (await cancelRunBtn.isVisible().catch(() => false)) {
+      await cancelRunBtn.click();
+      markControl("tasks", "tasks:run-cancel");
+      rememberButtonClick("tasks", "Cancel run");
+      await page.waitForTimeout(400);
+      await ensureNoErrorBanner("Run cancel failed");
+    }
+
     await registerVisibleButtons("tasks");
     await screenshot("tasks-runs");
   });
@@ -850,6 +916,114 @@ async function main() {
 
     await registerVisibleButtons("tasks");
     await screenshot("tasks-schedules");
+  });
+
+  await check("tasks-schedule-management", async () => {
+    await clickNav("Tasks");
+    const scheduleItems = page.locator(".schedule-item");
+    const schedCount = await scheduleItems.count();
+    if (schedCount === 0) {
+      report.warnings.push("No schedule items found on Tasks page for management test.");
+      return;
+    }
+
+    // Toggle enable/disable on first schedule
+    const firstSched = scheduleItems.first();
+    const toggleBtn = firstSched
+      .locator(".schedule-item-actions button.enabled-toggle, .schedule-item-actions button.disabled-toggle")
+      .first();
+    if (await toggleBtn.isVisible().catch(() => false)) {
+      const toggleTitle = await toggleBtn.getAttribute("title").catch(() => "");
+      await toggleBtn.click();
+      rememberButtonClick("tasks", toggleTitle || "Toggle schedule");
+      markControl("tasks", "tasks:schedule-toggle-enabled");
+      await page.waitForTimeout(400);
+      await ensureNoErrorBanner("Schedule toggle failed");
+      // Toggle back to original state
+      const toggleBtn2 = firstSched
+        .locator(".schedule-item-actions button.enabled-toggle, .schedule-item-actions button.disabled-toggle")
+        .first();
+      if (await toggleBtn2.isVisible().catch(() => false)) {
+        await toggleBtn2.click();
+        await page.waitForTimeout(300);
+      }
+    }
+
+    // Delete the last schedule (direct delete, no confirmation modal for schedules)
+    const allScheduleItems = page.locator(".schedule-item");
+    const lastSched = allScheduleItems.last();
+    const deleteSchedBtn = lastSched.locator(".schedule-item-actions button.ghost.small.danger").first();
+    if (await deleteSchedBtn.isVisible().catch(() => false)) {
+      const countBefore = await allScheduleItems.count();
+      await deleteSchedBtn.click();
+      markControl("tasks", "tasks:schedule-delete-direct");
+      rememberButtonClick("tasks", "Delete schedule");
+      await page.waitForTimeout(500);
+      await ensureNoErrorBanner("Schedule delete failed");
+      const countAfter = await page.locator(".schedule-item").count();
+      if (countAfter >= countBefore) {
+        report.warnings.push("Schedule delete: item count did not decrease after direct delete.");
+      }
+      // Sync cleanupState with actual API state
+      const remaining = await apiRequest("GET", "/schedules", null, [200]);
+      const remainingIds = new Set((remaining.payload?.items || []).map((s) => String(s.schedule_id)));
+      for (const id of [...cleanupState.scheduleIds]) {
+        if (!remainingIds.has(id)) {
+          cleanupState.scheduleIds.delete(id);
+        }
+      }
+    }
+
+    await screenshot("tasks-schedule-management");
+  });
+
+  await check("tasks-once-schedule", async () => {
+    await clickNav("Tasks");
+    await expandAllTaskGroups();
+    const firstTaskItem = page.locator(".task-item").first();
+    await expectVisible(firstTaskItem, "No task items found for once-schedule creation.");
+    await firstTaskItem.click();
+    await page.waitForTimeout(200);
+
+    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
+    await expectVisible(scheduleToggle, "Schedule Run toggle missing for once-schedule test.");
+    if (!(await scheduleToggle.isChecked().catch(() => false))) {
+      await scheduleToggle.check();
+      await page.waitForTimeout(200);
+    }
+
+    const onceName = `qa-ui-once-${Date.now().toString().slice(-7)}`;
+    await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), onceName);
+    await page.locator('label:has-text("Type") select').first().selectOption("once");
+    await page.waitForTimeout(200);
+
+    const runAtInput = page.locator('input[type="datetime-local"]').first();
+    await expectVisible(runAtInput, "datetime-local input not visible for 'once' schedule type.");
+    const futureDate = new Date(Date.now() + 3600000);
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const dtValue = `${futureDate.getFullYear()}-${pad2(futureDate.getMonth() + 1)}-${pad2(futureDate.getDate())}T${pad2(futureDate.getHours())}:${pad2(futureDate.getMinutes())}`;
+    await runAtInput.fill(dtValue);
+    markControl("tasks", "tasks:once-schedule");
+
+    await configureOptionFields(page.locator(".run-form"));
+    await clickButtonByRole("tasks", "Save Schedule", "tasks:save-interval");
+    await ensureNoErrorBanner("Once schedule save failed");
+    await page.waitForTimeout(400);
+
+    // Verify the once schedule was created via API
+    const schedulesResult = await apiRequest("GET", "/schedules", null, [200]);
+    const onceItem = (schedulesResult.payload?.items || []).find((s) => s.name === onceName);
+    if (!onceItem) {
+      throw new Error(`Once schedule '${onceName}' was not found in API response after creation.`);
+    }
+    cleanupState.scheduleIds.add(String(onceItem.schedule_id));
+    report.coverage.schedulesCreatedViaUi += 1;
+
+    if (await scheduleToggle.isChecked().catch(() => false)) {
+      await scheduleToggle.uncheck();
+      await page.waitForTimeout(150);
+    }
+    await screenshot("tasks-once-schedule");
   });
 
   await check("settings-page-comprehensive", async () => {
@@ -954,8 +1128,39 @@ async function main() {
       await page.waitForTimeout(300);
     }
 
+    // Test DB connection button (only visible when DB config is present)
+    const testDbBtn = page.getByRole("button", { name: /^test db$/i }).first();
+    if (await testDbBtn.isVisible().catch(() => false)) {
+      await runConnectionButton("Test DB", "Verify direct database connection.", "settings:test-db");
+    }
+
     await clickButtonByRole("settings", "Apply Changes", "settings:apply");
     await ensureNoErrorBanner("Settings apply failed");
+
+    // Verify settings persisted: reload and confirm Mealie URL is still populated
+    await clickButtonByRole("settings", "Reload", "settings:reload");
+    await page.waitForTimeout(800);
+    const mealieInputAfterReload = page.locator('.settings-row:has-text("Mealie Server URL") input').first();
+    const mealieValueAfterReload = normalizeText(await mealieInputAfterReload.inputValue().catch(() => ""));
+    if (!mealieValueAfterReload) {
+      throw new Error("Mealie URL was empty after Apply + Reload — settings may not have persisted.");
+    }
+
+    // Banner close: if any banner appeared during apply/reload, verify the close button works
+    const errorBannerCheck = page.locator(".banner.error").first();
+    const infoBannerCheck = page.locator(".banner.info").first();
+    for (const banner of [errorBannerCheck, infoBannerCheck]) {
+      if (await banner.isVisible().catch(() => false)) {
+        const closeBtn = banner.locator(".banner-close").first();
+        if (await closeBtn.isVisible().catch(() => false)) {
+          await closeBtn.click();
+          markControl("global", "global:banner-close");
+          await page.waitForTimeout(200);
+        }
+        break;
+      }
+    }
+
     await registerVisibleButtons("settings");
     await screenshot("settings");
   });
@@ -1049,6 +1254,22 @@ async function main() {
 
           const addDescInput = addCard.locator('label:has-text("Description") input').first();
           await addDescInput.fill("QA test cookbook.");
+
+          // Position number input
+          const positionInput = addCard.locator('label:has-text("Position") input[type="number"]').first();
+          if (await positionInput.isVisible().catch(() => false)) {
+            await positionInput.fill("1");
+            markInteraction("recipe", "cookbook-position-input", "filled");
+          }
+
+          // Public checkbox
+          const publicCheckbox = addCard.locator('label:has-text("Public") input[type="checkbox"]').first();
+          if (await publicCheckbox.isVisible().catch(() => false)) {
+            const wasPublicChecked = await publicCheckbox.isChecked();
+            await publicCheckbox.click();
+            markInteraction("recipe", "cookbook-public-checkbox", `toggled-from:${wasPublicChecked}`);
+            await page.waitForTimeout(100);
+          }
 
           // Test row-based filter builder: click + Add Filter
           const addFilterBtn = addCard.locator("button:has-text('+ Add Filter')").first();
@@ -1147,7 +1368,70 @@ async function main() {
             "Units taxonomy rendered as raw JSON instead of canonical/aliases controls."
           );
         }
+
+        if (matched.configName === "labels") {
+          // Color picker in the Add Label form
+          const colorPickerInput = page.locator('.color-field input[type="color"]').first();
+          if (await colorPickerInput.isVisible().catch(() => false)) {
+            await colorPickerInput.fill("#ff6b6b");
+            markControl("recipe", "recipe:label-color-picker");
+            rememberButtonClick("recipe", "Color picker");
+            await page.waitForTimeout(150);
+            const hexInput = page.locator('.color-field input.color-hex').first();
+            if (await hexInput.isVisible().catch(() => false)) {
+              await hexInput.fill("#959595");
+              markInteraction("recipe", "label-color-hex-input", "present");
+              await page.waitForTimeout(100);
+            }
+          }
+        }
+
+        if (matched.configName === "tools") {
+          // "On Hand" checkbox in the Add Tool form
+          const onHandCheckbox = page.locator('label.field-inline input[type="checkbox"]').first();
+          if (await onHandCheckbox.isVisible().catch(() => false)) {
+            const wasChecked = await onHandCheckbox.isChecked();
+            await onHandCheckbox.click();
+            markControl("recipe", "recipe:tool-on-hand");
+            rememberButtonClick("recipe", "On Hand");
+            await page.waitForTimeout(150);
+            if ((await onHandCheckbox.isChecked()) !== wasChecked) {
+              await onHandCheckbox.click();
+              await page.waitForTimeout(100);
+            }
+          }
+        }
+
+        // Up/Down reorder buttons — present on any pill that has list items
+        const upBtn = page.locator('.line-actions button', { hasText: "Up" }).first();
+        const downBtn = page.locator('.line-actions button', { hasText: "Down" }).first();
+        if (await upBtn.isVisible().catch(() => false)) {
+          markControl("recipe", "recipe:reorder-up");
+          if (!(await upBtn.isDisabled())) {
+            await upBtn.click();
+            await page.waitForTimeout(150);
+          } else {
+            markInteraction("recipe", "reorder-up", "first-item-disabled");
+          }
+        }
+        if (await downBtn.isVisible().catch(() => false)) {
+          markControl("recipe", "recipe:reorder-down");
+          if (!(await downBtn.isDisabled())) {
+            await downBtn.click();
+            await page.waitForTimeout(150);
+          } else {
+            markInteraction("recipe", "reorder-down", "last-item-disabled");
+          }
+        }
       }
+    }
+
+    // Verify the file browse input is present in the import drop zone
+    const fileInput = page.locator('.drop-zone input[type="file"]').first();
+    if ((await fileInput.count()) > 0) {
+      markInteraction("recipe", "file-browse-input", "present-in-dom");
+    } else {
+      report.warnings.push("File browse input not found in drop zone on Recipe Organization page.");
     }
 
     const editorInput = page.locator(".pill-input-row input").first();
@@ -1211,6 +1495,38 @@ async function main() {
     // Generate password (guarantees uppercase+lowercase+digit)
     await clickButtonByRole("users", "Generate", "users:generate-password");
     await page.waitForTimeout(300);
+
+    // Show/hide password toggle
+    const showPwdBtn = page
+      .locator('.icon-btn[title="Show password"], .icon-btn[title="Hide password"]')
+      .first();
+    if (await showPwdBtn.isVisible().catch(() => false)) {
+      await showPwdBtn.click();
+      markControl("users", "users:password-show-hide");
+      await page.waitForTimeout(100);
+      await showPwdBtn.click();
+      await page.waitForTimeout(100);
+    }
+
+    // Role dropdown (default: Editor)
+    const roleSelect = page.locator('label:has-text("Role") select').first();
+    if (await roleSelect.isVisible().catch(() => false)) {
+      await roleSelect.selectOption("Viewer");
+      await page.waitForTimeout(100);
+      await roleSelect.selectOption("Editor");
+      markControl("users", "users:role-dropdown");
+    }
+
+    // Force password reset checkbox
+    const forceResetNewUser = page.locator('label.checkbox-field input[type="checkbox"]').first();
+    if (await forceResetNewUser.isVisible().catch(() => false)) {
+      await forceResetNewUser.check();
+      markControl("users", "users:force-reset-checkbox");
+      await page.waitForTimeout(100);
+      await forceResetNewUser.uncheck();
+      await page.waitForTimeout(100);
+    }
+
     // Submit the create user form
     await clickButtonByRole("users", "Create User", "users:create-user");
     // Wait for the API call + loadData() to complete
@@ -1228,6 +1544,19 @@ async function main() {
       userRow = page.locator(".user-row", { hasText: tempUser }).first();
     }
     await expectVisible(userRow, "Created user row was not found in user list.");
+
+    // User search: filter by partial username and verify user still visible
+    const userSearchInput = page.locator(".search-box input").first();
+    if (await userSearchInput.isVisible().catch(() => false)) {
+      await userSearchInput.fill(tempUser.slice(0, 4));
+      await page.waitForTimeout(300);
+      const filteredRow = page.locator(".user-row", { hasText: tempUser }).first();
+      await expectVisible(filteredRow, `User search: created user '${tempUser}' not found with partial filter.`);
+      markControl("users", "users:search");
+      await userSearchInput.fill("");
+      await page.waitForTimeout(200);
+    }
+
     const toggleButton = userRow.locator(".user-row-toggle").first();
     await toggleButton.click();
     await page.waitForTimeout(200);
@@ -1240,6 +1569,25 @@ async function main() {
     markControl("users", "users:reset-password");
     await page.waitForTimeout(650);
     await ensureNoErrorBanner("User reset password failed");
+
+    // Test confirmation modal cancel: click delete, click Cancel, verify user NOT deleted
+    const trashBtnForCancel = userRow.locator('button[title="Remove user"]').first();
+    await expectVisible(trashBtnForCancel, "Trash/delete button missing for cancel modal test.");
+    await trashBtnForCancel.click();
+    await page.waitForTimeout(200);
+    const cancelModal = page.locator(".modal-card").first();
+    if (await cancelModal.isVisible().catch(() => false)) {
+      const cancelBtn = cancelModal.getByRole("button", { name: /^cancel$/i }).first();
+      await expectVisible(cancelBtn, "Cancel button not found in confirmation modal.");
+      await cancelBtn.click();
+      markControl("global", "global:modal-cancel");
+      await page.waitForTimeout(300);
+      const stillThere = await page.locator(".user-row", { hasText: tempUser }).isVisible().catch(() => false);
+      if (!stillThere) {
+        throw new Error("User was deleted despite clicking Cancel on confirmation modal.");
+      }
+      markInteraction("global", "modal-cancel-verified", "user-still-present");
+    }
 
     // Delete user via trash icon (triggers confirmation modal)
     const trashButton = userRow.locator('button[title="Remove user"]').first();
@@ -1314,6 +1662,56 @@ async function main() {
       markControl("help", "help:docs-open");
     }
 
+    // Troubleshooting accordions (separate section from FAQ, closed by default)
+    const troubleshootCard = page
+      .locator("article.card", { has: page.getByRole("heading", { name: /troubleshoot/i }) })
+      .first();
+    if (await troubleshootCard.isVisible().catch(() => false)) {
+      const troubleItems = troubleshootCard.locator(".accordion");
+      const troubleCount = await troubleItems.count();
+      for (let tIdx = 0; tIdx < troubleCount; tIdx += 1) {
+        await troubleItems.nth(tIdx).locator("summary").first().click();
+        await page.waitForTimeout(140);
+        markInteraction("help", "troubleshoot-toggle", `index:${tIdx}`);
+      }
+      if (troubleCount > 0) {
+        markControl("help", "help:troubleshooting-open");
+      } else {
+        report.warnings.push("Troubleshooting card found but no accordion items inside.");
+      }
+    } else {
+      report.warnings.push("Troubleshooting card not visible on Help page.");
+    }
+
+    // Debug log section: generate if needed, then test download and regenerate
+    const generateDebugBtn = page
+      .getByRole("button", { name: /generate/i })
+      .filter({ hasText: /debug|report|log/i })
+      .first();
+    if (await generateDebugBtn.isVisible().catch(() => false)) {
+      await generateDebugBtn.click();
+      rememberButtonClick("help", "Generate debug");
+      await page.waitForTimeout(2000);
+    }
+    const downloadReportBtn = page.getByRole("button", { name: /download report/i }).first();
+    if (await downloadReportBtn.isVisible().catch(() => false)) {
+      await downloadReportBtn.click();
+      markControl("help", "help:debug-log-download");
+      rememberButtonClick("help", "Download Report");
+      await page.waitForTimeout(400);
+    } else {
+      report.warnings.push("'Download Report' button not visible on Help page.");
+    }
+    const regenerateReportBtn = page.getByRole("button", { name: /regenerate/i }).first();
+    if (await regenerateReportBtn.isVisible().catch(() => false)) {
+      await regenerateReportBtn.click();
+      markControl("help", "help:debug-log-regenerate");
+      rememberButtonClick("help", "Regenerate");
+      await page.waitForTimeout(600);
+    } else {
+      report.warnings.push("'Regenerate' button not visible on Help page.");
+    }
+
     await registerVisibleButtons("help");
     await screenshot("help");
   });
@@ -1333,6 +1731,32 @@ async function main() {
       throw new Error("Expected GitHub and Sponsor links were not found.");
     }
     markControl("about", "about:links-visible");
+
+    // Validate GitHub link href
+    const githubLink = page.locator("a.link-btn").filter({ hasText: /github/i }).first();
+    if (await githubLink.isVisible().catch(() => false)) {
+      const githubHref = await githubLink.getAttribute("href").catch(() => "");
+      if (!githubHref || !githubHref.includes("github.com")) {
+        throw new Error(`GitHub link href is invalid: '${githubHref}'`);
+      }
+      markControl("about", "about:github-link-href");
+      markInteraction("about", "github-link-href", githubHref);
+    } else {
+      throw new Error("GitHub Repository link not found on About page.");
+    }
+
+    // Validate Sponsor link href
+    const sponsorLink = page.locator("a.link-btn").filter({ hasText: /sponsor/i }).first();
+    if (await sponsorLink.isVisible().catch(() => false)) {
+      const sponsorHref = await sponsorLink.getAttribute("href").catch(() => "");
+      if (!sponsorHref || !sponsorHref.includes("github")) {
+        throw new Error(`Sponsor link href is invalid: '${sponsorHref}'`);
+      }
+      markControl("about", "about:sponsor-link-href");
+      markInteraction("about", "sponsor-link-href", sponsorHref);
+    } else {
+      throw new Error("Sponsor project link not found on About page.");
+    }
 
     await registerVisibleButtons("about");
     await screenshot("about");
