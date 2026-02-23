@@ -26,7 +26,7 @@ COPY --from=web-build /web/dist ./web/dist
 
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir '.[db]'
 
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
