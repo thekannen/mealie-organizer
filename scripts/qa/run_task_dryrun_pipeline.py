@@ -73,11 +73,11 @@ def _build_variants() -> list[Variant]:
         label="data-maintenance (quality+audit)",
         options={"stages": "quality,audit", "skip_ai": True},
     ))
-    # Full pipeline minus AI categorization
+    # Multi-stage subset: fast stages covering different sub-modules
     variants.append(Variant(
         task_id="data-maintenance",
-        label="data-maintenance (full/no-ai)",
-        options={"skip_ai": True},
+        label="data-maintenance (multi-stage)",
+        options={"stages": "dedup,names,yield,quality,audit", "skip_ai": True},
     ))
     # continue_on_error path
     variants.append(Variant(
