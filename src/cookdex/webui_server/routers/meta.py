@@ -124,7 +124,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
         units = client.list_units()
         labels = client.list_labels()
     except requests.RequestException as exc:
-        payload["reason"] = f"Unable to fetch Mealie metrics: {exc}"
+        payload["reason"] = f"Unable to fetch Mealie metrics: {type(exc).__name__}."
         return payload
 
     recipe_total = len(recipes)

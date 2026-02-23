@@ -32,7 +32,7 @@ async def get_config_file(
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Config file not found.")
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail=f"Invalid JSON in file: {exc}")
+        raise HTTPException(status_code=500, detail="Invalid JSON in config file.")
 
 
 @router.put("/config/files/{name}")

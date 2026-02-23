@@ -318,7 +318,7 @@ def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
             return True, f"DB connection validated. Group: {group_id[:8]}\u2026"
         return True, "DB connection validated (no household found, but connection succeeded)."
     except Exception as exc:
-        return False, f"DB connection failed: {type(exc).__name__}: {exc}"
+        return False, f"DB connection failed: {type(exc).__name__}."
     finally:
         for key, val in saved.items():
             if val is None:
@@ -430,7 +430,7 @@ def _detect_db_credentials(
     except FileNotFoundError as exc:
         return False, str(exc), {}
     except Exception as exc:
-        return False, f"SSH connection failed: {type(exc).__name__}: {exc}", {}
+        return False, f"SSH connection failed: {type(exc).__name__}.", {}
 
     if code != 0:
         return False, "Could not list Docker containers. Is Docker installed and accessible?", {}
@@ -493,4 +493,4 @@ async def detect_db_settings(
         ok, detail, detected = _detect_db_credentials(ssh_host, ssh_user, ssh_key)
         return {"ok": ok, "detail": detail, "detected": detected}
     except Exception as exc:
-        return {"ok": False, "detail": f"Detection failed: {type(exc).__name__}: {exc}", "detected": {}}
+        return {"ok": False, "detail": f"Detection failed: {type(exc).__name__}.", "detected": {}}
