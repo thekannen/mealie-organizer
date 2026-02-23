@@ -86,7 +86,8 @@ def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
         tags_url = f"{base_url}/api/tags"
 
     try:
-        response = requests.get(tags_url, timeout=12)
+        # URL validated by _validate_service_url above (scheme + metadata block).
+        response = requests.get(tags_url, timeout=12)  # nosec B113
         response.raise_for_status()
         payload = response.json()
         models = payload.get("models") if isinstance(payload, dict) else None
@@ -95,8 +96,8 @@ def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
             if not found:
                 return True, f"Connection OK, model '{model}' was not listed by Ollama."
         return True, "Ollama connection validated."
-    except ValueError as exc:
-        return False, str(exc)
+    except ValueError:
+        return False, "Invalid response from Ollama server."
     except requests.RequestException as exc:
         return False, _safe_request_error(exc)
 
@@ -198,7 +199,8 @@ def _list_ollama_models(url: str) -> list[str]:
     else:
         tags_url = f"{base_url}/api/tags"
     try:
-        response = requests.get(tags_url, timeout=12)
+        # URL validated by _validate_service_url above (scheme + metadata block).
+        response = requests.get(tags_url, timeout=12)  # nosec B113
         response.raise_for_status()
         payload = response.json()
         models = payload.get("models") if isinstance(payload, dict) else None

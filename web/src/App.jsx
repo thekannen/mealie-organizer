@@ -1342,7 +1342,13 @@ export default function App() {
     const lower = "abcdefghijkmnopqrstuvwxyz";
     const digits = "23456789";
     const all = upper + lower + digits + "!@#$%";
-    const rng = (max) => crypto.getRandomValues(new Uint32Array(1))[0] % max;
+    const rng = (max) => {
+      const buf = new Uint32Array(1);
+      const limit = Math.floor(0x100000000 / max) * max;
+      let v;
+      do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limit);
+      return v % max;
+    };
     const pick = (s) => s[rng(s.length)];
     const required = [pick(upper), pick(lower), pick(digits)];
     for (let i = required.length; i < 14; i += 1) required.push(pick(all));
