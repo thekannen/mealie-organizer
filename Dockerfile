@@ -1,5 +1,6 @@
 FROM node:20-alpine AS web-build
 WORKDIR /web
+RUN apk add --no-cache python3
 COPY web/package*.json ./
 RUN npm install --no-audit --no-fund
 COPY web ./
