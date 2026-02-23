@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 from pathlib import Path
 from queue import Empty, Queue
@@ -54,10 +55,7 @@ class RunQueueManager:
             self._thread = None
         with self._active_lock:
             for proc in list(self._active.values()):
-                try:
-                    proc.terminate()
-                except OSError:
-                    continue
+                self._terminate_process_tree(proc, wait_for_exit=True)
             self._active.clear()
 
     def enqueue(
@@ -105,10 +103,7 @@ class RunQueueManager:
 
             proc = self._active.get(run_id)
             if proc is not None:
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
+                self._terminate_process_tree(proc, wait_for_exit=False)
 
         self.state.update_run_status(
             run_id,
@@ -146,8 +141,34 @@ class RunQueueManager:
                 continue
             if str(run.get("status")) != "queued":
                 continue
-            self._execute_run(run_id, run)
-            self._rotate_logs()
+            try:
+                self._execute_run(run_id, run)
+            except Exception as exc:
+                logger.exception("run %s crashed in worker loop", run_id)
+                current_run = self.state.get_run(run_id)
+                if current_run and str(current_run.get("status")) in {"queued", "running"}:
+                    self.state.update_run_status(
+                        run_id,
+                        status="failed",
+                        finished_at=utc_now_iso(),
+                        exit_code=1,
+                        error_text=f"Runner internal error: {exc}",
+                    )
+                log_path_raw = str(run.get("log_path") or "").strip()
+                if log_path_raw:
+                    log_path = Path(log_path_raw)
+                    try:
+                        log_path.parent.mkdir(parents=True, exist_ok=True)
+                        with log_path.open("a", encoding="utf-8") as log_file:
+                            log_file.write(f"[runner-error] {type(exc).__name__}: {exc}\n")
+                        self.state.update_run_log_size(run_id, log_path.stat().st_size)
+                    except OSError:
+                        pass
+            finally:
+                try:
+                    self._rotate_logs()
+                except Exception:
+                    logger.exception("run %s failed during log rotation", run_id)
 
     def _execute_run(self, run_id: str, run: dict[str, Any]) -> None:
         task_id = str(run["task_id"])
@@ -196,6 +217,7 @@ class RunQueueManager:
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                    start_new_session=True,
                 )
             except FileNotFoundError as exc:
                 message = f"Failed to start process: {exc}"
@@ -248,6 +270,49 @@ class RunQueueManager:
                 )
                 logger.error("run %s failed: task=%s exit_code=%s", run_id, task_id, exit_code)
             self.state.update_run_log_size(run_id, log_path.stat().st_size)
+
+    def _terminate_process_tree(self, process: subprocess.Popen[str], *, wait_for_exit: bool) -> None:
+        try:
+            if process.poll() is not None:
+                return
+        except OSError:
+            return
+
+        sent = False
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            sent = True
+        except OSError:
+            pass
+
+        if not sent:
+            try:
+                process.terminate()
+                sent = True
+            except OSError:
+                pass
+
+        if not wait_for_exit:
+            return
+
+        try:
+            process.wait(timeout=3)
+            return
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except OSError:
+            try:
+                process.kill()
+            except OSError:
+                return
+
+        try:
+            process.wait(timeout=1)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
 
     def _rotate_logs(self) -> None:
         if self.max_log_files <= 0:

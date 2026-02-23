@@ -580,159 +580,184 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
 
     reviews: list[dict[str, Any]] = []
     successes: list[str] = []
+    last_progress_ts = time.monotonic()
 
     for idx, slug in enumerate(slugs, start=1):
         started = time.monotonic()
         try:
-            recipe = client.get_recipe(slug)
-        except requests.RequestException as exc:
-            reviews.append({"slug": slug, "name": "<unknown>", "reason": "recipe_fetch_failed", "error": str(exc)})
-            continue
-
-        recipe_name = str(recipe.get("name") or slug)
-        try:
-            raw_lines = extract_raw_lines(recipe)
-        except AlreadyParsed:
-            summary.skipped_already_parsed += 1
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="already_parsed",
-            )
-            continue
-
-        if not raw_lines:
-            summary.skipped_empty += 1
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="empty",
-            )
-            continue
-
-        raw_lines, dropped_input = sanitize_raw_lines(raw_lines)
-        if dropped_input:
-            print(f"[info] {slug}: dropped {dropped_input} non-ingredient lines.", flush=True)
-        if not raw_lines:
-            summary.skipped_empty += 1
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="empty",
-            )
-            continue
-
-        parsed_block, parser_used, attempts = parse_with_fallback(
-            client,
-            raw_lines,
-            config.parser_strategies,
-            config.confidence_threshold,
-        )
-        if parser_used is None:
-            reviews.append(
-                {
-                    "slug": slug,
-                    "name": recipe_name,
-                    "reason": "parser_failed_threshold",
-                    "raw_lines": raw_lines,
-                    "attempts": attempts,
-                }
-            )
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="needs_review",
-            )
-            continue
-
-        normalized, suspicious_reasons, dropped_blank = normalize_parsed_block(client, parsed_block)
-        if dropped_blank:
-            summary.dropped_blank_ingredients += dropped_blank
-        if not normalized:
-            reviews.append(
-                {
-                    "slug": slug,
-                    "name": recipe_name,
-                    "reason": "no_usable_ingredients_after_cleanup",
-                    "parser": parser_used,
-                    "raw_lines": raw_lines,
-                }
-            )
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="needs_review",
-            )
-            continue
-        if suspicious_reasons:
-            reviews.append(
-                {
-                    "slug": slug,
-                    "name": recipe_name,
-                    "reason": "suspicious_result",
-                    "parser": parser_used,
-                    "raw_lines": raw_lines,
-                    "parsed": normalized,
-                    "suspicious_reasons": suspicious_reasons,
-                }
-            )
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="needs_review",
-            )
-            continue
-
-        if config.dry_run:
-            print(f"[plan] {slug}: parser={parser_used} ingredients={len(normalized)}", flush=True)
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="planned_parse",
-            )
-        else:
             try:
-                client.patch_recipe_ingredients(slug, normalized)
+                recipe = client.get_recipe(slug)
             except requests.RequestException as exc:
+                reviews.append({"slug": slug, "name": "<unknown>", "reason": "recipe_fetch_failed", "error": str(exc)})
+                continue
+
+            recipe_name = str(recipe.get("name") or slug)
+            try:
+                raw_lines = extract_raw_lines(recipe)
+            except AlreadyParsed:
+                summary.skipped_already_parsed += 1
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="already_parsed",
+                )
+                continue
+
+            if not raw_lines:
+                summary.skipped_empty += 1
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="empty",
+                )
+                continue
+
+            raw_lines, dropped_input = sanitize_raw_lines(raw_lines)
+            if dropped_input:
+                print(f"[info] {slug}: dropped {dropped_input} non-ingredient lines.", flush=True)
+            if not raw_lines:
+                summary.skipped_empty += 1
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="empty",
+                )
+                continue
+
+            parsed_block, parser_used, attempts = parse_with_fallback(
+                client,
+                raw_lines,
+                config.parser_strategies,
+                config.confidence_threshold,
+            )
+            if parser_used is None:
                 reviews.append(
                     {
                         "slug": slug,
                         "name": recipe_name,
-                        "reason": "patch_failed",
-                        "parser": parser_used,
-                        "error": str(exc),
-                        "parsed": normalized,
+                        "reason": "parser_failed_threshold",
+                        "raw_lines": raw_lines,
+                        "attempts": attempts,
                     }
                 )
                 _set_scan_cache(
                     scan_cache,
                     slug=slug,
                     updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                    status="patch_failed",
+                    status="needs_review",
                 )
                 continue
-            _set_scan_cache(
-                scan_cache,
-                slug=slug,
-                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
-                status="parsed",
-            )
 
-        successes.append(recipe_name)
-        summary.parsed_successfully += 1
-        print(
-            f"[ok] {idx}/{summary.total_candidates} {slug} parser={parser_used} duration={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
-        if config.delay_seconds > 0:
-            time.sleep(config.delay_seconds)
+            normalized, suspicious_reasons, dropped_blank = normalize_parsed_block(client, parsed_block)
+            if dropped_blank:
+                summary.dropped_blank_ingredients += dropped_blank
+            if not normalized:
+                reviews.append(
+                    {
+                        "slug": slug,
+                        "name": recipe_name,
+                        "reason": "no_usable_ingredients_after_cleanup",
+                        "parser": parser_used,
+                        "raw_lines": raw_lines,
+                    }
+                )
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="needs_review",
+                )
+                continue
+            if suspicious_reasons:
+                reviews.append(
+                    {
+                        "slug": slug,
+                        "name": recipe_name,
+                        "reason": "suspicious_result",
+                        "parser": parser_used,
+                        "raw_lines": raw_lines,
+                        "parsed": normalized,
+                        "suspicious_reasons": suspicious_reasons,
+                    }
+                )
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="needs_review",
+                )
+                continue
+
+            if config.dry_run:
+                print(f"[plan] {slug}: parser={parser_used} ingredients={len(normalized)}", flush=True)
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="planned_parse",
+                )
+            else:
+                try:
+                    client.patch_recipe_ingredients(slug, normalized)
+                except requests.RequestException as exc:
+                    reviews.append(
+                        {
+                            "slug": slug,
+                            "name": recipe_name,
+                            "reason": "patch_failed",
+                            "parser": parser_used,
+                            "error": str(exc),
+                            "parsed": normalized,
+                        }
+                    )
+                    _set_scan_cache(
+                        scan_cache,
+                        slug=slug,
+                        updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                        status="patch_failed",
+                    )
+                    continue
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="parsed",
+                )
+
+            successes.append(recipe_name)
+            summary.parsed_successfully += 1
+            print(
+                f"[ok] {idx}/{summary.total_candidates} {slug} parser={parser_used} duration={time.monotonic() - started:.2f}s",
+                flush=True,
+            )
+            if config.delay_seconds > 0:
+                time.sleep(config.delay_seconds)
+        finally:
+            now = time.monotonic()
+            should_emit = (
+                idx == summary.total_candidates
+                or idx % 100 == 0
+                or (now - last_progress_ts) >= 20
+            )
+            if should_emit:
+                print(
+                    "[progress] "
+                    + json.dumps(
+                        {
+                            "Processed": idx,
+                            "Candidates": summary.total_candidates,
+                            "Parsed": summary.parsed_successfully,
+                            "Needs Review": len(reviews),
+                            "Skipped (empty)": summary.skipped_empty,
+                            "Skipped (parsed)": summary.skipped_already_parsed,
+                        }
+                    ),
+                    flush=True,
+                )
+                last_progress_ts = now
 
     if successes:
         success_path = config.output_dir / config.success_log_filename
