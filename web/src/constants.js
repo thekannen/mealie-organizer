@@ -104,16 +104,17 @@ export const HELP_SETUP_GUIDES = [
     icon: "lock",
     what: "If your Mealie Postgres database only listens on localhost (the default Docker setup), CookDex can open an SSH tunnel automatically. You just need an SSH key that can reach the server.",
     steps: [
-      "Generate a dedicated SSH key: ssh-keygen -t ed25519 -f ~/.ssh/cookdex_mealie -N \"\"",
+      "On the Docker host (not inside the container), generate a dedicated SSH key: ssh-keygen -t ed25519 -f ~/.ssh/cookdex_mealie -N \"\"",
       "Copy the public key to the Mealie server: ssh-copy-id -i ~/.ssh/cookdex_mealie.pub your_user@192.168.1.100",
-      "Verify SSH access works: ssh -i ~/.ssh/cookdex_mealie your_user@192.168.1.100 echo OK",
+      "Verify SSH access works from the Docker host: ssh -i ~/.ssh/cookdex_mealie your_user@192.168.1.100 echo OK",
+      "Mount the private key into the CookDex container by adding a volume to your compose.yaml: - ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie \u2014 then recreate the container with docker compose up -d.",
       "In CookDex Settings under Direct DB, set SSH Tunnel Host to your Mealie server\u2019s IP or hostname.",
       "Set SSH Tunnel User to the SSH user on that host.",
-      "Set SSH Key Path to the private key path (e.g. ~/.ssh/cookdex_mealie). In Docker, mount this file into the container.",
+      "Set SSH Key Path to the container path: /app/.ssh/cookdex_mealie (not ~/.ssh \u2014 the host path doesn\u2019t exist inside the container).",
       "Leave Postgres Host as localhost and Postgres Port as 5432 \u2014 these refer to the remote server\u2019s local address after tunneling.",
       "Click Test DB to verify the full tunnel + database connection.",
     ],
-    tip: "CookDex opens and closes the tunnel automatically for each task run \u2014 no background ssh process needed. If you use Docker, mount your SSH key as a read-only volume: -v ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie:ro",
+    tip: "CookDex opens and closes the tunnel automatically for each task run \u2014 no background ssh process needed. The key must be mounted into the container; host paths like ~/.ssh/ are not visible inside Docker.",
   },
 ];
 

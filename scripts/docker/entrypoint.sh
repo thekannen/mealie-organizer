@@ -9,6 +9,13 @@ if [ "$(id -u)" = "0" ]; then
     mkdir -p "$dir"
     chown -R app:app "$dir"
   done
+
+  # If an SSH key is mounted, ensure the app user can read it.
+  if [ -d /app/.ssh ]; then
+    chown -R app:app /app/.ssh 2>/dev/null || true
+    chmod 600 /app/.ssh/* 2>/dev/null || true
+  fi
+
   exec gosu app "$0" "$@"
 fi
 

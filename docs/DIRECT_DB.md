@@ -48,10 +48,12 @@ MEALIE_PG_PASS=your_mealie_db_password
 # SSH tunnel target
 MEALIE_DB_SSH_HOST=192.168.1.100     # IP or hostname of the Mealie server
 MEALIE_DB_SSH_USER=your_ssh_user     # SSH user on that host
-MEALIE_DB_SSH_KEY=~/.ssh/cookdex_mealie   # path to your private key
+MEALIE_DB_SSH_KEY=/app/.ssh/cookdex_mealie   # container path to your private key
 ```
 
 #### Generating the SSH key
+
+On the **Docker host** (not inside the container):
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/cookdex_mealie -N ""
@@ -65,11 +67,30 @@ ssh-copy-id -i ~/.ssh/cookdex_mealie.pub your_ssh_user@192.168.1.100
 cat ~/.ssh/cookdex_mealie.pub | ssh your_ssh_user@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
-Verify access:
+Verify access from the Docker host:
 
 ```bash
 ssh -i ~/.ssh/cookdex_mealie your_ssh_user@192.168.1.100 echo OK
 ```
+
+#### Mounting the key into Docker
+
+The SSH key lives on the host filesystem, but CookDex runs inside a container where host paths like `~/.ssh/` are not visible. You must mount the key file as a volume.
+
+Add this line to the `volumes:` section of your `compose.yaml`:
+
+```yaml
+volumes:
+  - ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie
+```
+
+Then recreate the container:
+
+```bash
+docker compose up -d cookdex
+```
+
+In CookDex Settings (or `.env`), use the **container** path `/app/.ssh/cookdex_mealie` — not the host path `~/.ssh/cookdex_mealie`.
 
 #### Finding your DB credentials
 
