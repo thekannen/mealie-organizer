@@ -352,13 +352,16 @@ _MEALIE_ENV_MAP: dict[str, str] = {
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
-    """Resolve an SSH key path and ensure it lives inside ~/.ssh/."""
-    expanded = os.path.expanduser(raw_path)
-    resolved = os.path.realpath(expanded)
+    """Map a user-provided SSH key path to a safe path inside ~/.ssh/.
+
+    Only the filename portion is used — the directory is always ~/.ssh/.
+    This prevents path-traversal attacks regardless of the input.
+    """
+    filename = os.path.basename(os.path.expanduser(raw_path))
+    if not filename:
+        raise ValueError("Invalid SSH key path.")
     ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
-    if not (resolved == ssh_dir or resolved.startswith(ssh_dir + os.sep)):
-        raise ValueError("SSH key path must be inside ~/.ssh/")
-    return resolved
+    return os.path.join(ssh_dir, filename)
 
 
 def _ssh_exec(
