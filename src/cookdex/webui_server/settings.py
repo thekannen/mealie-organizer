@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import hashlib
+import ipaddress
 import os
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+from cryptography import x509
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 from ..config import REPO_ROOT
 
@@ -38,6 +45,9 @@ class WebUISettings:
     logs_dir: Path
     config_root: Path
     max_log_files: int
+    ssl_enabled: bool
+    ssl_certfile: Path | None
+    ssl_keyfile: Path | None
 
 
 def _normalize_base_path(raw: str) -> str:
@@ -102,6 +112,77 @@ def _int_env(name: str, default: int) -> int:
     return int(raw)
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _ensure_ssl_cert(state_db_path: Path) -> tuple[Path, Path]:
+    """Return (certfile, keyfile), generating a self-signed pair if needed."""
+    cert_dir = state_db_path.parent
+    cert_path = cert_dir / "self-signed.crt"
+    key_path = cert_dir / "self-signed.key"
+
+    if cert_path.exists() and key_path.exists():
+        return cert_path, key_path
+
+    cert_dir.mkdir(parents=True, exist_ok=True)
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "CookDex Self-Signed"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+    ])
+
+    san_entries: list[x509.GeneralName] = [
+        x509.DNSName("localhost"),
+        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+        x509.IPAddress(ipaddress.IPv6Address("::1")),
+    ]
+    try:
+        hostname = socket.gethostname()
+        if hostname and hostname != "localhost":
+            san_entries.append(x509.DNSName(hostname))
+    except OSError:
+        pass
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + _dt.timedelta(days=3650))
+        .add_extension(
+            x509.SubjectAlternativeName(san_entries),
+            critical=False,
+        )
+        .sign(private_key, hashes.SHA256())
+    )
+
+    key_path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+
+    try:
+        key_path.chmod(0o600)
+    except OSError:
+        pass
+
+    print(f"[webui] auto-generated self-signed TLS certificate at {cert_path}", flush=True)
+    return cert_path, key_path
+
+
 def load_webui_settings() -> WebUISettings:
     bind_host = os.environ.get("WEB_BIND_HOST", DEFAULT_BIND_HOST).strip() or DEFAULT_BIND_HOST
     bind_port = _int_env("WEB_BIND_PORT", DEFAULT_BIND_PORT)
@@ -127,9 +208,34 @@ def load_webui_settings() -> WebUISettings:
     bootstrap_user = os.environ.get("WEB_BOOTSTRAP_USER", DEFAULT_BOOTSTRAP_USER).strip() or DEFAULT_BOOTSTRAP_USER
     bootstrap_password = os.environ.get("WEB_BOOTSTRAP_PASSWORD", "").strip()
     cookie_name = os.environ.get("WEB_SESSION_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME
-    cookie_secure_raw = os.environ.get("WEB_COOKIE_SECURE", "").strip().lower()
-    cookie_secure = cookie_secure_raw not in {"0", "false", "no", "off"}
     max_log_files = _int_env("WEB_MAX_LOG_FILES", DEFAULT_MAX_LOG_FILES)
+
+    # --- SSL / TLS ---
+    ssl_enabled = _bool_env("WEB_SSL", True)
+    ssl_certfile: Path | None = None
+    ssl_keyfile: Path | None = None
+
+    if ssl_enabled:
+        user_cert = os.environ.get("WEB_SSL_CERTFILE", "").strip()
+        user_key = os.environ.get("WEB_SSL_KEYFILE", "").strip()
+        if user_cert and user_key:
+            ssl_certfile = Path(user_cert).resolve()
+            ssl_keyfile = Path(user_key).resolve()
+            if not ssl_certfile.exists():
+                raise RuntimeError(f"WEB_SSL_CERTFILE does not exist: {ssl_certfile}")
+            if not ssl_keyfile.exists():
+                raise RuntimeError(f"WEB_SSL_KEYFILE does not exist: {ssl_keyfile}")
+        elif user_cert or user_key:
+            raise RuntimeError("Both WEB_SSL_CERTFILE and WEB_SSL_KEYFILE must be set together.")
+        else:
+            ssl_certfile, ssl_keyfile = _ensure_ssl_cert(state_db_path)
+
+    # Default cookie_secure to match SSL state unless explicitly overridden
+    cookie_secure_raw = os.environ.get("WEB_COOKIE_SECURE", "").strip().lower()
+    if cookie_secure_raw:
+        cookie_secure = cookie_secure_raw not in {"0", "false", "no", "off"}
+    else:
+        cookie_secure = ssl_enabled
 
     return WebUISettings(
         bind_host=bind_host,
@@ -147,4 +253,7 @@ def load_webui_settings() -> WebUISettings:
         logs_dir=logs_dir,
         config_root=config_root,
         max_log_files=max_log_files,
+        ssl_enabled=ssl_enabled,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
     )

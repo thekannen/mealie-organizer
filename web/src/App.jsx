@@ -131,6 +131,7 @@ export default function App() {
   const [setupRequired, setSetupRequired] = useState(false);
   const [registerUsername, setRegisterUsername] = useState("admin");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -905,6 +906,10 @@ export default function App() {
     event.preventDefault();
     try {
       clearBanners();
+      if (registerPassword !== registerPasswordConfirm) {
+        setError("Passwords do not match.");
+        return;
+      }
       await api("/auth/register", {
         method: "POST",
         body: {
@@ -913,6 +918,7 @@ export default function App() {
         },
       });
       setRegisterPassword("");
+      setRegisterPasswordConfirm("");
       setSetupRequired(false);
       await refreshSession();
       await loadData();
@@ -3716,6 +3722,15 @@ export default function App() {
                 value={registerPassword}
                 onChange={(event) => setRegisterPassword(event.target.value)}
                 placeholder="At least 8 characters"
+              />
+            </label>
+            <label className="field">
+              <span>Confirm Password</span>
+              <input
+                type="password"
+                value={registerPasswordConfirm}
+                onChange={(event) => setRegisterPasswordConfirm(event.target.value)}
+                placeholder="Re-enter password"
               />
             </label>
             <button type="submit" className="primary">

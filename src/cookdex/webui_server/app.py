@@ -96,7 +96,8 @@ def create_app() -> FastAPI:
         app.state.services = services
         services.runner.start()
         services.scheduler.start()
-        addr = f"http://{settings.bind_host}:{settings.bind_port}{settings.base_path}"
+        scheme = "https" if settings.ssl_enabled else "http"
+        addr = f"{scheme}://{settings.bind_host}:{settings.bind_port}{settings.base_path}"
         print(f"[start] webui-server listening on {addr}", flush=True)
         logger.info("webui-server started — %s", addr)
         try:

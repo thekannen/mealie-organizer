@@ -11,7 +11,7 @@ No `.env` file is required.
 
 ## 2) Open the Web UI
 
-`http://localhost:4820/cookdex`
+`https://localhost:4820/cookdex` (accept the self-signed certificate warning)
 
 ## 3) Create your admin account
 
@@ -29,7 +29,7 @@ Click **Test Mealie** to verify. The dashboard shows a banner until both values 
 ## 5) Verify health
 
 ```bash
-curl http://localhost:4820/cookdex/api/v1/health
+curl -k https://localhost:4820/cookdex/api/v1/health
 ```
 
 ## 6) Run a dry task

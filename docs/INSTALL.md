@@ -24,7 +24,7 @@ docker compose up -d cookdex
 
 ## 3. Open the Web UI and complete setup
 
-Open `http://localhost:4820/cookdex` in your browser.
+Open `https://localhost:4820/cookdex` in your browser. Accept the self-signed certificate warning on first visit.
 
 1. Create your admin account (first-time setup screen).
 2. Navigate to **Settings**.
@@ -36,11 +36,11 @@ Open `http://localhost:4820/cookdex` in your browser.
 | Host path | Container path | Purpose |
 |---|---|---|
 | `./configs` | `/app/configs` | Taxonomy JSON config files |
-| `./cache` | `/app/cache` | SQLite state database and encryption key |
+| `./cache` | `/app/cache` | SQLite state database, encryption key, and TLS certificate |
 | `./logs` | `/app/logs` | Task run log files |
 | `./reports` | `/app/reports` | Audit and maintenance reports |
 
-The `./cache` volume stores the state database and the auto-generated encryption key. Keep this volume persistent.
+The `./cache` volume stores the state database, the auto-generated encryption key, and the TLS certificate. Keep this volume persistent.
 
 ## Updating
 

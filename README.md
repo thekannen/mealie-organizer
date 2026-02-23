@@ -11,7 +11,7 @@ docker compose pull cookdex
 docker compose up -d cookdex
 ```
 
-Open `http://localhost:4820/cookdex`, create your admin account, then add your Mealie URL and API key in **Settings**.
+Open `https://localhost:4820/cookdex` (accept the self-signed certificate warning), create your admin account, then add your Mealie URL and API key in **Settings**.
 
 No `.env` file is required — configuration is managed through the web UI.
 
@@ -104,7 +104,10 @@ CookDex starts with no required environment variables. A `.env` file is optional
 | `WEB_BIND_HOST` | `0.0.0.0` | Server bind address |
 | `WEB_BIND_PORT` | `4820` | Server port |
 | `WEB_BASE_PATH` | `/cookdex` | URL base path |
-| `WEB_COOKIE_SECURE` | `true` | Require HTTPS for session cookies |
+| `WEB_SSL` | `true` | HTTPS with auto-generated self-signed cert; set `false` behind a reverse proxy |
+| `WEB_SSL_CERTFILE` | | Path to your own TLS certificate (PEM) |
+| `WEB_SSL_KEYFILE` | | Path to your own TLS private key (PEM) |
+| `WEB_COOKIE_SECURE` | *(auto)* | Follows `WEB_SSL` by default; override only if needed |
 
 For headless or automated deployments:
 
@@ -145,7 +148,7 @@ See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including 
 | Host path | Container path | Purpose |
 |---|---|---|
 | `./configs` | `/app/configs` | Taxonomy JSON files |
-| `./cache` | `/app/cache` | SQLite state database and encryption key |
+| `./cache` | `/app/cache` | SQLite state database, encryption key, and TLS certificate |
 | `./logs` | `/app/logs` | Task run logs |
 | `./reports` | `/app/reports` | Audit/maintenance reports |
 
@@ -159,7 +162,7 @@ docker compose up -d --remove-orphans cookdex
 Verify health after update:
 
 ```bash
-curl http://localhost:4820/cookdex/api/v1/health
+curl -k https://localhost:4820/cookdex/api/v1/health
 ```
 
 ## Documentation

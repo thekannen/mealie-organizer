@@ -35,7 +35,11 @@ RUN addgroup --system app \
     && chmod +x /app/scripts/docker/entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${WEB_BIND_PORT:-4820}${WEB_BASE_PATH:-/cookdex}/api/v1/health || exit 1
+  CMD if [ "${WEB_SSL:-true}" = "false" ]; then \
+        curl -f http://localhost:${WEB_BIND_PORT:-4820}${WEB_BASE_PATH:-/cookdex}/api/v1/health; \
+      else \
+        curl -fk https://localhost:${WEB_BIND_PORT:-4820}${WEB_BASE_PATH:-/cookdex}/api/v1/health; \
+      fi || exit 1
 
 ENTRYPOINT ["/app/scripts/docker/entrypoint.sh"]
 CMD []

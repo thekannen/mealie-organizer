@@ -51,6 +51,12 @@ def main() -> int:
     configure_logging(log_file)
 
     app = create_app()
+
+    ssl_kwargs: dict[str, str] = {}
+    if settings.ssl_enabled and settings.ssl_certfile and settings.ssl_keyfile:
+        ssl_kwargs["ssl_certfile"] = str(settings.ssl_certfile)
+        ssl_kwargs["ssl_keyfile"] = str(settings.ssl_keyfile)
+
     uvicorn.run(
         app,
         host=settings.bind_host,
@@ -59,6 +65,7 @@ def main() -> int:
         log_config=None,
         # Disable the built-in per-request access log (we silenced it above too)
         access_log=False,
+        **ssl_kwargs,
     )
     return 0
 
