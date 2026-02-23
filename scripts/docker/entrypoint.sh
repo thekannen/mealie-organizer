@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Fix volume permissions on first launch ──────────────────────
+# Docker-created volume mounts are owned by root. Ensure the app
+# user can write to all writable directories before dropping privs.
+if [ "$(id -u)" = "0" ]; then
+  for dir in /app/cache /app/logs /app/reports; do
+    mkdir -p "$dir"
+    chown -R app:app "$dir"
+  done
+  exec gosu app "$0" "$@"
+fi
+
 TASK="${TASK:-webui-server}"
 RUN_MODE="${RUN_MODE:-once}"
 RUN_INTERVAL_SECONDS="${RUN_INTERVAL_SECONDS:-21600}"

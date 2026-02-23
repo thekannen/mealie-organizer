@@ -14,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash curl ca-certificates \
+    && apt-get install -y --no-install-recommends bash curl ca-certificates gosu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt pyproject.toml README.md VERSION ./
@@ -33,8 +33,6 @@ RUN addgroup --system app \
     && mkdir -p /app/cache /app/logs /app/reports /app/web/dist \
     && chown -R app:app /app \
     && chmod +x /app/scripts/docker/entrypoint.sh
-
-USER app
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:${WEB_BIND_PORT:-4820}${WEB_BASE_PATH:-/cookdex}/api/v1/health || exit 1
