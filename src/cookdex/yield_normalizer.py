@@ -313,13 +313,21 @@ class YieldNormalizer:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[done] Yield normalize report written to {self.report_file}", flush=True)
+        mode = "apply" if executable else "audit"
         print(
-            f'[summary] {{"total": {total}, "gaps": {len(actions)}, '
-            f'"applied": {applied}, "failed": {failed}, '
-            f'"mode": "{"apply" if executable else "audit"}"}}',
+            f"[done] {len(actions)} yield gap(s) found in {total} recipes — "
+            f"{applied} applied ({mode} mode)",
             flush=True,
         )
+        print("[summary] " + json.dumps({
+            "Total Recipes": total,
+            "Yield Gaps": len(actions),
+            "Set Yield Text": set_text,
+            "Set Servings": set_servings,
+            "Applied": applied,
+            "Failed": failed,
+            "Mode": mode,
+        }), flush=True)
         return report
 
 

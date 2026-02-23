@@ -228,14 +228,16 @@ class RecipeRuleTagger:
         total_tags = sum(stats["text_tags"].values())
         total_cats = sum(stats["text_categories"].values())
         print(
-            "[summary] " + json.dumps({
-                "assignments": total_tags + total_cats,
-                "text_tag_rules": len(stats["text_tags"]),
-                "text_category_rules": len(stats["text_categories"]),
-                "dry_run": self.dry_run,
-            }),
+            f"[done] {total_tags + total_cats} assignment(s) — "
+            f"{len(stats['text_tags'])} tag rule(s), {len(stats['text_categories'])} category rule(s)",
             flush=True,
         )
+        print("[summary] " + json.dumps({
+            "Total Assignments": total_tags + total_cats,
+            "Tag Rules": len(stats["text_tags"]),
+            "Category Rules": len(stats["text_categories"]),
+            "Dry Run": self.dry_run,
+        }), flush=True)
         if self.dry_run:
             print("[dry-run] No changes written.", flush=True)
         return stats

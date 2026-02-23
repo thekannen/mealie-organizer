@@ -245,16 +245,19 @@ def main() -> int:
     failed = [item for item in results if item.exit_code != 0]
     all_stages = [r.stage for r in results]
     failed_stages = [r.stage for r in failed]
+    passed_count = len(results) - len(failed)
     print(
-        "[summary] " + json.dumps({
-            "stages_run": len(results),
-            "passed": len(results) - len(failed),
-            "failed": len(failed),
-            "failed_stages": failed_stages,
-            "all_stages": all_stages,
-        }),
+        f"[done] {len(results)} stage(s) run — {passed_count} passed"
+        + (f", {len(failed)} failed: {', '.join(failed_stages)}" if failed else ""),
         flush=True,
     )
+    print("[summary] " + json.dumps({
+        "Stages Run": len(results),
+        "Passed": passed_count,
+        "Failed": len(failed),
+        "Failed Stages": ", ".join(failed_stages) if failed_stages else "none",
+        "All Stages": ", ".join(all_stages),
+    }), flush=True)
     if failed:
         return 1
     return 0

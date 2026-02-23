@@ -265,8 +265,21 @@ class FoodsCleanupManager:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"[done] Foods cleanup report written to {self.report_file}", flush=True)
-        print(f"[summary] {json.dumps(report['summary'], indent=2)}", flush=True)
+        s = report["summary"]
+        print(
+            f"[done] {s['merge_candidates_total']} merge candidate(s) across "
+            f"{s['duplicate_groups']} group(s) — {s['actions_applied']} applied ({s['mode']} mode)",
+            flush=True,
+        )
+        print("[summary] " + json.dumps({
+            "Foods Total": s["foods_total"],
+            "Duplicate Groups": s["duplicate_groups"],
+            "Merge Candidates": s["merge_candidates_total"],
+            "Applied": s["actions_applied"],
+            "Failed": s["actions_failed"],
+            "Skipped (checkpoint)": s["checkpoint_skipped"],
+            "Mode": s["mode"],
+        }), flush=True)
         return report
 
 

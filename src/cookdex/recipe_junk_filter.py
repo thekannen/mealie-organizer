@@ -232,13 +232,21 @@ class RecipeJunkFilter:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[done] Junk filter report written to {self.report_file}", flush=True)
+        mode = "apply" if executable else "audit"
+        top_reason = max(by_reason, key=by_reason.get) if by_reason else "none"
         print(
-            f'[summary] {{"total": {total}, "junk": {len(actions)}, '
-            f'"deleted": {deleted}, "failed": {failed}, '
-            f'"mode": "{"apply" if executable else "audit"}"}}',
+            f"[done] {len(actions)} junk recipe(s) found out of {total} — "
+            f"top reason: {top_reason}, {deleted} deleted ({mode} mode)",
             flush=True,
         )
+        print("[summary] " + json.dumps({
+            "Total Recipes": total,
+            "Junk Found": len(actions),
+            "Top Reason": top_reason,
+            "Deleted": deleted,
+            "Failed": failed,
+            "Mode": mode,
+        }), flush=True)
         return report
 
 

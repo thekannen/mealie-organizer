@@ -308,8 +308,21 @@ class UnitsCleanupManager:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"[done] Units cleanup report written to {self.report_file}", flush=True)
-        print(f"[summary] {json.dumps(report['summary'], indent=2)}", flush=True)
+        s = report["summary"]
+        print(
+            f"[done] {s['merge_candidates_total']} merge candidate(s) — "
+            f"{s['actions_applied']} applied ({s['mode']} mode)",
+            flush=True,
+        )
+        print("[summary] " + json.dumps({
+            "Units Total": s["units_total"],
+            "Alias Entries": s["alias_entries"],
+            "Merge Candidates": s["merge_candidates_total"],
+            "Applied": s["actions_applied"],
+            "Failed": s["actions_failed"],
+            "Unmapped Units": s["unmapped_units"],
+            "Mode": s["mode"],
+        }), flush=True)
         return report
 
 

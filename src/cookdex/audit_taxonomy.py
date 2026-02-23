@@ -183,8 +183,22 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print("[done] Taxonomy audit report written to", output_path)
-    print("[summary] " + json.dumps({**report["summary"], "problematic_tags": len(problematic_tags)}), flush=True)
+    print(
+        f"[done] {report['summary']['recipes']} recipes, {report['summary']['tags']} tags, "
+        f"{report['summary']['categories']} categories — {len(problematic_tags)} problematic, "
+        f"{report['summary']['unused_tags']} unused tags",
+        flush=True,
+    )
+    print("[summary] " + json.dumps({
+        "Recipes": report["summary"]["recipes"],
+        "Categories": report["summary"]["categories"],
+        "Tags": report["summary"]["tags"],
+        "Without Category": report["summary"]["recipes_without_categories"],
+        "Without Tags": report["summary"]["recipes_without_tags"],
+        "Unused Categories": report["summary"]["unused_categories"],
+        "Unused Tags": report["summary"]["unused_tags"],
+        "Problematic Tags": len(problematic_tags),
+    }), flush=True)
 
 
 if __name__ == "__main__":

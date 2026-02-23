@@ -253,24 +253,25 @@ class RecipeQualityAuditor:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[done] Quality audit report written to {self.report_file}", flush=True)
-
         g = tier_counts["gold"]
         s = tier_counts["silver"]
         b = tier_counts["bronze"]
+        top_gap = gaps[0]["dimension"] if gaps else "none"
         print(
-            "[summary] " + json.dumps({
-                "total": total,
-                "gold": g,
-                "gold_pct": gold_pct,
-                "silver": s,
-                "bronze": b,
-                "nutrition_pct": nutrition_pct,
-                "nutrition_sample": sample_n,
-                "top_gap": gaps[0]["dimension"] if gaps else None,
-            }),
+            f"[done] {total} recipes scored — {g} gold ({gold_pct}%), "
+            f"{s} silver, {b} bronze — top gap: {top_gap}",
             flush=True,
         )
+        print("[summary] " + json.dumps({
+            "Total Recipes": total,
+            "Gold (5-6/6)": g,
+            "Gold %": gold_pct,
+            "Silver (3-4/6)": s,
+            "Bronze (0-2/6)": b,
+            "Nutrition %": nutrition_pct,
+            "Nutrition Sample": sample_n,
+            "Top Gap": top_gap,
+        }), flush=True)
 
         return report
 

@@ -196,13 +196,20 @@ class RecipeDeduplicator:
 
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[done] Dedup report written to {self.report_file}", flush=True)
+        mode = "apply" if executable else "audit"
         print(
-            f'[summary] {{"total": {total}, "groups": {len(groups)}, '
-            f'"duplicates": {total_dupes}, "deleted": {deleted}, "failed": {failed}, '
-            f'"mode": "{"apply" if executable else "audit"}"}}',
+            f"[done] {total_dupes} duplicate(s) across {len(groups)} group(s) — "
+            f"{deleted} deleted ({mode} mode)",
             flush=True,
         )
+        print("[summary] " + json.dumps({
+            "Total Recipes": total,
+            "Duplicate Groups": len(groups),
+            "Duplicates Found": total_dupes,
+            "Deleted": deleted,
+            "Failed": failed,
+            "Mode": mode,
+        }), flush=True)
         return report
 
 
