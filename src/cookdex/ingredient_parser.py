@@ -50,6 +50,8 @@ class ParserRunConfig:
     output_dir: Path
     low_confidence_filename: str
     success_log_filename: str
+    scan_cache_filename: str
+    recheck_review: bool
 
 
 @dataclass
@@ -59,6 +61,7 @@ class ParserRunSummary:
     requires_review: int = 0
     skipped_empty: int = 0
     skipped_already_parsed: int = 0
+    skipped_cached: int = 0
     dropped_blank_ingredients: int = 0
 
 
@@ -161,6 +164,8 @@ def parser_run_config() -> ParserRunConfig:
             env_or_config("LOW_CONFIDENCE_FILE", "parser.low_confidence_file", "review_low_confidence.json")
         ),
         success_log_filename=str(env_or_config("SUCCESS_FILE", "parser.success_file", "parsed_success.log")),
+        scan_cache_filename=str(env_or_config("SCAN_CACHE_FILE", "parser.scan_cache_file", "parse_scan_cache.json")),
+        recheck_review=bool(env_or_config("PARSER_RECHECK_REVIEW", "parser.recheck_review", False, to_bool)),
     )
 
 
@@ -180,6 +185,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backoff", type=float, help="HTTP retry backoff factor")
     parser.add_argument("--dry-run", action="store_true", help="do not PATCH recipes")
     parser.add_argument("--output-dir", help="directory for output artifacts")
+    parser.add_argument(
+        "--recheck-review",
+        action="store_true",
+        help="Reprocess recipes cached as needs_review even when unchanged.",
+    )
     return parser
 
 
@@ -207,6 +217,8 @@ def apply_cli_overrides(config: ParserRunConfig, args: argparse.Namespace) -> Pa
         output_dir=Path(args.output_dir) if args.output_dir else config.output_dir,
         low_confidence_filename=config.low_confidence_filename,
         success_log_filename=config.success_log_filename,
+        scan_cache_filename=config.scan_cache_filename,
+        recheck_review=True if args.recheck_review else config.recheck_review,
     )
 
 
@@ -422,6 +434,111 @@ def normalize_parsed_block(
     return normalized, suspicious_reasons, dropped_blank
 
 
+def _bool_or_none(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _recipe_updated_at(recipe: dict[str, Any]) -> str:
+    for key in ("updatedAt", "dateUpdated", "createdAt"):
+        value = _str_or_none(recipe.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _load_scan_cache(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    cache: dict[str, dict[str, str]] = {}
+    for slug, payload in raw.items():
+        if not isinstance(slug, str) or not isinstance(payload, dict):
+            continue
+        updated_at = _str_or_none(payload.get("updated_at")) or ""
+        status = _str_or_none(payload.get("status")) or ""
+        checked_at = _str_or_none(payload.get("checked_at")) or ""
+        if not updated_at or not status:
+            continue
+        cache[slug] = {"updated_at": updated_at, "status": status, "checked_at": checked_at}
+    return cache
+
+
+def _save_scan_cache(path: Path, cache: dict[str, dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _set_scan_cache(
+    cache: dict[str, dict[str, str]],
+    *,
+    slug: str,
+    updated_at: str,
+    status: str,
+) -> None:
+    if not slug or not updated_at or not status:
+        return
+    cache[slug] = {
+        "updated_at": updated_at,
+        "status": status,
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def _build_candidate_slugs(
+    recipes: list[dict[str, Any]],
+    *,
+    cache: dict[str, dict[str, str]],
+    recheck_review: bool,
+) -> tuple[list[str], int, int, dict[str, str]]:
+    slugs: list[str] = []
+    skipped_cached = 0
+    missing_parse_flag = 0
+    updated_at_map: dict[str, str] = {}
+    for recipe in recipes:
+        if not isinstance(recipe, dict):
+            continue
+        slug = _str_or_none(recipe.get("slug"))
+        if not slug:
+            continue
+        updated_at = _recipe_updated_at(recipe)
+        updated_at_map[slug] = updated_at
+        parsed_flag = _bool_or_none(recipe.get("hasParsedIngredients"))
+        if parsed_flag is True:
+            continue
+        if parsed_flag is False:
+            slugs.append(slug)
+            continue
+
+        missing_parse_flag += 1
+        entry = cache.get(slug) or {}
+        cache_updated_at = _str_or_none(entry.get("updated_at"))
+        status = _str_or_none(entry.get("status")) or ""
+        if cache_updated_at and cache_updated_at == updated_at:
+            if status in {"already_parsed", "empty", "parsed"}:
+                skipped_cached += 1
+                continue
+            if status == "needs_review" and not recheck_review:
+                skipped_cached += 1
+                continue
+        slugs.append(slug)
+    return slugs, skipped_cached, missing_parse_flag, updated_at_map
+
+
 def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSummary:
     if not 0 < config.confidence_threshold <= 1:
         raise ValueError("confidence threshold must be between 0 and 1")
@@ -429,7 +546,21 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     all_recipes = client.get_recipes(per_page=config.page_size)
-    slugs = [r["slug"] for r in all_recipes if r.get("slug") and not r.get("hasParsedIngredients")]
+    cache_path = config.output_dir / config.scan_cache_filename
+    scan_cache = _load_scan_cache(cache_path)
+    slugs, skipped_cached, missing_parse_flag, updated_at_map = _build_candidate_slugs(
+        all_recipes,
+        cache=scan_cache,
+        recheck_review=config.recheck_review,
+    )
+    if missing_parse_flag:
+        print(
+            f"[info] /recipes payload missing hasParsedIngredients for {missing_parse_flag} recipes; "
+            "using local parse-scan cache to avoid full rescans.",
+            flush=True,
+        )
+    if skipped_cached:
+        print(f"[info] Candidate cache skipped {skipped_cached} unchanged recipe(s).", flush=True)
 
     if config.after_slug:
         if config.after_slug in slugs:
@@ -441,9 +572,10 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     if config.max_recipes is not None:
         slugs = slugs[: config.max_recipes]
 
-    summary = ParserRunSummary(total_candidates=len(slugs))
+    summary = ParserRunSummary(total_candidates=len(slugs), skipped_cached=skipped_cached)
     if not slugs:
         print("[done] No unparsed recipes found.", flush=True)
+        _save_scan_cache(cache_path, scan_cache)
         return summary
 
     reviews: list[dict[str, Any]] = []
@@ -462,10 +594,22 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
             raw_lines = extract_raw_lines(recipe)
         except AlreadyParsed:
             summary.skipped_already_parsed += 1
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="already_parsed",
+            )
             continue
 
         if not raw_lines:
             summary.skipped_empty += 1
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="empty",
+            )
             continue
 
         raw_lines, dropped_input = sanitize_raw_lines(raw_lines)
@@ -473,6 +617,12 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
             print(f"[info] {slug}: dropped {dropped_input} non-ingredient lines.", flush=True)
         if not raw_lines:
             summary.skipped_empty += 1
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="empty",
+            )
             continue
 
         parsed_block, parser_used, attempts = parse_with_fallback(
@@ -491,6 +641,12 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                     "attempts": attempts,
                 }
             )
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="needs_review",
+            )
             continue
 
         normalized, suspicious_reasons, dropped_blank = normalize_parsed_block(client, parsed_block)
@@ -506,6 +662,12 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                     "raw_lines": raw_lines,
                 }
             )
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="needs_review",
+            )
             continue
         if suspicious_reasons:
             reviews.append(
@@ -519,10 +681,22 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                     "suspicious_reasons": suspicious_reasons,
                 }
             )
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="needs_review",
+            )
             continue
 
         if config.dry_run:
             print(f"[plan] {slug}: parser={parser_used} ingredients={len(normalized)}", flush=True)
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="planned_parse",
+            )
         else:
             try:
                 client.patch_recipe_ingredients(slug, normalized)
@@ -537,7 +711,19 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                         "parsed": normalized,
                     }
                 )
+                _set_scan_cache(
+                    scan_cache,
+                    slug=slug,
+                    updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                    status="patch_failed",
+                )
                 continue
+            _set_scan_cache(
+                scan_cache,
+                slug=slug,
+                updated_at=updated_at_map.get(slug, _recipe_updated_at(recipe)),
+                status="parsed",
+            )
 
         successes.append(recipe_name)
         summary.parsed_successfully += 1
@@ -557,6 +743,7 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
         review_path.write_text(json.dumps(reviews, indent=2), encoding="utf-8")
         summary.requires_review = len(reviews)
         print(f"[warn] {len(reviews)} recipes need review. Wrote {review_path}", flush=True)
+    _save_scan_cache(cache_path, scan_cache)
     return summary
 
 
@@ -585,6 +772,7 @@ def main() -> int:
         "Needs Review": summary.requires_review,
         "Skipped (empty)": summary.skipped_empty,
         "Skipped (parsed)": summary.skipped_already_parsed,
+        "Skipped (cache)": summary.skipped_cached,
         "Dropped (blank)": summary.dropped_blank_ingredients,
     }), flush=True)
     return 0
