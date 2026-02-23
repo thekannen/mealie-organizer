@@ -1831,7 +1831,8 @@ async function main() {
     const githubLink = page.locator("a.link-btn").filter({ hasText: /github/i }).first();
     if (await githubLink.isVisible().catch(() => false)) {
       const githubHref = await githubLink.getAttribute("href").catch(() => "");
-      if (!githubHref || !new URL(githubHref).hostname.endsWith("github.com")) {
+      const _gh = new URL(githubHref).hostname;
+      if (!githubHref || (_gh !== "github.com" && !_gh.endsWith(".github.com"))) {
         throw new Error(`GitHub link href is invalid: '${githubHref}'`);
       }
       markControl("about", "about:github-link-href");
