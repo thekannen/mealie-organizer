@@ -2351,6 +2351,11 @@ button.danger {
   color: var(--accent-strong);
 }
 
+.sponsor-btn:hover {
+  border-color: #db61a2;
+  color: #db61a2;
+}
+
 .auth-shell {
   min-height: 100vh;
   display: grid;

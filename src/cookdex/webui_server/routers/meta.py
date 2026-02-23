@@ -4,6 +4,7 @@ import asyncio
 import platform
 import sys
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -20,6 +21,31 @@ _HELP_DOCS: tuple[dict[str, str], ...] = (
     {"id": "data-pipeline", "title": "Data Maintenance Pipeline", "group": "Reference", "file": "DATA_MAINTENANCE.md"},
     {"id": "parser-migration", "title": "Parser Configuration", "group": "Reference", "file": "PARSER_MIGRATION.md"},
 )
+
+
+_GITHUB_URL = "https://github.com/thekannen/cookdex"
+_FUNDING_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / ".github" / "FUNDING.yml"
+
+
+def _read_project_links() -> dict[str, str]:
+    links: dict[str, str] = {"github": _GITHUB_URL}
+    try:
+        text = _FUNDING_PATH.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, _, value = line.partition(":")
+            value = value.strip()
+            if key.strip() == "github" and value:
+                links["sponsor"] = f"https://github.com/sponsors/{value}"
+                break
+            if key.strip() in {"ko_fi", "buy_me_a_coffee", "custom"} and value:
+                links["sponsor"] = value if value.startswith("http") else f"https://{value}"
+                break
+    except FileNotFoundError:
+        pass
+    return links
 
 
 def _percent(part: int, total: int) -> int:
@@ -191,10 +217,7 @@ async def get_about_meta(
             "schedules": len(services.scheduler.list_schedules()),
             "config_files": len(services.config_files.list_files()),
         },
-        "links": {
-            "github": "https://github.com/thekannen/cookdex",
-            "sponsor": "https://github.com/sponsors/thekannen",
-        },
+        "links": _read_project_links(),
     }
 
 
