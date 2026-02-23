@@ -1,11 +1,12 @@
 {
   "name": "cookdex-web",
   "private": true,
-  "version": "2026.2.106",
+  "version": "2026.2.107",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "python3 ../scripts/bump_version.py && vite build",
+    "build:docker": "vite build",
     "preview": "vite preview",
     "qa:smoke": "node scripts/webui_smoke_playwright.mjs"
   },
