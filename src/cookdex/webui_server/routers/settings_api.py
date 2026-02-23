@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -294,8 +295,6 @@ _DB_ENV_KEYS = (
 
 
 def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
-    import os
-
     db_type_val = runtime_env.get("MEALIE_DB_TYPE", "").strip().lower()
     if not db_type_val:
         return False, "MEALIE_DB_TYPE is not configured. Set it to 'postgres' or 'sqlite'."
@@ -352,6 +351,16 @@ _MEALIE_ENV_MAP: dict[str, str] = {
 }
 
 
+def _validated_ssh_key_path(raw_path: str) -> str:
+    """Resolve an SSH key path and ensure it lives inside ~/.ssh/."""
+    expanded = os.path.expanduser(raw_path)
+    resolved = os.path.realpath(expanded)
+    ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
+    if not (resolved == ssh_dir or resolved.startswith(ssh_dir + os.sep)):
+        raise ValueError("SSH key path must be inside ~/.ssh/")
+    return resolved
+
+
 def _ssh_exec(
     host: str,
     user: str,
@@ -361,21 +370,48 @@ def _ssh_exec(
     timeout: int = 15,
 ) -> tuple[str, str, int]:
     """Run a single command over SSH and return (stdout, stderr, exit_code)."""
-    import os
-
     import paramiko
 
-    expanded_key = os.path.expanduser(key_path)
-    if not os.path.isfile(expanded_key):
-        raise FileNotFoundError(f"SSH key not found: {expanded_key}")
+    resolved_key = _validated_ssh_key_path(key_path)
+    if not os.path.isfile(resolved_key):
+        raise FileNotFoundError("SSH key not found.")
+
+    known_hosts = os.path.join(
+        os.path.realpath(os.path.expanduser("~/.ssh")), "known_hosts",
+    )
+
+    class _TofuPolicy(paramiko.MissingHostKeyPolicy):
+        """Trust-on-first-use: persist new host keys, reject changes."""
+
+        def missing_host_key(
+            self,
+            client: paramiko.SSHClient,
+            hostname: str,
+            key: paramiko.PKey,
+        ) -> None:
+            host_keys = paramiko.HostKeys()
+            if os.path.isfile(known_hosts):
+                host_keys.load(known_hosts)
+            entry = host_keys.lookup(hostname)
+            if entry is not None:
+                stored = entry.get(key.get_name())
+                if stored is not None:
+                    if stored == key:
+                        return
+                    raise paramiko.SSHException(
+                        f"Host key for '{hostname}' has changed."
+                    )
+            host_keys.add(hostname, key.get_name(), key)
+            os.makedirs(os.path.dirname(known_hosts), exist_ok=True)
+            host_keys.save(known_hosts)
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(_TofuPolicy())
     try:
         client.connect(
             hostname=host,
             username=user,
-            key_filename=expanded_key,
+            key_filename=resolved_key,
             timeout=timeout,
             allow_agent=False,
             look_for_keys=False,
@@ -427,10 +463,10 @@ def _detect_db_credentials(
     # Strategy 1: find mealie container via docker ps
     try:
         out, _err, code = _ssh_exec(ssh_host, ssh_user, ssh_key, "docker ps --format '{{.Names}}'")
-    except FileNotFoundError as exc:
-        return False, str(exc), {}
-    except Exception as exc:
-        return False, f"SSH connection failed: {type(exc).__name__}.", {}
+    except (FileNotFoundError, ValueError):
+        return False, "SSH key not found or path not allowed. Check your SSH key setting.", {}
+    except Exception:
+        return False, "SSH connection failed. Check SSH host, user, and key settings.", {}
 
     if code != 0:
         return False, "Could not list Docker containers. Is Docker installed and accessible?", {}
@@ -492,5 +528,5 @@ async def detect_db_settings(
     try:
         ok, detail, detected = _detect_db_credentials(ssh_host, ssh_user, ssh_key)
         return {"ok": ok, "detail": detail, "detected": detected}
-    except Exception as exc:
-        return {"ok": False, "detail": f"Detection failed: {type(exc).__name__}.", "detected": {}}
+    except Exception:
+        return {"ok": False, "detail": "Detection failed unexpectedly.", "detected": {}}
