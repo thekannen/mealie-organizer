@@ -51,6 +51,55 @@ export const CONFIG_LABELS = {
 
 export const TAXONOMY_FILE_NAMES = ["categories", "cookbooks", "labels", "tags", "tools", "units_aliases"];
 
+export const HELP_SETUP_GUIDES = [
+  {
+    id: "mealie-connection",
+    title: "Find your Mealie URL and API Key",
+    icon: "link",
+    what: "CookDex needs two values to connect to your Mealie server: the API base URL and an API key with write access.",
+    steps: [
+      "Your Mealie URL is the address you use to open Mealie in a browser, followed by /api. For example: http://192.168.1.50:9925/api or http://mealie:9000/api (if CookDex and Mealie share a Docker network).",
+      "Log into Mealie and click your user icon in the top-right corner.",
+      "Open your user profile or account settings page.",
+      "Scroll to API Tokens and click Create.",
+      "Give the token a name (e.g. 'cookdex') and click Generate.",
+      "Copy the token immediately \u2014 Mealie only shows it once.",
+      "Paste both values into CookDex Settings under the Connection group, then click Test Mealie to verify.",
+    ],
+    tip: "If CookDex runs in Docker alongside Mealie, use the Docker service name (e.g. http://mealie:9000/api) instead of localhost.",
+  },
+  {
+    id: "openai-api-key",
+    title: "Get an OpenAI API Key",
+    icon: "wand",
+    what: "An OpenAI API key is required if you want to use the AI provider for recipe categorization. This is optional \u2014 rule-based categorization works without it.",
+    steps: [
+      "Go to platform.openai.com and sign in (or create an account).",
+      "Open the API Keys page from the left sidebar.",
+      "Click Create new secret key, give it a name, and click Create.",
+      "Copy the key immediately \u2014 OpenAI only shows it once.",
+      "In CookDex Settings, paste the key into the OpenAI API Key field under the AI group.",
+      "Click Test OpenAI to verify it works.",
+    ],
+    tip: "OpenAI charges per API call. The default model (gpt-4o-mini) is inexpensive \u2014 categorizing 1,000 recipes typically costs under $0.50.",
+  },
+  {
+    id: "mealie-db-credentials",
+    title: "Find your Mealie Database Credentials",
+    icon: "database",
+    what: "Direct DB access is optional but dramatically faster for bulk tasks. You need the database credentials from your Mealie deployment.",
+    steps: [
+      "Open the docker-compose.yml (or .env file) used to run your Mealie server.",
+      "Look for Postgres environment variables: POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB (Mealie defaults to mealie for the database name).",
+      "In CookDex Settings under the Direct DB group, set DB Type to postgres.",
+      "Enter the host (the server IP or Docker service name), port (default 5432), database name, username, and password.",
+      "If Postgres is only reachable via SSH (e.g. a remote server), also fill in SSH Tunnel Host, SSH User, and SSH Key Path.",
+      "Click Test DB to verify the connection.",
+    ],
+    tip: "For Mealie Docker installs using SQLite instead of Postgres, set DB Type to sqlite and provide the path to mealie.db (usually /app/data/mealie.db inside the Mealie container).",
+  },
+];
+
 export const HELP_FAQ = [
   {
     question: "Can I dry-run before applying changes?",

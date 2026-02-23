@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import wordmark from "./assets/CookDex_wordmark.png";
 import emblem from "./assets/CookDex_light.png";
 
-import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING, HELP_TASK_GUIDES } from "./constants";
+import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING, HELP_TASK_GUIDES, HELP_SETUP_GUIDES } from "./constants";
 import {
   api,
   buildDefaultOptionValues,
@@ -3372,6 +3372,36 @@ export default function App() {
     return (
       <section className="page-grid settings-grid help-grid">
         <div className="stacked-cards">
+          <article className="card">
+            <h3>Quick Guides</h3>
+            <p className="muted">How to find the credentials and keys CookDex needs.</p>
+
+            <div className="accordion-stack">
+              {HELP_SETUP_GUIDES.map((guide) => (
+                <details className="accordion" key={guide.id}>
+                  <summary>
+                    <Icon name={guide.icon || "info"} />
+                    <span>{guide.title}</span>
+                    <Icon name="chevron" />
+                  </summary>
+                  <div className="doc-preview">
+                    <p style={{ fontSize: "0.82rem", marginBottom: "0.5rem" }}>{guide.what}</p>
+                    <ol style={{ margin: "0 0 0.6rem", paddingLeft: "1.2rem" }}>
+                      {guide.steps.map((step, i) => (
+                        <li key={i} className="muted" style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}>{step}</li>
+                      ))}
+                    </ol>
+                    {guide.tip && (
+                      <p className="muted" style={{ fontSize: "0.8rem", borderLeft: "3px solid var(--accent)", paddingLeft: "0.6rem", margin: 0 }}>
+                        <strong>Tip:</strong> {guide.tip}
+                      </p>
+                    )}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </article>
+
           <article className="card">
             <h3>Task Guides</h3>
             <p className="muted">Step-by-step instructions for every available task.</p>
