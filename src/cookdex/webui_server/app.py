@@ -152,6 +152,6 @@ def create_app() -> FastAPI:
     @app.exception_handler(RuntimeError)
     async def runtime_error_handler(request: Request, exc: RuntimeError) -> JSONResponse:
         logger.exception("Unhandled RuntimeError on %s %s: %s", request.method, request.url.path, exc)
-        return JSONResponse(status_code=500, content={"error": "runtime_error", "detail": str(exc)})
+        return JSONResponse(status_code=500, content={"error": "runtime_error", "detail": "An internal error occurred."})
 
     return app

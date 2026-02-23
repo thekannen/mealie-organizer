@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,15 +20,36 @@ from ..schemas import ProviderConnectionTestRequest, SettingsUpdateRequest
 router = APIRouter(tags=["settings"])
 
 
+def _validate_service_url(url: str) -> str:
+    """Validate that a URL uses http/https and is not a cloud metadata endpoint."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("URL must use http or https.")
+    host = (parsed.hostname or "").lower()
+    # Block cloud metadata endpoints (AWS, GCP, Azure)
+    _blocked = {"169.254.169.254", "metadata.google.internal"}
+    if host in _blocked:
+        raise ValueError("Requests to cloud metadata endpoints are not allowed.")
+    return url
+
+
+def _safe_request_error(exc: requests.RequestException) -> str:
+    """Return a user-friendly error without leaking stack traces."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status is not None:
+        return f"Request failed with HTTP {status}."
+    return f"Connection failed: {type(exc).__name__}."
+
+
 def _test_mealie_connection(url: str, api_key: str) -> tuple[bool, str]:
-    base_url = url.rstrip("/")
+    base_url = _validate_service_url(url.rstrip("/"))
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
     try:
         response = requests.get(f"{base_url}/users/self", headers=headers, timeout=12)
         response.raise_for_status()
         return True, "Mealie connection validated."
     except requests.RequestException as exc:
-        return False, str(exc)
+        return False, _safe_request_error(exc)
 
 
 def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
@@ -48,11 +70,11 @@ def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
         response.raise_for_status()
         return True, "OpenAI API key validated."
     except requests.RequestException as exc:
-        return False, str(exc)
+        return False, _safe_request_error(exc)
 
 
 def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
-    base_url = url.strip().rstrip("/")
+    base_url = _validate_service_url(url.strip().rstrip("/"))
     if not base_url:
         return False, "Ollama URL is required."
 
@@ -73,8 +95,10 @@ def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
             if not found:
                 return True, f"Connection OK, model '{model}' was not listed by Ollama."
         return True, "Ollama connection validated."
-    except requests.RequestException as exc:
+    except ValueError as exc:
         return False, str(exc)
+    except requests.RequestException as exc:
+        return False, _safe_request_error(exc)
 
 
 @router.get("/settings")
@@ -162,6 +186,10 @@ def _list_openai_models(api_key: str) -> list[str]:
 def _list_ollama_models(url: str) -> list[str]:
     base_url = (url or "").strip().rstrip("/")
     if not base_url:
+        return []
+    try:
+        _validate_service_url(base_url)
+    except ValueError:
         return []
     if base_url.endswith("/api"):
         tags_url = f"{base_url}/tags"
@@ -288,7 +316,7 @@ def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
             return True, f"DB connection validated. Group: {group_id[:8]}\u2026"
         return True, "DB connection validated (no household found, but connection succeeded)."
     except Exception as exc:
-        return False, str(exc)
+        return False, f"DB connection failed: {type(exc).__name__}."
     finally:
         for key, val in saved.items():
             if val is None:

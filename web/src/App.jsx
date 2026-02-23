@@ -1342,11 +1342,12 @@ export default function App() {
     const lower = "abcdefghijkmnopqrstuvwxyz";
     const digits = "23456789";
     const all = upper + lower + digits + "!@#$%";
-    const pick = (s) => s[Math.floor(Math.random() * s.length)];
+    const rng = (max) => crypto.getRandomValues(new Uint32Array(1))[0] % max;
+    const pick = (s) => s[rng(s.length)];
     const required = [pick(upper), pick(lower), pick(digits)];
     for (let i = required.length; i < 14; i += 1) required.push(pick(all));
     for (let i = required.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = rng(i + 1);
       [required[i], required[j]] = [required[j], required[i]];
     }
     setNewUserPassword(required.join(""));
