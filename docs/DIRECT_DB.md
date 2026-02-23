@@ -47,7 +47,7 @@ MEALIE_PG_PASS=your_mealie_db_password
 
 # SSH tunnel target
 MEALIE_DB_SSH_HOST=192.168.1.100     # IP or hostname of the Mealie server
-MEALIE_DB_SSH_USER=your_user             # SSH user on that host
+MEALIE_DB_SSH_USER=your_ssh_user     # SSH user on that host
 MEALIE_DB_SSH_KEY=~/.ssh/cookdex_mealie   # path to your private key
 ```
 
@@ -60,15 +60,15 @@ ssh-keygen -t ed25519 -f ~/.ssh/cookdex_mealie -N ""
 Copy the public key to the Mealie host's `authorized_keys`:
 
 ```bash
-ssh-copy-id -i ~/.ssh/cookdex_mealie.pub aaron@192.168.1.100
+ssh-copy-id -i ~/.ssh/cookdex_mealie.pub your_ssh_user@192.168.1.100
 # or manually:
-cat ~/.ssh/cookdex_mealie.pub | ssh aaron@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+cat ~/.ssh/cookdex_mealie.pub | ssh your_ssh_user@192.168.1.100 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ```
 
 Verify access:
 
 ```bash
-ssh -i ~/.ssh/cookdex_mealie aaron@192.168.1.100 echo OK
+ssh -i ~/.ssh/cookdex_mealie your_ssh_user@192.168.1.100 echo OK
 ```
 
 #### Finding your DB credentials
