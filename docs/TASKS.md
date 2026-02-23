@@ -102,9 +102,9 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 | `dry_run` | boolean | `true` | Preview changes without writing anything |
 | `run_dedup` | boolean | `true` | Remove recipes with duplicate source URLs |
 | `run_junk` | boolean | `true` | Filter listicles, how-to articles, and non-recipe content |
-| `run_names` | boolean | `true` | Normalize slug-derived recipe names |
+| `run_names` | boolean | `true` | Normalize lowercase/unformatted recipe names |
 | `reason` | string | *(all)* | Only scan a specific junk category: `how_to`, `listicle`, `digest`, `keyword`, `utility`, `bad_instructions` |
-| `force_all` | boolean | `false` | Normalize all recipe names, not just slug-derived ones |
+| `force_all` | boolean | `false` | Normalize all recipe names, not just lowercase/unformatted ones |
 
 ### ingredient-parse options
 

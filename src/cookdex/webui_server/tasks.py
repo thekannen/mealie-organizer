@@ -510,7 +510,7 @@ class TaskRegistry:
                         "Normalize All Names",
                         "boolean",
                         default=False,
-                        help_text="Apply name normalization to all recipes, not just those with slug-derived names.",
+                        help_text="Apply name normalization to all recipes, not just lowercase/unformatted names.",
                         hidden_when={"key": "run_names", "value": False},
                     ),
                 ],

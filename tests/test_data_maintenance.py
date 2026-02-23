@@ -55,3 +55,8 @@ def test_run_pipeline_continue_on_error(monkeypatch):
     )
     assert [item.stage for item in results] == ["parse", "foods", "units"]
     assert calls == ["parse", "foods", "units"]
+
+
+def test_fmt_elapsed_rolls_over_rounded_seconds():
+    assert data_maintenance._fmt_elapsed(119.6) == "2m 0s"
+    assert data_maintenance._fmt_elapsed(179.6) == "3m 0s"

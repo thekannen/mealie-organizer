@@ -43,6 +43,7 @@ _PREFIX_PATTERNS: list[re.Pattern] = [
 ]
 _SUFFIX_PATTERN = re.compile(r"\s+recipe$", re.IGNORECASE)
 _HAS_UPPERCASE_RE = re.compile(r"[A-Z]")
+_WORD_EDGE_PUNCTUATION = ",:;!?\"'()-"
 
 # Words that stay lowercase in title case (except when first or last).
 _SMALL_WORDS: frozenset[str] = frozenset({
@@ -64,10 +65,24 @@ _ACRONYMS: dict[str, str] = {
 def _title_case_word(word: str) -> str:
     """Capitalize a single word, handling apostrophes correctly."""
     if "'" in word:
-        # "valentine's" → "Valentine's",  "don't" → "Don't"
-        parts = word.split("'", 1)
-        return parts[0].capitalize() + "'" + parts[1]
+        # "valentine's" -> "Valentine's", "don't" -> "Don't", "o'brien" -> "O'Brien"
+        head, tail = word.split("'", 1)
+        cased_head = head.capitalize()
+        if len(head) == 1 and tail and tail[0].isalpha():
+            tail = tail[0].upper() + tail[1:]
+        return cased_head + "'" + tail
     return word.capitalize()
+
+
+def _split_word_punctuation(word: str) -> tuple[str, str, str]:
+    """Return (leading_punct, core, trailing_punct) for *word*."""
+    start = 0
+    end = len(word)
+    while start < end and word[start] in _WORD_EDGE_PUNCTUATION:
+        start += 1
+    while end > start and word[end - 1] in _WORD_EDGE_PUNCTUATION:
+        end -= 1
+    return word[:start], word[start:end], word[end:]
 
 
 def _smart_title_case(text: str) -> str:
@@ -83,14 +98,21 @@ def _smart_title_case(text: str) -> str:
     result: list[str] = []
     last_idx = len(words) - 1
     for i, word in enumerate(words):
-        # Strip surrounding punctuation for dictionary lookups.
-        stripped = word.strip(",:;!?\"'()-")
-        if stripped in _ACRONYMS:
-            result.append(word.replace(stripped, _ACRONYMS[stripped]))
-        elif i == 0 or i == last_idx or stripped not in _SMALL_WORDS:
-            result.append(_title_case_word(word))
+        leading_punct, core, trailing_punct = _split_word_punctuation(word)
+        if not core:
+            result.append(word)
+            continue
+
+        acronym_key = core.split("'", 1)[0]
+        if acronym_key in _ACRONYMS:
+            # Keep possessives/contractions after the acronym (e.g., "bbq's" -> "BBQ's").
+            core_value = _ACRONYMS[acronym_key] + core[len(acronym_key):]
+        elif i == 0 or i == last_idx or core not in _SMALL_WORDS:
+            core_value = _title_case_word(core)
         else:
-            result.append(word)  # already lowercase
+            core_value = core  # already lowercase
+
+        result.append(f"{leading_punct}{core_value}{trailing_punct}")
     return " ".join(result)
 
 
@@ -196,7 +218,7 @@ class RecipeNameNormalizer:
             if action:
                 actions.append(action)
 
-        mode_label = "all recipes" if self.force_all else "slug-derived names only"
+        mode_label = "all recipes" if self.force_all else "lowercase names only"
         print(
             f"[start] {total} recipes scanned ({mode_label}) → {len(actions)} names to normalize",
             flush=True,
@@ -226,7 +248,7 @@ class RecipeNameNormalizer:
                 "applied": applied,
                 "failed": failed,
                 "mode": "apply" if executable else "audit",
-                "scope": "all" if self.force_all else "slug-derived",
+                "scope": "all" if self.force_all else "lowercase-only",
             },
             "actions": action_log,
         }
@@ -234,7 +256,7 @@ class RecipeNameNormalizer:
         self.report_file.parent.mkdir(parents=True, exist_ok=True)
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
         mode = "apply" if executable else "audit"
-        scope = "all" if self.force_all else "slug-derived"
+        scope = "all" if self.force_all else "lowercase-only"
         print(
             f"[done] {len(actions)} name(s) to normalize ({scope}) — "
             f"{applied} applied ({mode} mode)",
@@ -252,13 +274,15 @@ class RecipeNameNormalizer:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Normalize recipe names derived from URL slugs.")
+    parser = argparse.ArgumentParser(
+        description="Normalize recipe names that appear unformatted (lowercase-only by default)."
+    )
     parser.add_argument("--apply", action="store_true", help="Write name changes to Mealie.")
     parser.add_argument(
         "--all",
         dest="force_all",
         action="store_true",
-        help="Normalize all recipes, not just those whose names match their slugs.",
+        help="Normalize all recipes, not just lowercase/unformatted names.",
     )
     parser.add_argument(
         "--workers",

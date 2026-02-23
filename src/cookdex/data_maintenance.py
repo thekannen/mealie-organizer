@@ -146,8 +146,11 @@ def _fmt_elapsed(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds:.1f}s"
     minutes = int(seconds // 60)
-    secs = seconds % 60
-    return f"{minutes}m {secs:.0f}s"
+    secs = int(round(seconds - (minutes * 60)))
+    if secs == 60:
+        minutes += 1
+        secs = 0
+    return f"{minutes}m {secs}s"
 
 
 def run_stage(
