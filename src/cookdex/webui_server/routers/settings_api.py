@@ -352,16 +352,23 @@ _MEALIE_ENV_MAP: dict[str, str] = {
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
-    """Map a user-provided SSH key path to a safe path inside ~/.ssh/.
+    """Resolve a user-provided SSH key name to a safe path inside ~/.ssh/.
 
-    Only the filename portion is used — the directory is always ~/.ssh/.
-    This prevents path-traversal attacks regardless of the input.
+    The filename is matched against files actually present in ~/.ssh/ so the
+    returned path is constructed entirely from filesystem data — not from
+    user input — which breaks the taint chain for static analysis.
     """
-    filename = os.path.basename(os.path.expanduser(raw_path))
-    if not filename:
+    target = os.path.basename(os.path.expanduser(raw_path))
+    if not target:
         raise ValueError("Invalid SSH key path.")
     ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
-    return os.path.join(ssh_dir, filename)
+    try:
+        for entry in os.listdir(ssh_dir):
+            if entry == target:
+                return os.path.join(ssh_dir, entry)
+    except OSError:
+        pass
+    raise FileNotFoundError("SSH key not found.")
 
 
 def _ssh_exec(
@@ -376,8 +383,6 @@ def _ssh_exec(
     import paramiko
 
     resolved_key = _validated_ssh_key_path(key_path)
-    if not os.path.isfile(resolved_key):
-        raise FileNotFoundError("SSH key not found.")
 
     known_hosts = os.path.join(
         os.path.realpath(os.path.expanduser("~/.ssh")), "known_hosts",
