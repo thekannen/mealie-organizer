@@ -1054,7 +1054,8 @@ tbody tr:hover {
   border: 1px solid #40362f;
   border-radius: 7px;
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
+  background: #1f1b19;
 }
 
 .log-summary-head {
@@ -1070,6 +1071,30 @@ tbody tr:hover {
 }
 
 .log-summary-head .ui-icon { width: 12px; height: 12px; flex-shrink: 0; }
+
+.log-summary-table-wrap {
+  overflow-x: auto;
+}
+
+.log-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.log-summary-table-row th,
+.log-summary-table-row td {
+  border-bottom: 1px solid #2e2622;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.73rem;
+  line-height: 1.4;
+  background: transparent;
+}
+
+.log-summary-table-row:last-child th,
+.log-summary-table-row:last-child td {
+  border-bottom: none;
+}
 
 .log-summary-grid {
   display: grid;
@@ -1094,7 +1119,10 @@ tbody tr:hover {
   font-size: 0.71rem;
   color: #8a7d73;
   text-transform: capitalize;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  width: 56%;
 }
 
 .log-summary-val {
@@ -1103,6 +1131,128 @@ tbody tr:hover {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: #e8ddd5;
+}
+
+/* Data-maintenance stage accordion */
+.log-stage-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.3rem 0 0.5rem;
+}
+
+.log-stage-card {
+  border: 1px solid #2e2a27;
+  border-radius: 8px;
+  background: #1a1816;
+  overflow: hidden;
+}
+
+.log-stage-card > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.log-stage-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.log-stage-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid transparent;
+}
+
+.log-stage-card[open] .log-stage-summary {
+  border-bottom-color: #2e2622;
+}
+
+.log-stage-summary-left {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.log-stage-summary-left .ui-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.log-stage-name {
+  font-size: 0.77rem;
+  font-weight: 600;
+  color: #efe4da;
+}
+
+.log-stage-id {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.65rem;
+  color: #7b6f67;
+  background: #25201d;
+  border: 1px solid #3a312c;
+  border-radius: 999px;
+  padding: 0.04rem 0.35rem;
+}
+
+.log-stage-summary-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #8a7d73;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.68rem;
+  flex-shrink: 0;
+}
+
+.log-stage-state {
+  color: #cfc1b8;
+}
+
+.log-stage-elapsed,
+.log-stage-exit {
+  color: #8a7d73;
+}
+
+.log-stage-chevron {
+  font-size: 0.55rem;
+  color: #7d6f65;
+  transition: transform 0.15s ease;
+}
+
+.log-stage-card[open] .log-stage-chevron {
+  transform: rotate(90deg);
+}
+
+.log-stage-body {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.52rem 0.7rem 0.6rem;
+}
+
+.log-stage-status-done .log-stage-summary-left .ui-icon {
+  color: #7ecb95;
+}
+
+.log-stage-status-failed .log-stage-summary-left .ui-icon {
+  color: #e28272;
+}
+
+.log-stage-status-running .log-stage-summary-left .ui-icon {
+  color: #f47a2a;
+  animation: log-spin 1s linear infinite;
+}
+
+.log-stage-status-pending .log-stage-summary-left .ui-icon {
+  color: #8a7d73;
+}
+
+.log-stage-status-unknown .log-stage-summary-left .ui-icon {
+  color: #d4a343;
 }
 
 /* Verbose / detail lines */
