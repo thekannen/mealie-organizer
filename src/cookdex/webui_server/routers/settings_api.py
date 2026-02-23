@@ -318,7 +318,7 @@ def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
             return True, f"DB connection validated. Group: {group_id[:8]}\u2026"
         return True, "DB connection validated (no household found, but connection succeeded)."
     except Exception as exc:
-        return False, f"DB connection failed: {type(exc).__name__}."
+        return False, f"DB connection failed: {type(exc).__name__}: {exc}"
     finally:
         for key, val in saved.items():
             if val is None:
