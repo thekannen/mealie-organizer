@@ -15,7 +15,7 @@ from ..deps import (
     require_session,
 )
 from ..env_catalog import ENV_SPEC_BY_KEY
-from ..schemas import ProviderConnectionTestRequest, SettingsUpdateRequest
+from ..schemas import DbDetectRequest, ProviderConnectionTestRequest, SettingsUpdateRequest
 
 router = APIRouter(tags=["settings"])
 
@@ -335,3 +335,162 @@ async def test_db_settings(
     runtime_env = build_runtime_env(services.state, services.cipher)
     ok, detail = _test_db_connection(runtime_env)
     return {"ok": ok, "detail": detail}
+
+
+# ------------------------------------------------------------------
+# DB auto-detect via SSH
+# ------------------------------------------------------------------
+
+# Mealie container env vars → CookDex env var names
+_MEALIE_ENV_MAP: dict[str, str] = {
+    "POSTGRES_USER": "MEALIE_PG_USER",
+    "POSTGRES_PASSWORD": "MEALIE_PG_PASS",
+    "POSTGRES_DB": "MEALIE_PG_DB",
+    "POSTGRES_SERVER": "MEALIE_PG_HOST",
+    "POSTGRES_PORT": "MEALIE_PG_PORT",
+    "DB_ENGINE": "MEALIE_DB_TYPE",
+}
+
+
+def _ssh_exec(
+    host: str,
+    user: str,
+    key_path: str,
+    command: str,
+    *,
+    timeout: int = 15,
+) -> tuple[str, str, int]:
+    """Run a single command over SSH and return (stdout, stderr, exit_code)."""
+    import os
+
+    import paramiko
+
+    expanded_key = os.path.expanduser(key_path)
+    if not os.path.isfile(expanded_key):
+        raise FileNotFoundError(f"SSH key not found: {expanded_key}")
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=host,
+            username=user,
+            key_filename=expanded_key,
+            timeout=timeout,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        exit_code = stdout.channel.recv_exit_status()
+        return (
+            stdout.read().decode("utf-8", errors="replace"),
+            stderr.read().decode("utf-8", errors="replace"),
+            exit_code,
+        )
+    finally:
+        client.close()
+
+
+def _parse_mealie_env(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE lines from Mealie container env and map to CookDex keys."""
+    import re
+
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        cookdex_key = _MEALIE_ENV_MAP.get(key)
+        if cookdex_key and value:
+            result[cookdex_key] = value
+
+    # Infer DB type from presence of Postgres vars if DB_ENGINE not set
+    if "MEALIE_DB_TYPE" not in result and "MEALIE_PG_USER" in result:
+        result["MEALIE_DB_TYPE"] = "postgres"
+
+    # If POSTGRES_SERVER is a Docker service name, map to localhost (tunnel handles routing)
+    pg_host = result.get("MEALIE_PG_HOST", "")
+    if pg_host and not re.match(r"^(\d{1,3}\.){3}\d{1,3}$|^localhost$|^\[", pg_host):
+        result["MEALIE_PG_HOST"] = "localhost"
+
+    return result
+
+
+def _detect_db_credentials(
+    ssh_host: str, ssh_user: str, ssh_key: str,
+) -> tuple[bool, str, dict[str, str]]:
+    """SSH into the Mealie host and auto-discover database credentials."""
+
+    # Strategy 1: find mealie container via docker ps
+    try:
+        out, _err, code = _ssh_exec(ssh_host, ssh_user, ssh_key, "docker ps --format '{{.Names}}'")
+    except FileNotFoundError as exc:
+        return False, str(exc), {}
+    except Exception as exc:
+        return False, f"SSH connection failed: {type(exc).__name__}: {exc}", {}
+
+    if code != 0:
+        return False, "Could not list Docker containers. Is Docker installed and accessible?", {}
+
+    # Find container with "mealie" in the name
+    containers = [name.strip() for name in out.splitlines() if name.strip()]
+    mealie_containers = [c for c in containers if "mealie" in c.lower() and "cookdex" not in c.lower()]
+
+    if not mealie_containers:
+        return False, f"No Mealie container found. Running containers: {', '.join(containers) or '(none)'}", {}
+
+    container = mealie_containers[0]
+
+    # Strategy 2: docker inspect
+    try:
+        out, _err, code = _ssh_exec(
+            ssh_host, ssh_user, ssh_key,
+            f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {container}",
+        )
+        if code == 0 and out.strip():
+            detected = _parse_mealie_env(out)
+            if detected:
+                db_type = detected.get("MEALIE_DB_TYPE", "postgres")
+                return True, f"Detected {db_type} credentials from container '{container}'.", detected
+    except Exception:
+        pass
+
+    # Strategy 3: docker exec env
+    try:
+        out, _err, code = _ssh_exec(
+            ssh_host, ssh_user, ssh_key,
+            f"docker exec {container} env",
+        )
+        if code == 0 and out.strip():
+            detected = _parse_mealie_env(out)
+            if detected:
+                db_type = detected.get("MEALIE_DB_TYPE", "postgres")
+                return True, f"Detected {db_type} credentials from container '{container}'.", detected
+    except Exception:
+        pass
+
+    return False, f"Found container '{container}' but could not extract database credentials.", {}
+
+
+@router.post("/settings/detect/db")
+async def detect_db_settings(
+    payload: DbDetectRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    ssh_host = resolve_runtime_value(runtime_env, "MEALIE_DB_SSH_HOST", payload.ssh_host)
+    ssh_user = resolve_runtime_value(runtime_env, "MEALIE_DB_SSH_USER", payload.ssh_user) or "root"
+    ssh_key = resolve_runtime_value(runtime_env, "MEALIE_DB_SSH_KEY", payload.ssh_key) or "~/.ssh/cookdex_mealie"
+
+    if not ssh_host:
+        return {"ok": False, "detail": "SSH host is required. Configure it in the fields above.", "detected": {}}
+
+    try:
+        ok, detail, detected = _detect_db_credentials(ssh_host, ssh_user, ssh_key)
+        return {"ok": ok, "detail": detail, "detected": detected}
+    except Exception as exc:
+        return {"ok": False, "detail": f"Detection failed: {type(exc).__name__}: {exc}", "detected": {}}

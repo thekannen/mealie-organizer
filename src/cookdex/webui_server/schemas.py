@@ -109,6 +109,12 @@ class ProviderConnectionTestRequest(BaseModel):
     mealie_api_key: str | None = None
 
 
+class DbDetectRequest(BaseModel):
+    ssh_host: str | None = None
+    ssh_user: str | None = None
+    ssh_key: str | None = None
+
+
 class ConfigWriteRequest(BaseModel):
     content: Any
 

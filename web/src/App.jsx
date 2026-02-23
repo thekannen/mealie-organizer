@@ -214,6 +214,7 @@ export default function App() {
     openai: { loading: false, ok: null, detail: "" },
     ollama: { loading: false, ok: null, detail: "" },
     db: { loading: false, ok: null, detail: "" },
+    dbDetect: { loading: false, ok: null, detail: "" },
   });
   const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [] });
 
@@ -1512,6 +1513,50 @@ export default function App() {
     }
   }
 
+  async function runDbDetect() {
+    try {
+      setConnectionChecks((prev) => ({
+        ...prev,
+        dbDetect: { loading: true, ok: null, detail: "Detecting database credentials\u2026" },
+      }));
+      const body = {
+        ssh_host: draftOverrideValue("MEALIE_DB_SSH_HOST"),
+        ssh_user: draftOverrideValue("MEALIE_DB_SSH_USER"),
+        ssh_key: draftOverrideValue("MEALIE_DB_SSH_KEY"),
+      };
+      const result = await api("/settings/detect/db", { method: "POST", body });
+      if (result.ok && result.detected) {
+        setEnvDraft((prev) => {
+          const next = { ...prev };
+          for (const [key, value] of Object.entries(result.detected)) {
+            if (value) next[key] = String(value);
+          }
+          return next;
+        });
+        if (result.detected.MEALIE_PG_PASS) {
+          setEnvClear((prev) => ({ ...prev, MEALIE_PG_PASS: false }));
+        }
+      }
+      setConnectionChecks((prev) => ({
+        ...prev,
+        dbDetect: {
+          loading: false,
+          ok: Boolean(result.ok),
+          detail: String(result.detail || (result.ok ? "Credentials detected. Review and click Apply Changes." : "Detection failed.")),
+        },
+      }));
+    } catch (exc) {
+      setConnectionChecks((prev) => ({
+        ...prev,
+        dbDetect: {
+          loading: false,
+          ok: false,
+          detail: normalizeErrorMessage(exc?.message || exc),
+        },
+      }));
+    }
+  }
+
   function renderOverviewPage() {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -2385,10 +2430,14 @@ export default function App() {
                 { id: "mealie", label: "Test Mealie", hint: "Check Mealie URL/API key connectivity." },
                 { id: "openai", label: "Test OpenAI", hint: "Validate OpenAI key and selected model.", provider: "chatgpt" },
                 { id: "ollama", label: "Test Ollama", hint: "Validate Ollama endpoint reachability.", provider: "ollama" },
+                { id: "dbDetect", label: "Auto-detect DB", hint: "SSH into Mealie host to discover DB credentials.", requiresSsh: true },
                 { id: "db", label: "Test DB", hint: "Verify direct database connection.", requiresDb: true },
               ].filter((test) => {
                 const p = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
                 if (test.provider && (p === "none" || p !== test.provider)) return false;
+                if (test.requiresSsh) {
+                  return Boolean(String(envDraft["MEALIE_DB_SSH_HOST"] || "").trim());
+                }
                 if (test.requiresDb) {
                   const dbType = String(envDraft["MEALIE_DB_TYPE"] || "").trim();
                   return dbType === "postgres" || dbType === "sqlite";
@@ -2401,11 +2450,11 @@ export default function App() {
                   <div key={test.id} className="connection-test-item">
                     <button
                       className="ghost"
-                      onClick={() => runConnectionTest(test.id)}
+                      onClick={() => test.id === "dbDetect" ? runDbDetect() : runConnectionTest(test.id)}
                       disabled={state.loading}
                     >
-                      <Icon name={state.loading ? "refresh" : "zap"} />
-                      {state.loading ? "Testing\u2026" : test.label}
+                      <Icon name={state.loading ? "refresh" : test.id === "dbDetect" ? "search" : "zap"} />
+                      {state.loading ? (test.id === "dbDetect" ? "Detecting\u2026" : "Testing\u2026") : test.label}
                     </button>
                     <p className={`tiny ${state.ok === false ? "danger-text" : state.ok === true ? "success-text" : ""}`}>
                       {state.detail || test.hint}
