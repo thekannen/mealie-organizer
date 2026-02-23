@@ -1,7 +1,7 @@
 {
   "name": "cookdex-web",
   "private": true,
-  "version": "2026.2.110",
+  "version": "2026.2.111",
   "type": "module",
   "scripts": {
     "dev": "vite",
