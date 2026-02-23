@@ -93,6 +93,17 @@ def _validate_allowed(options: dict[str, Any], allowed: set[str]) -> None:
         raise ValueError(f"Unsupported options: {', '.join(unknown)}")
 
 
+_JUNK_REASON_CHOICES: list[dict[str, str]] = [
+    {"value": "", "label": "All categories"},
+    {"value": "how_to", "label": "How-to articles"},
+    {"value": "listicle", "label": "Listicles / roundups"},
+    {"value": "digest", "label": "Digest / weekly posts"},
+    {"value": "keyword", "label": "High-risk keywords"},
+    {"value": "utility", "label": "Utility pages"},
+    {"value": "bad_instructions", "label": "Placeholder instructions"},
+]
+
+
 # ---------------------------------------------------------------------------
 # Build functions
 # ---------------------------------------------------------------------------
@@ -296,13 +307,52 @@ def _build_cleanup_duplicates(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "stages", "continue_on_error", "apply_cleanups", "skip_ai"})
+    _validate_allowed(
+        options,
+        {
+            "dry_run",
+            "stages",
+            "continue_on_error",
+            "apply_cleanups",
+            "provider",
+            "use_db",
+            "nutrition_sample",
+            "reason",
+            "force_all",
+            "confidence_threshold",
+            "max_recipes",
+            "after_slug",
+            "parsers",
+            "force_parser",
+            "page_size",
+            "delay_seconds",
+            "timeout_seconds",
+            "retries",
+            "backoff_seconds",
+            "taxonomy_mode",
+        },
+    )
     env, dangerous = _common_env(options)
     cmd = _py_module("cookdex.data_maintenance")
     stages = options.get("stages")
     continue_on_error = _bool_option(options, "continue_on_error", False)
     apply_cleanups = _bool_option(options, "apply_cleanups", False)
-    skip_ai = _bool_option(options, "skip_ai", False)
+    provider = _str_option(options, "provider", "")
+    use_db = _bool_option(options, "use_db", False)
+    nutrition_sample = _int_option(options, "nutrition_sample")
+    junk_reason = _str_option(options, "reason", "")
+    names_force_all = _bool_option(options, "force_all", False)
+    confidence_pct = _int_option(options, "confidence_threshold")
+    parse_max = _int_option(options, "max_recipes")
+    parse_after_slug = _str_option(options, "after_slug", "")
+    parse_parsers = _str_option(options, "parsers", "")
+    parse_force_parser = _str_option(options, "force_parser", "")
+    parse_page_size = _int_option(options, "page_size")
+    parse_delay = _float_option(options, "delay_seconds")
+    parse_timeout = _int_option(options, "timeout_seconds")
+    parse_retries = _int_option(options, "retries")
+    parse_backoff = _float_option(options, "backoff_seconds")
+    taxonomy_mode = _str_option(options, "taxonomy_mode", "")
     if stages:
         if isinstance(stages, list):
             stage_value = ",".join(str(item).strip() for item in stages if str(item).strip())
@@ -314,8 +364,38 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
         cmd.append("--continue-on-error")
     if apply_cleanups:
         cmd.append("--apply-cleanups")
-    if skip_ai:
-        cmd.append("--skip-ai")
+    if provider:
+        cmd.extend(["--provider", provider])
+    if use_db:
+        cmd.append("--use-db")
+    if nutrition_sample is not None:
+        cmd.extend(["--nutrition-sample", str(nutrition_sample)])
+    if junk_reason:
+        cmd.extend(["--junk-reason", junk_reason])
+    if names_force_all:
+        cmd.append("--names-force-all")
+    if confidence_pct is not None:
+        cmd.extend(["--parse-conf", str(confidence_pct / 100.0)])
+    if parse_max is not None:
+        cmd.extend(["--parse-max", str(parse_max)])
+    if parse_after_slug:
+        cmd.extend(["--parse-after-slug", parse_after_slug])
+    if parse_parsers:
+        cmd.extend(["--parse-parsers", parse_parsers])
+    if parse_force_parser:
+        cmd.extend(["--parse-force-parser", parse_force_parser])
+    if parse_page_size is not None:
+        cmd.extend(["--parse-page-size", str(parse_page_size)])
+    if parse_delay is not None:
+        cmd.extend(["--parse-delay", str(parse_delay)])
+    if parse_timeout is not None:
+        cmd.extend(["--parse-timeout", str(parse_timeout)])
+    if parse_retries is not None:
+        cmd.extend(["--parse-retries", str(parse_retries)])
+    if parse_backoff is not None:
+        cmd.extend(["--parse-backoff", str(parse_backoff)])
+    if taxonomy_mode:
+        cmd.extend(["--taxonomy-mode", taxonomy_mode])
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups))
 
 
@@ -424,7 +504,6 @@ class TaskRegistry:
                             {"value": "tools", "label": "Tools Sync"},
                             {"value": "taxonomy", "label": "Taxonomy Refresh"},
                             {"value": "categorize", "label": "Categorize (AI)"},
-                            {"value": "rule-tag", "label": "Rule-Based Tag"},
                             {"value": "cookbooks", "label": "Cookbook Sync"},
                             {"value": "yield", "label": "Yield Normalize"},
                             {"value": "quality", "label": "Quality Audit"},
@@ -432,11 +511,111 @@ class TaskRegistry:
                         ],
                     ),
                     OptionSpec(
-                        "skip_ai",
-                        "Skip AI Stage",
+                        "provider",
+                        "AI Provider",
+                        "string",
+                        help_text="Override the categorizer provider used by the categorize stage. Leave blank to use the configured default.",
+                    ),
+                    OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
                         "boolean",
                         default=False,
-                        help_text="Skip AI categorization even if a provider is configured.",
+                        help_text="Enable DB-backed reads/writes for quality and yield stages when those stages are selected.",
+                    ),
+                    OptionSpec(
+                        "nutrition_sample",
+                        "Nutrition Sample Size",
+                        "integer",
+                        default=200,
+                        help_text="Quality-stage nutrition sample size (API mode only). Ignored when Use Direct DB is enabled.",
+                        hidden_when={"key": "use_db", "value": True},
+                    ),
+                    OptionSpec(
+                        "reason",
+                        "Junk Filter Category",
+                        "string",
+                        help_text="Limit junk filtering to one category when the junk stage runs.",
+                        choices=_JUNK_REASON_CHOICES,
+                    ),
+                    OptionSpec(
+                        "force_all",
+                        "Normalize All Names",
+                        "boolean",
+                        default=False,
+                        help_text="Apply name normalization to all recipes when the names stage runs.",
+                    ),
+                    OptionSpec(
+                        "confidence_threshold",
+                        "Parse Confidence Threshold",
+                        "integer",
+                        default=75,
+                        help_text="Ingredient-parse NLP confidence % (0–100). Lower values accept more NLP results.",
+                    ),
+                    OptionSpec(
+                        "max_recipes",
+                        "Parse Max Recipes",
+                        "integer",
+                        help_text="Limit ingredient parsing to at most N recipes.",
+                    ),
+                    OptionSpec(
+                        "after_slug",
+                        "Parse Resume After Slug",
+                        "string",
+                        help_text="Ingredient parser resume cursor. Skip through this slug and continue after it.",
+                    ),
+                    OptionSpec(
+                        "parsers",
+                        "Parse Strategies",
+                        "string",
+                        help_text="Comma-separated parser order (for example `nlp,openai`).",
+                    ),
+                    OptionSpec(
+                        "force_parser",
+                        "Force Parse Strategy",
+                        "string",
+                        help_text="Force a single ingredient parser strategy for this run.",
+                    ),
+                    OptionSpec(
+                        "page_size",
+                        "Parse Page Size",
+                        "integer",
+                        help_text="Recipes per page while listing ingredient parse candidates.",
+                    ),
+                    OptionSpec(
+                        "delay_seconds",
+                        "Parse Delay Seconds",
+                        "number",
+                        help_text="Delay between successful ingredient patch operations.",
+                    ),
+                    OptionSpec(
+                        "timeout_seconds",
+                        "Parse Timeout Seconds",
+                        "integer",
+                        help_text="HTTP timeout for ingredient parser requests.",
+                    ),
+                    OptionSpec(
+                        "retries",
+                        "Parse Retries",
+                        "integer",
+                        help_text="HTTP retry count used by ingredient parser requests.",
+                    ),
+                    OptionSpec(
+                        "backoff_seconds",
+                        "Parse Backoff Seconds",
+                        "number",
+                        help_text="HTTP retry backoff factor used by ingredient parser requests.",
+                    ),
+                    OptionSpec(
+                        "taxonomy_mode",
+                        "Taxonomy Refresh Mode",
+                        "string",
+                        help_text="Override taxonomy stage mode for this pipeline run.",
+                        choices=[
+                            {"value": "", "label": "Default"},
+                            {"value": "merge", "label": "Merge (keep existing)"},
+                            {"value": "replace", "label": "Replace (match source exactly)"},
+                        ],
                     ),
                     OptionSpec(
                         "continue_on_error",
@@ -495,15 +674,7 @@ class TaskRegistry:
                         "string",
                         help_text="Only scan for a specific junk category. Leave blank to check all.",
                         hidden_when={"key": "run_junk", "value": False},
-                        choices=[
-                            {"value": "", "label": "All categories"},
-                            {"value": "how_to", "label": "How-to articles"},
-                            {"value": "listicle", "label": "Listicles / roundups"},
-                            {"value": "digest", "label": "Digest / weekly posts"},
-                            {"value": "keyword", "label": "High-risk keywords"},
-                            {"value": "utility", "label": "Utility pages"},
-                            {"value": "bad_instructions", "label": "Placeholder instructions"},
-                        ],
+                        choices=_JUNK_REASON_CHOICES,
                     ),
                     OptionSpec(
                         "force_all",

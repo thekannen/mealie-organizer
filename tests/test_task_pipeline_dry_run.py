@@ -557,14 +557,75 @@ def test_data_maintenance_continue_on_error_default_absent() -> None:
     assert "--continue-on-error" not in execution.command
 
 
-def test_data_maintenance_skip_ai_flag() -> None:
-    execution = _build("data-maintenance", {"skip_ai": True})
-    assert "--skip-ai" in execution.command
+def test_data_maintenance_provider_flag() -> None:
+    execution = _build("data-maintenance", {"provider": "chatgpt"})
+    assert "--provider" in execution.command
+    idx = execution.command.index("--provider")
+    assert execution.command[idx + 1] == "chatgpt"
 
 
-def test_data_maintenance_skip_ai_default_absent() -> None:
-    execution = _build("data-maintenance")
-    assert "--skip-ai" not in execution.command
+def test_data_maintenance_use_db_flag() -> None:
+    execution = _build("data-maintenance", {"use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_data_maintenance_nutrition_sample_flag() -> None:
+    execution = _build("data-maintenance", {"nutrition_sample": 50})
+    assert "--nutrition-sample" in execution.command
+    idx = execution.command.index("--nutrition-sample")
+    assert execution.command[idx + 1] == "50"
+
+
+def test_data_maintenance_junk_reason_flag() -> None:
+    execution = _build("data-maintenance", {"reason": "listicle"})
+    assert "--junk-reason" in execution.command
+    idx = execution.command.index("--junk-reason")
+    assert execution.command[idx + 1] == "listicle"
+
+
+def test_data_maintenance_names_force_all_flag() -> None:
+    execution = _build("data-maintenance", {"force_all": True})
+    assert "--names-force-all" in execution.command
+
+
+def test_data_maintenance_parse_confidence_flag() -> None:
+    execution = _build("data-maintenance", {"confidence_threshold": 75})
+    assert "--parse-conf" in execution.command
+    idx = execution.command.index("--parse-conf")
+    assert execution.command[idx + 1] == "0.75"
+
+
+def test_data_maintenance_parse_overrides_flags() -> None:
+    execution = _build(
+        "data-maintenance",
+        {
+            "max_recipes": 20,
+            "after_slug": "lasagna",
+            "parsers": "nlp,openai",
+            "force_parser": "nlp",
+            "page_size": 150,
+            "delay_seconds": 0.25,
+            "timeout_seconds": 45,
+            "retries": 4,
+            "backoff_seconds": 0.5,
+        },
+    )
+    assert "--parse-max" in execution.command
+    assert "--parse-after-slug" in execution.command
+    assert "--parse-parsers" in execution.command
+    assert "--parse-force-parser" in execution.command
+    assert "--parse-page-size" in execution.command
+    assert "--parse-delay" in execution.command
+    assert "--parse-timeout" in execution.command
+    assert "--parse-retries" in execution.command
+    assert "--parse-backoff" in execution.command
+
+
+def test_data_maintenance_taxonomy_mode_flag() -> None:
+    execution = _build("data-maintenance", {"taxonomy_mode": "replace"})
+    assert "--taxonomy-mode" in execution.command
+    idx = execution.command.index("--taxonomy-mode")
+    assert execution.command[idx + 1] == "replace"
 
 
 def test_data_maintenance_apply_cleanups_marks_dangerous() -> None:

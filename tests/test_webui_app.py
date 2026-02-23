@@ -45,6 +45,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
     monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
     monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+    monkeypatch.setenv("OPENAI_API_KEY", "placeholder-openai-key")
 
     app_module = importlib.import_module("cookdex.webui_server.app")
     importlib.reload(app_module)
@@ -99,8 +100,17 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         tasks = client.get("/cookdex/api/v1/tasks")
         assert tasks.status_code == 200
-        task_ids = [item["task_id"] for item in tasks.json()["items"]]
+        task_items = tasks.json()["items"]
+        task_ids = [item["task_id"] for item in task_items]
         assert "ingredient-parse" in task_ids
+        task_map = {item["task_id"]: item for item in task_items}
+        for task_id in ("tag-categorize", "data-maintenance"):
+            provider_option = next((opt for opt in task_map[task_id]["options"] if opt["key"] == "provider"), None)
+            assert provider_option is not None
+            provider_values = [str(choice["value"]) for choice in provider_option.get("choices") or []]
+            assert "" in provider_values
+            assert "chatgpt" in provider_values
+            assert "none" not in provider_values
 
         blocked = client.post(
             "/cookdex/api/v1/runs",

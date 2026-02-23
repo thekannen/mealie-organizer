@@ -3086,8 +3086,8 @@ export default function App() {
                 <div className="settings-rows">
                   {items.map((item) => {
                     const key = String(item.key);
-                    const provider = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
-                    if (group === "AI" && key !== "CATEGORIZER_PROVIDER" && provider === "none") return null;
+                    const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
+                    const provider = configuredProvider === "ollama" ? "ollama" : "chatgpt";
                     if (provider === "chatgpt" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
                     if (provider === "ollama" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
                     const hasValue = Boolean(item.has_value);
@@ -3106,8 +3106,7 @@ export default function App() {
                     let inputElement;
                     if (key === "CATEGORIZER_PROVIDER") {
                       inputElement = (
-                        <select value={draftValue || "chatgpt"} onChange={(e) => onChangeDraft(e.target.value)}>
-                          <option value="none">None (AI disabled)</option>
+                        <select value={provider} onChange={(e) => onChangeDraft(e.target.value)}>
                           <option value="chatgpt">ChatGPT (OpenAI)</option>
                           <option value="ollama">Ollama (Local)</option>
                         </select>
@@ -3211,8 +3210,9 @@ export default function App() {
                 { id: "dbDetect", label: "Auto-detect DB", hint: "SSH into Mealie host to discover DB credentials.", requiresSsh: true },
                 { id: "db", label: "Test DB", hint: "Verify direct database connection.", requiresDb: true },
               ].filter((test) => {
-                const p = envDraft["CATEGORIZER_PROVIDER"] || "chatgpt";
-                if (test.provider && (p === "none" || p !== test.provider)) return false;
+                const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
+                const p = configuredProvider === "ollama" ? "ollama" : "chatgpt";
+                if (test.provider && p !== test.provider) return false;
                 if (test.requiresSsh) {
                   return Boolean(String(envDraft["MEALIE_DB_SSH_HOST"] || "").trim());
                 }
@@ -3256,11 +3256,6 @@ export default function App() {
                 <p className="tiny muted">Falls back to OpenAI when the built-in NLP parser has low confidence.</p>
               </li>
             </ul>
-            {(envDraft["CATEGORIZER_PROVIDER"] || "chatgpt") === "none" && (
-              <p className="tiny muted" style={{ marginTop: "0.4rem" }}>
-                AI is currently disabled. Tasks that require a provider will be skipped or use NLP-only parsing.
-              </p>
-            )}
           </article>
 
         </aside>

@@ -91,7 +91,22 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 |---|---|---|---|
 | `dry_run` | boolean | `true` | Preview changes without writing anything |
 | `stages` | string (multi) | *(all)* | Select specific stages: `dedup`, `junk`, `names`, `parse`, `foods`, `units`, `labels`, `tools`, `taxonomy`, `categorize`, `cookbooks`, `yield`, `quality`, `audit` |
-| `skip_ai` | boolean | `false` | Skip the AI categorization stage |
+| `provider` | string | *(configured default)* | Override categorizer provider for this run: `chatgpt` or `ollama` |
+| `use_db` | boolean | `false` | Enable direct DB mode for `quality` and `yield` stages (requires DB settings) |
+| `nutrition_sample` | integer | `200` | Quality-stage nutrition sample size (API mode only) |
+| `reason` | string | *(all)* | Junk-stage category filter: `how_to`, `listicle`, `digest`, `keyword`, `utility`, `bad_instructions` |
+| `force_all` | boolean | `false` | Normalize all recipe names when `names` stage runs |
+| `confidence_threshold` | integer | `75` | Ingredient parser confidence % (0–100) for `parse` stage |
+| `max_recipes` | integer | *(unset)* | Ingredient parser max recipes for `parse` stage |
+| `after_slug` | string | *(unset)* | Ingredient parser resume cursor for `parse` stage |
+| `parsers` | string | *(unset)* | Ingredient parser strategy list (e.g. `nlp,openai`) for `parse` stage |
+| `force_parser` | string | *(unset)* | Force one ingredient parser strategy for `parse` stage |
+| `page_size` | integer | *(unset)* | Ingredient parser page size for `parse` stage |
+| `delay_seconds` | number | *(unset)* | Ingredient parser delay between writes for `parse` stage |
+| `timeout_seconds` | integer | *(unset)* | Ingredient parser request timeout for `parse` stage |
+| `retries` | integer | *(unset)* | Ingredient parser request retries for `parse` stage |
+| `backoff_seconds` | number | *(unset)* | Ingredient parser retry backoff for `parse` stage |
+| `taxonomy_mode` | string | *(configured default)* | Taxonomy stage mode override: `merge` or `replace` |
 | `continue_on_error` | boolean | `false` | Keep running remaining stages if one fails |
 | `apply_cleanups` | boolean | `false` | Write deduplication and cleanup results (dangerous) |
 

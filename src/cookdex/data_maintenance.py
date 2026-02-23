@@ -31,6 +31,24 @@ class StageResult:
     elapsed_seconds: float = 0.0
 
 
+@dataclass(frozen=True)
+class StageRuntimeOptions:
+    provider: str | None = None
+    junk_reason: str | None = None
+    names_force_all: bool = False
+    parse_confidence: float | None = None
+    parse_max_recipes: int | None = None
+    parse_after_slug: str | None = None
+    parse_parsers: str | None = None
+    parse_force_parser: str | None = None
+    parse_page_size: int | None = None
+    parse_delay_seconds: float | None = None
+    parse_timeout_seconds: int | None = None
+    parse_retries: int | None = None
+    parse_backoff_seconds: float | None = None
+    taxonomy_mode: str | None = None
+
+
 def parse_stage_list(raw: str) -> list[str]:
     stages = [item.strip().lower() for item in raw.split(",") if item.strip()]
     if not stages:
@@ -49,16 +67,46 @@ def _categorizer_provider_active() -> bool:
     return bool(provider) and provider not in {"none", "off", "false", "0", "disabled"}
 
 
+def _str_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def stage_command(
     stage: str,
     *,
     apply_cleanups: bool,
     use_db: bool = False,
     nutrition_sample: int | None = None,
+    stage_options: StageRuntimeOptions | None = None,
 ) -> list[str]:
+    opts = stage_options or StageRuntimeOptions()
     python_cmd = [sys.executable, "-m"]
     if stage == "parse":
-        return python_cmd + ["cookdex.ingredient_parser"]
+        cmd = python_cmd + ["cookdex.ingredient_parser"]
+        if opts.parse_confidence is not None:
+            cmd.extend(["--conf", str(opts.parse_confidence)])
+        if opts.parse_max_recipes is not None:
+            cmd.extend(["--max", str(opts.parse_max_recipes)])
+        if opts.parse_after_slug:
+            cmd.extend(["--after-slug", opts.parse_after_slug])
+        if opts.parse_parsers:
+            cmd.extend(["--parsers", opts.parse_parsers])
+        if opts.parse_force_parser:
+            cmd.extend(["--force-parser", opts.parse_force_parser])
+        if opts.parse_page_size is not None:
+            cmd.extend(["--page-size", str(opts.parse_page_size)])
+        if opts.parse_delay_seconds is not None:
+            cmd.extend(["--delay", str(opts.parse_delay_seconds)])
+        if opts.parse_timeout_seconds is not None:
+            cmd.extend(["--timeout", str(opts.parse_timeout_seconds)])
+        if opts.parse_retries is not None:
+            cmd.extend(["--retries", str(opts.parse_retries)])
+        if opts.parse_backoff_seconds is not None:
+            cmd.extend(["--backoff", str(opts.parse_backoff_seconds)])
+        return cmd
     if stage == "foods":
         cmd = python_cmd + ["cookdex.foods_manager", "cleanup"]
         if apply_cleanups:
@@ -80,7 +128,9 @@ def stage_command(
             cmd.append("--apply")
         return cmd
     if stage == "taxonomy":
-        taxonomy_mode = str(env_or_config("TAXONOMY_REFRESH_MODE", "taxonomy.refresh.mode", "merge"))
+        taxonomy_mode = opts.taxonomy_mode or str(
+            env_or_config("TAXONOMY_REFRESH_MODE", "taxonomy.refresh.mode", "merge")
+        )
         cmd = python_cmd + [
             "cookdex.taxonomy_manager",
             "refresh",
@@ -98,13 +148,18 @@ def stage_command(
             cmd.append("--cleanup-apply")
         return cmd
     if stage == "categorize":
-        return python_cmd + ["cookdex.recipe_categorizer"]
+        cmd = python_cmd + ["cookdex.recipe_categorizer"]
+        if opts.provider:
+            cmd.extend(["--provider", opts.provider])
+        return cmd
     if stage == "cookbooks":
         return python_cmd + ["cookdex.cookbook_manager", "sync"]
     if stage == "yield":
         cmd = python_cmd + ["cookdex.yield_normalizer"]
         if apply_cleanups:
             cmd.append("--apply")
+        if use_db:
+            cmd.append("--use-db")
         return cmd
     if stage == "quality":
         cmd = python_cmd + ["cookdex.recipe_quality_audit"]
@@ -119,6 +174,8 @@ def stage_command(
         cmd = python_cmd + ["cookdex.recipe_name_normalizer"]
         if apply_cleanups:
             cmd.append("--apply")
+        if opts.names_force_all:
+            cmd.append("--all")
         return cmd
     if stage == "dedup":
         cmd = python_cmd + ["cookdex.recipe_deduplicator"]
@@ -129,6 +186,8 @@ def stage_command(
         cmd = python_cmd + ["cookdex.recipe_junk_filter"]
         if apply_cleanups:
             cmd.append("--apply")
+        if opts.junk_reason:
+            cmd.extend(["--reason", opts.junk_reason])
         return cmd
     raise ValueError(f"Unsupported stage: {stage}")
 
@@ -160,20 +219,28 @@ def run_stage(
     skip_ai: bool = False,
     use_db: bool = False,
     nutrition_sample: int | None = None,
+    stage_options: StageRuntimeOptions | None = None,
 ) -> StageResult:
+    opts = stage_options or StageRuntimeOptions()
     if stage == "categorize":
         if skip_ai:
             print(f"[skip] {stage}: skipped (--skip-ai flag set)", flush=True)
             return StageResult(stage=stage, command=[], exit_code=0)
-        if not _categorizer_provider_active():
+        if not opts.provider and not _categorizer_provider_active():
             print(
                 f"[skip] {stage}: no AI provider configured "
-                "(set CATEGORIZER_PROVIDER to enable)",
+                "(set CATEGORIZER_PROVIDER or pass --provider)",
                 flush=True,
             )
             return StageResult(stage=stage, command=[], exit_code=0)
 
-    cmd = stage_command(stage, apply_cleanups=apply_cleanups, use_db=use_db, nutrition_sample=nutrition_sample)
+    cmd = stage_command(
+        stage,
+        apply_cleanups=apply_cleanups,
+        use_db=use_db,
+        nutrition_sample=nutrition_sample,
+        stage_options=opts,
+    )
     print(f"{'=' * 60}", flush=True)
     print(f"[start] {stage}", flush=True)
     t0 = time.monotonic()
@@ -197,6 +264,7 @@ def run_pipeline(
     skip_ai: bool = False,
     use_db: bool = False,
     nutrition_sample: int | None = None,
+    stage_options: StageRuntimeOptions | None = None,
 ) -> list[StageResult]:
     results: list[StageResult] = []
     for stage in stages:
@@ -206,6 +274,7 @@ def run_pipeline(
             skip_ai=skip_ai,
             use_db=use_db,
             nutrition_sample=nutrition_sample,
+            stage_options=stage_options,
         )
         results.append(result)
         if result.exit_code != 0 and not continue_on_error:
@@ -233,15 +302,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the categorize stage regardless of provider configuration.",
     )
     parser.add_argument(
+        "--provider",
+        choices=["chatgpt", "ollama"],
+        default=None,
+        help="Override AI provider for the categorize stage.",
+    )
+    parser.add_argument(
         "--use-db",
         action="store_true",
-        help="Use direct DB queries for the quality stage instead of the API.",
+        help="Use direct DB mode for quality and yield stages instead of API calls.",
     )
     parser.add_argument(
         "--nutrition-sample",
         type=int,
         default=None,
         help="Number of recipes to sample for nutrition coverage (quality stage, API mode only).",
+    )
+    parser.add_argument(
+        "--junk-reason",
+        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions"],
+        default=None,
+        help="Filter the junk stage to a single category.",
+    )
+    parser.add_argument(
+        "--names-force-all",
+        action="store_true",
+        help="Normalize all recipe names when the names stage runs.",
+    )
+    parser.add_argument("--parse-conf", type=float, default=None, help="Ingredient parser confidence threshold (0-1).")
+    parser.add_argument("--parse-max", type=int, default=None, help="Ingredient parser max recipes.")
+    parser.add_argument("--parse-after-slug", default=None, help="Ingredient parser resume cursor.")
+    parser.add_argument("--parse-parsers", default=None, help="Ingredient parser strategy list.")
+    parser.add_argument("--parse-force-parser", default=None, help="Force ingredient parser strategy.")
+    parser.add_argument("--parse-page-size", type=int, default=None, help="Ingredient parser page size.")
+    parser.add_argument("--parse-delay", type=float, default=None, help="Ingredient parser delay in seconds.")
+    parser.add_argument("--parse-timeout", type=int, default=None, help="Ingredient parser HTTP timeout.")
+    parser.add_argument("--parse-retries", type=int, default=None, help="Ingredient parser retry count.")
+    parser.add_argument("--parse-backoff", type=float, default=None, help="Ingredient parser retry backoff.")
+    parser.add_argument(
+        "--taxonomy-mode",
+        choices=["merge", "replace"],
+        default=None,
+        help="Override taxonomy refresh mode for the taxonomy stage.",
     )
     return parser
 
@@ -252,9 +354,26 @@ def main() -> int:
     skip_ai = bool(args.skip_ai)
     use_db = bool(args.use_db)
     nutrition_sample: int | None = args.nutrition_sample
+    stage_options = StageRuntimeOptions(
+        provider=_str_or_none(args.provider),
+        junk_reason=_str_or_none(args.junk_reason),
+        names_force_all=bool(args.names_force_all),
+        parse_confidence=args.parse_conf,
+        parse_max_recipes=args.parse_max,
+        parse_after_slug=_str_or_none(args.parse_after_slug),
+        parse_parsers=_str_or_none(args.parse_parsers),
+        parse_force_parser=_str_or_none(args.parse_force_parser),
+        parse_page_size=args.parse_page_size,
+        parse_delay_seconds=args.parse_delay,
+        parse_timeout_seconds=args.parse_timeout,
+        parse_retries=args.parse_retries,
+        parse_backoff_seconds=args.parse_backoff,
+        taxonomy_mode=_str_or_none(args.taxonomy_mode),
+    )
     print(
         f"[start] data-maintenance stages={','.join(stages)} "
-        f"apply_cleanups={bool(args.apply_cleanups)} skip_ai={skip_ai} use_db={use_db}",
+        f"apply_cleanups={bool(args.apply_cleanups)} skip_ai={skip_ai} "
+        f"use_db={use_db} provider={stage_options.provider or 'default'}",
         flush=True,
     )
     results = run_pipeline(
@@ -264,6 +383,7 @@ def main() -> int:
         skip_ai=skip_ai,
         use_db=use_db,
         nutrition_sample=nutrition_sample,
+        stage_options=stage_options,
     )
     failed = [item for item in results if item.exit_code != 0]
     all_stages = [r.stage for r in results]

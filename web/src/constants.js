@@ -205,7 +205,7 @@ export const HELP_TASK_GUIDES = [
     what: "Runs the full cleanup pipeline end-to-end in a fixed stage order: dedup \u2192 junk filter \u2192 name normalize \u2192 ingredient parse \u2192 foods and units cleanup \u2192 labels and tools sync \u2192 taxonomy refresh \u2192 AI categorize \u2192 cookbook sync \u2192 yield normalize \u2192 quality audit \u2192 taxonomy audit. Select specific stages to run a targeted subset.",
     steps: [
       "Run with Dry Run enabled (the default) and review the log \u2014 no data is changed.",
-      "Toggle Skip AI Stage if you have not configured an AI provider.",
+      "Set the AI Provider dropdown if you want to force ChatGPT or Ollama for this run.",
       "Enable Apply Cleanup Writes to allow deduplication and cleanup stages to write changes, then re-run.",
       "Use Continue on Error to keep remaining stages running even if one fails.",
     ],
@@ -276,7 +276,7 @@ export const HELP_TASK_GUIDES = [
       "Select Method = Rule-Based and run with Dry Run on to see what your current rules match.",
       "Edit configs/taxonomy/tag_rules.json to add or refine patterns, then dry-run again.",
       "Enable Use Direct DB (rule-based only) to unlock ingredient and tool-detection matching in addition to text rules.",
-      "Switch to Method = AI for semantic classification \u2014 requires CATEGORIZER_PROVIDER configured in Settings.",
+      "Switch to Method = AI for semantic classification and optionally pick AI Provider for this run.",
     ],
     tip: "Start with rule-based to cover obvious patterns for free, then use AI mode for recipes that fall through.",
   },
