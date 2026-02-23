@@ -60,7 +60,9 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         organizer_page = client.get("/cookdex")
         assert organizer_page.status_code == 200
-        assert '<base href="/cookdex/" />' in organizer_page.text
+        # Base path injected as <base> tag (dev/static template) or __BASE_PATH__ replacement (built dist)
+        html = organizer_page.text
+        assert '<base href="/cookdex/" />' in html or '"/cookdex"' in html
 
         _login(client)
 

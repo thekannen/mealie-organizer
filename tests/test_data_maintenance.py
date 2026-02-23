@@ -23,7 +23,7 @@ def test_stage_command_adds_apply_flag_for_cleanups():
 def test_run_pipeline_fail_fast(monkeypatch):
     calls: list[str] = []
 
-    def fake_run_stage(stage, *, apply_cleanups, skip_ai=False):
+    def fake_run_stage(stage, *, apply_cleanups, skip_ai=False, use_db=False, nutrition_sample=None):
         calls.append(stage)
         if stage == "foods":
             return StageResult(stage=stage, command=["x"], exit_code=1)
@@ -42,7 +42,7 @@ def test_run_pipeline_fail_fast(monkeypatch):
 def test_run_pipeline_continue_on_error(monkeypatch):
     calls: list[str] = []
 
-    def fake_run_stage(stage, *, apply_cleanups, skip_ai=False):
+    def fake_run_stage(stage, *, apply_cleanups, skip_ai=False, use_db=False, nutrition_sample=None):
         calls.append(stage)
         code = 1 if stage == "foods" else 0
         return StageResult(stage=stage, command=["x"], exit_code=code)
