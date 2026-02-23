@@ -99,11 +99,11 @@ def _build_variants() -> list[Variant]:
         label="clean-recipes (dedup-only)",
         options={"run_dedup": True, "run_junk": False, "run_names": False},
     ))
-    # Junk filter only with a specific reason
+    # Junk filter only — keyword-based reasons (how_to, listicle, digest, keyword, utility)
     variants.append(Variant(
         task_id="clean-recipes",
-        label="clean-recipes (junk/no-instructions)",
-        options={"run_dedup": False, "run_junk": True, "run_names": False, "reason": "no_instructions"},
+        label="clean-recipes (junk/keyword)",
+        options={"run_dedup": False, "run_junk": True, "run_names": False, "reason": "keyword"},
     ))
     # Name normalizer only with force_all
     variants.append(Variant(

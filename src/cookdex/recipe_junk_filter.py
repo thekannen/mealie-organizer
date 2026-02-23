@@ -101,14 +101,14 @@ def _classify(name: str, slug: str, instructions_text: str) -> tuple[str | None,
         if util in slug_lower:
             return "utility", f"Utility page slug: '{util}'"
 
-    # 6. Bad instructions
+    # 6. Bad instructions — only checked when instructions text is actually present.
+    # The listing API (/api/recipes) returns summary records without recipeInstructions,
+    # so an empty string here means "not fetched", not "recipe has no instructions".
     if instructions_text:
         inst_lower = instructions_text.lower().strip()
         for bad in _BAD_INSTRUCTIONS:
             if bad in inst_lower:
                 return "bad_instructions", f"Placeholder instruction text: '{bad}'"
-    else:
-        return "no_instructions", "Recipe has no instructions"
 
     return None, ""
 
@@ -255,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="Delete junk recipes from Mealie.")
     parser.add_argument(
         "--reason",
-        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions", "no_instructions"],
+        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions"],
         default=None,
         help="Only process recipes matching this specific junk category.",
     )
