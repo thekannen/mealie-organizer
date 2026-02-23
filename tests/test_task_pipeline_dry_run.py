@@ -138,6 +138,28 @@ def test_task_description_has_required_fields(task_id: str) -> None:
         assert opt["type"] in {"boolean", "string", "integer", "number"}
 
 
+def test_data_maintenance_marks_advanced_options() -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+    options = {o["key"]: o for o in descriptions["data-maintenance"]["options"]}
+    assert options["dry_run"]["advanced"] is False
+    assert options["provider"]["advanced"] is False
+    assert options["apply_cleanups"]["advanced"] is False
+    assert options["stages"]["advanced"] is True
+    assert options["use_db"]["advanced"] is True
+    assert options["confidence_threshold"]["advanced"] is True
+
+
+def test_non_power_options_marked_advanced_on_other_tasks() -> None:
+    descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
+
+    clean_opts = {o["key"]: o for o in descriptions["clean-recipes"]["options"]}
+    assert clean_opts["reason"]["advanced"] is True
+    assert clean_opts["force_all"]["advanced"] is True
+
+    tag_opts = {o["key"]: o for o in descriptions["tag-categorize"]["options"]}
+    assert tag_opts["use_db"]["advanced"] is True
+
+
 @pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
 def test_every_non_audit_task_has_dry_run_option(task_id: str) -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}

@@ -17,6 +17,7 @@ class OptionSpec:
     hidden_when: dict[str, Any] | list[dict[str, Any]] | None = None
     choices: list[dict[str, Any]] | None = None
     multi: bool = False
+    advanced: bool = False
 
 
 @dataclass(frozen=True)
@@ -493,6 +494,7 @@ class TaskRegistry:
                         "string",
                         help_text="Select stages to run. Leave all unselected to run the full pipeline.",
                         multi=True,
+                        advanced=True,
                         choices=[
                             {"value": "dedup", "label": "Recipe Dedup"},
                             {"value": "junk", "label": "Junk Filter"},
@@ -522,6 +524,7 @@ class TaskRegistry:
                         "boolean",
                         default=False,
                         help_text="Enable DB-backed reads/writes for quality and yield stages when those stages are selected.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "nutrition_sample",
@@ -530,6 +533,7 @@ class TaskRegistry:
                         default=200,
                         help_text="Quality-stage nutrition sample size (API mode only). Ignored when Use Direct DB is enabled.",
                         hidden_when={"key": "use_db", "value": True},
+                        advanced=True,
                     ),
                     OptionSpec(
                         "reason",
@@ -537,6 +541,7 @@ class TaskRegistry:
                         "string",
                         help_text="Limit junk filtering to one category when the junk stage runs.",
                         choices=_JUNK_REASON_CHOICES,
+                        advanced=True,
                     ),
                     OptionSpec(
                         "force_all",
@@ -544,6 +549,7 @@ class TaskRegistry:
                         "boolean",
                         default=False,
                         help_text="Apply name normalization to all recipes when the names stage runs.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "confidence_threshold",
@@ -551,66 +557,77 @@ class TaskRegistry:
                         "integer",
                         default=75,
                         help_text="Ingredient-parse NLP confidence % (0–100). Lower values accept more NLP results.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "max_recipes",
                         "Parse Max Recipes",
                         "integer",
                         help_text="Limit ingredient parsing to at most N recipes.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "after_slug",
                         "Parse Resume After Slug",
                         "string",
                         help_text="Ingredient parser resume cursor. Skip through this slug and continue after it.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "parsers",
                         "Parse Strategies",
                         "string",
                         help_text="Comma-separated parser order (for example `nlp,openai`).",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "force_parser",
                         "Force Parse Strategy",
                         "string",
                         help_text="Force a single ingredient parser strategy for this run.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "page_size",
                         "Parse Page Size",
                         "integer",
                         help_text="Recipes per page while listing ingredient parse candidates.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "delay_seconds",
                         "Parse Delay Seconds",
                         "number",
                         help_text="Delay between successful ingredient patch operations.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "timeout_seconds",
                         "Parse Timeout Seconds",
                         "integer",
                         help_text="HTTP timeout for ingredient parser requests.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "retries",
                         "Parse Retries",
                         "integer",
                         help_text="HTTP retry count used by ingredient parser requests.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "backoff_seconds",
                         "Parse Backoff Seconds",
                         "number",
                         help_text="HTTP retry backoff factor used by ingredient parser requests.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "taxonomy_mode",
                         "Taxonomy Refresh Mode",
                         "string",
                         help_text="Override taxonomy stage mode for this pipeline run.",
+                        advanced=True,
                         choices=[
                             {"value": "", "label": "Default"},
                             {"value": "merge", "label": "Merge (keep existing)"},
@@ -623,6 +640,7 @@ class TaskRegistry:
                         "boolean",
                         default=False,
                         help_text="Keep running remaining stages if one fails.",
+                        advanced=True,
                     ),
                     OptionSpec(
                         "apply_cleanups",
@@ -675,6 +693,7 @@ class TaskRegistry:
                         help_text="Only scan for a specific junk category. Leave blank to check all.",
                         hidden_when={"key": "run_junk", "value": False},
                         choices=_JUNK_REASON_CHOICES,
+                        advanced=True,
                     ),
                     OptionSpec(
                         "force_all",
@@ -683,6 +702,7 @@ class TaskRegistry:
                         default=False,
                         help_text="Apply name normalization to all recipes, not just lowercase/unformatted names.",
                         hidden_when={"key": "run_names", "value": False},
+                        advanced=True,
                     ),
                 ],
                 build=_build_clean_recipes,
@@ -702,6 +722,7 @@ class TaskRegistry:
                         "integer",
                         default=75,
                         help_text="Minimum confidence % (0–100) to accept an NLP parse result. Results below this threshold fall back to AI parsing.",
+                        advanced=True,
                     ),
                 ],
                 build=_build_ingredient_parse,
@@ -721,6 +742,7 @@ class TaskRegistry:
                         "boolean",
                         default=False,
                         help_text="Write changes in a single DB transaction instead of per-recipe API calls — faster.",
+                        advanced=True,
                     ),
                 ],
                 build=_build_yield_normalize,
@@ -785,6 +807,7 @@ class TaskRegistry:
                         default=False,
                         help_text="Match ingredients via direct DB queries instead of the API — faster and works offline.",
                         hidden_when={"key": "method", "value": "ai"},
+                        advanced=True,
                     ),
                 ],
                 build=_build_tag_categorize,
@@ -818,6 +841,7 @@ class TaskRegistry:
                         "string",
                         default="merge",
                         help_text="Merge keeps existing entries and adds new ones. Replace overwrites to match source files exactly.",
+                        advanced=True,
                         choices=[
                             {"value": "merge", "label": "Merge (keep existing)"},
                             {"value": "replace", "label": "Replace (match source exactly)"},
@@ -876,6 +900,7 @@ class TaskRegistry:
                         default=False,
                         help_text="Fetch all recipe data in one query — faster and gives exact nutrition coverage.",
                         hidden_when={"key": "scope_quality", "value": False},
+                        advanced=True,
                     ),
                     OptionSpec(
                         "nutrition_sample",
@@ -887,6 +912,7 @@ class TaskRegistry:
                             {"key": "scope_quality", "value": False},
                             {"key": "use_db", "value": True},
                         ],
+                        advanced=True,
                     ),
                 ],
                 build=_build_health_check,
@@ -924,6 +950,7 @@ class TaskRegistry:
                             "hidden_when": option.hidden_when,
                             "choices": option.choices,
                             "multi": option.multi,
+                            "advanced": option.advanced,
                         }
                         for option in task.options
                     ],

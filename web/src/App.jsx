@@ -96,6 +96,14 @@ function buildTaskOptionSeed(taskDefinition, existingOptions = {}) {
   return seeded;
 }
 
+function isTaskOptionVisible(option, values = {}, includeAdvanced = true) {
+  if (!option || option.hidden) return false;
+  if (!includeAdvanced && option.advanced) return false;
+  if (!option.hidden_when) return true;
+  const conds = Array.isArray(option.hidden_when) ? option.hidden_when : [option.hidden_when];
+  return !conds.some(({ key, value: trigger }) => values[key] === trigger);
+}
+
 function parseLogEvents(text) {
   const lines = text.split("\n");
   const events = [];
@@ -652,6 +660,7 @@ export default function App() {
 
   const [selectedTask, setSelectedTask] = useState("");
   const [taskValues, setTaskValues] = useState({});
+  const [showAdvancedTaskOptions, setShowAdvancedTaskOptions] = useState(false);
   const [runSearch, setRunSearch] = useState("");
   const [runTypeFilter, setRunTypeFilter] = useState("all");
   const [logBuffer, setLogBuffer] = useState("");
@@ -676,6 +685,7 @@ export default function App() {
   });
   const [editingScheduleId, setEditingScheduleId] = useState("");
   const [scheduleEditForm, setScheduleEditForm] = useState(null);
+  const [showAdvancedScheduleOptions, setShowAdvancedScheduleOptions] = useState(false);
 
   const [configFiles, setConfigFiles] = useState([]);
   const [activeConfig, setActiveConfig] = useState("categories");
@@ -1010,6 +1020,7 @@ export default function App() {
 
   useEffect(() => {
     setTaskValues(buildDefaultOptionValues(selectedTaskDef));
+    setShowAdvancedTaskOptions(false);
   }, [selectedTaskDef]);
 
   useEffect(() => {
@@ -1020,6 +1031,7 @@ export default function App() {
     if (!stillExists) {
       setEditingScheduleId("");
       setScheduleEditForm(null);
+      setShowAdvancedScheduleOptions(false);
     }
   }, [editingScheduleId, schedules]);
 
@@ -1571,6 +1583,7 @@ export default function App() {
     const taskId = String(schedule.task_id || "");
     const taskDef = tasks.find((item) => item.task_id === taskId) || null;
     setEditingScheduleId(String(schedule.schedule_id || ""));
+    setShowAdvancedScheduleOptions(false);
     setScheduleEditForm({
       name: String(schedule.name || ""),
       task_id: taskId,
@@ -1589,6 +1602,7 @@ export default function App() {
   function cancelScheduleEdit() {
     setEditingScheduleId("");
     setScheduleEditForm(null);
+    setShowAdvancedScheduleOptions(false);
   }
 
   async function saveScheduleEdit(scheduleId) {
@@ -2407,23 +2421,50 @@ export default function App() {
 
               {!selectedTaskDef ? (
                 <p className="muted tiny">Select a task above to configure and run it.</p>
-              ) : (selectedTaskDef.options || []).some((o) => {
-                if (o.hidden) return false;
-                if (!o.hidden_when) return true;
-                const conds = Array.isArray(o.hidden_when) ? o.hidden_when : [o.hidden_when];
-                return !conds.some(({ key, value: trigger }) => taskValues[key] === trigger);
-              }) ? (
-                <div className="option-grid">
-                  {(selectedTaskDef.options || []).map((option) =>
-                    fieldFromOption(option, taskValues[option.key], (key, value) =>
-                      setTaskValues((prev) => ({ ...prev, [key]: value })),
-                      taskValues
-                    )
-                  )}
-                </div>
-              ) : (
-                <p className="muted tiny">This task has no additional options.</p>
-              )}
+              ) : (() => {
+                const visibleOptions = (selectedTaskDef.options || []).filter((option) =>
+                  isTaskOptionVisible(option, taskValues, true)
+                );
+                const basicOptions = visibleOptions.filter((option) => !option.advanced);
+                const advancedOptions = visibleOptions.filter((option) => option.advanced);
+                const shownOptions = showAdvancedTaskOptions ? visibleOptions : basicOptions;
+
+                if (visibleOptions.length === 0) {
+                  return <p className="muted tiny">This task has no additional options.</p>;
+                }
+
+                return (
+                  <>
+                    {advancedOptions.length > 0 && (
+                      <>
+                        <label className="field field-inline">
+                          <span>Show advanced options</span>
+                          <input
+                            type="checkbox"
+                            checked={showAdvancedTaskOptions}
+                            onChange={(event) => setShowAdvancedTaskOptions(event.target.checked)}
+                          />
+                        </label>
+                        {!showAdvancedTaskOptions && (
+                          <p className="muted tiny">{advancedOptions.length} advanced option(s) hidden.</p>
+                        )}
+                      </>
+                    )}
+                    {shownOptions.length > 0 ? (
+                      <div className="option-grid">
+                        {shownOptions.map((option) =>
+                          fieldFromOption(option, taskValues[option.key], (key, value) =>
+                            setTaskValues((prev) => ({ ...prev, [key]: value })),
+                            taskValues
+                          )
+                        )}
+                      </div>
+                    ) : (
+                      <p className="muted tiny">No basic options for this task. Enable advanced options to customize it.</p>
+                    )}
+                  </>
+                );
+              })()}
 
               <label className="field field-inline schedule-toggle" style={selectedTaskDef ? undefined : { display: "none" }}>
                 <span>Schedule Run</span>
@@ -2560,12 +2601,12 @@ export default function App() {
                   const isEditing = scheduleId === String(editingScheduleId || "");
                   const editor = isEditing ? scheduleEditForm : null;
                   const editTaskDef = editor ? tasks.find((item) => item.task_id === editor.task_id) || null : null;
-                  const visibleEditOptions = (editTaskDef?.options || []).filter((option) => {
-                    if (option.hidden) return false;
-                    if (!option.hidden_when) return true;
-                    const conds = Array.isArray(option.hidden_when) ? option.hidden_when : [option.hidden_when];
-                    return !conds.some(({ key, value: trigger }) => (editor?.optionValues || {})[key] === trigger);
-                  });
+                  const visibleEditOptions = (editTaskDef?.options || []).filter((option) =>
+                    isTaskOptionVisible(option, editor?.optionValues || {}, true)
+                  );
+                  const basicEditOptions = visibleEditOptions.filter((option) => !option.advanced);
+                  const advancedEditOptions = visibleEditOptions.filter((option) => option.advanced);
+                  const shownEditOptions = showAdvancedScheduleOptions ? visibleEditOptions : basicEditOptions;
                   return (
                     <li key={scheduleId} className={`schedule-item${isEditing ? " is-editing" : ""}`}>
                       <div className="schedule-item-main">
@@ -2620,6 +2661,7 @@ export default function App() {
                                 onChange={(event) => {
                                   const nextTaskId = event.target.value;
                                   const nextTaskDef = tasks.find((item) => item.task_id === nextTaskId) || null;
+                                  setShowAdvancedScheduleOptions(false);
                                   setScheduleEditForm((prev) =>
                                     prev
                                       ? {
@@ -2745,24 +2787,45 @@ export default function App() {
                           </div>
 
                           {visibleEditOptions.length > 0 ? (
-                            <div className="option-grid schedule-edit-options">
-                              {visibleEditOptions.map((option) =>
-                                fieldFromOption(
-                                  option,
-                                  (editor.optionValues || {})[option.key],
-                                  (key, value) =>
-                                    setScheduleEditForm((prev) =>
-                                      prev
-                                        ? {
-                                            ...prev,
-                                            optionValues: { ...(prev.optionValues || {}), [key]: value },
-                                          }
-                                        : prev
-                                    ),
-                                  editor.optionValues || {}
-                                )
+                            <>
+                              {advancedEditOptions.length > 0 && (
+                                <>
+                                  <label className="field field-inline">
+                                    <span>Show advanced options</span>
+                                    <input
+                                      type="checkbox"
+                                      checked={showAdvancedScheduleOptions}
+                                      onChange={(event) => setShowAdvancedScheduleOptions(event.target.checked)}
+                                    />
+                                  </label>
+                                  {!showAdvancedScheduleOptions && (
+                                    <p className="muted tiny">{advancedEditOptions.length} advanced option(s) hidden.</p>
+                                  )}
+                                </>
                               )}
-                            </div>
+                              {shownEditOptions.length > 0 ? (
+                                <div className="option-grid schedule-edit-options">
+                                  {shownEditOptions.map((option) =>
+                                    fieldFromOption(
+                                      option,
+                                      (editor.optionValues || {})[option.key],
+                                      (key, value) =>
+                                        setScheduleEditForm((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                optionValues: { ...(prev.optionValues || {}), [key]: value },
+                                              }
+                                            : prev
+                                        ),
+                                      editor.optionValues || {}
+                                    )
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="muted tiny">No basic options for this task. Enable advanced options to customize it.</p>
+                              )}
+                            </>
                           ) : (
                             <p className="muted tiny">This task has no additional options.</p>
                           )}
