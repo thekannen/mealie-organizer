@@ -76,6 +76,7 @@ class ScheduleCreateRequest(BaseModel):
     kind: str = Field(pattern="^(interval|once)$")
     options: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+    run_if_missed: bool = False
     seconds: int | None = None
     run_at: str | None = None
     start_at: str | None = None
@@ -88,6 +89,7 @@ class ScheduleUpdateRequest(BaseModel):
     kind: str | None = Field(default=None, pattern="^(interval|once)$")
     options: dict[str, Any] | None = None
     enabled: bool | None = None
+    run_if_missed: bool | None = None
     seconds: int | None = None
     run_at: str | None = None
     start_at: str | None = None
@@ -117,4 +119,3 @@ class DbDetectRequest(BaseModel):
 
 class ConfigWriteRequest(BaseModel):
     content: Any
-

@@ -135,6 +135,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         )
         assert schedule_create.status_code == 201
         schedule_id = schedule_create.json()["schedule_id"]
+        assert schedule_create.json()["schedule_data"]["run_if_missed"] is False
 
         schedule_list = client.get("/cookdex/api/v1/schedules")
         assert schedule_list.status_code == 200
@@ -211,6 +212,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "task_id": "taxonomy-refresh",
                 "kind": "once",
                 "run_at": future_short,
+                "run_if_missed": True,
                 "enabled": True,
             },
         )
@@ -218,6 +220,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
         once_id = r.json()["schedule_id"]
         assert r.json()["schedule_kind"] == "once"
         assert r.json()["schedule_data"]["run_at"] == future_short
+        assert r.json()["schedule_data"]["run_if_missed"] is True
 
         # --- once: full ISO format should also be accepted ---
         r2 = client.post(
@@ -278,6 +281,63 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
         assert list_r.status_code == 200
         ids = [item["schedule_id"] for item in list_r.json()["items"]]
         assert once_id not in ids
+
+
+def test_schedule_update_supports_run_if_missed_and_task_options(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    future_short = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+
+    with TestClient(app) as client:
+        _login(client)
+
+        created = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Parser Interval",
+                "task_id": "ingredient-parse",
+                "kind": "interval",
+                "seconds": 600,
+                "run_if_missed": False,
+                "options": {"dry_run": True},
+                "enabled": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        schedule_id = created.json()["schedule_id"]
+
+        updated = client.patch(
+            f"/cookdex/api/v1/schedules/{schedule_id}",
+            json={
+                "name": "Parser Once",
+                "kind": "once",
+                "run_at": future_short,
+                "run_if_missed": True,
+                "options": {"dry_run": True, "max_recipes": 3},
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        payload = updated.json()
+        assert payload["name"] == "Parser Once"
+        assert payload["schedule_kind"] == "once"
+        assert payload["schedule_data"]["run_at"] == future_short
+        assert payload["schedule_data"]["run_if_missed"] is True
+        assert payload["options"]["max_recipes"] == 3
 
 
 def test_master_key_auto_generated(tmp_path: Path, monkeypatch):

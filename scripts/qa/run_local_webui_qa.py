@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
             state_db_path=state_db_path,
         )
 
-        run_command(["npm", "--prefix", "web", "run", "build"], env=server_env)
+        run_command(["npm", "--prefix", "web", "run", "build:docker"], env=server_env)
 
         server_log = (iteration_dir / "server.log").open("w", encoding="utf-8")
         server_process: subprocess.Popen[str] | None = None

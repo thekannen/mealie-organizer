@@ -75,6 +75,20 @@ class TestBuildTrigger:
             svc._build_trigger("cron", {"expression": "* * * * *"})
 
 
+class TestMisfirePolicy:
+    def test_default_grace_short(self, tmp_path):
+        svc = _make_service(tmp_path)
+        assert svc._resolve_misfire_grace_time("interval", {}) == 60
+
+    def test_interval_run_if_missed_extends_grace(self, tmp_path):
+        svc = _make_service(tmp_path)
+        assert svc._resolve_misfire_grace_time("interval", {"run_if_missed": True}) == 7 * 24 * 60 * 60
+
+    def test_once_run_if_missed_extends_grace(self, tmp_path):
+        svc = _make_service(tmp_path)
+        assert svc._resolve_misfire_grace_time("once", {"run_if_missed": True}) == 30 * 24 * 60 * 60
+
+
 class TestRestoreFromDb:
     def test_bad_schedule_does_not_crash_restore(self, tmp_path):
         """A schedule with invalid data should be skipped, not crash the server."""

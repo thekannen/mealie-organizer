@@ -13,11 +13,12 @@ router = APIRouter(tags=["schedules"])
 
 def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePayload:
     kind = request.kind
+    run_if_missed = bool(request.run_if_missed)
     if kind == "interval":
         seconds = int(request.seconds or 0)
         if seconds <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
-        data: dict[str, Any] = {"seconds": seconds}
+        data: dict[str, Any] = {"seconds": seconds, "run_if_missed": run_if_missed}
         if request.start_at:
             data["start_at"] = request.start_at.strip()
         if request.end_at:
@@ -26,7 +27,7 @@ def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePay
         run_at = str(request.run_at or "").strip()
         if not run_at:
             raise HTTPException(status_code=422, detail="Once schedules require 'run_at'.")
-        data = {"run_at": run_at}
+        data = {"run_at": run_at, "run_if_missed": run_if_missed}
     return SchedulePayload(
         name=request.name.strip(),
         task_id=request.task_id.strip(),
@@ -39,13 +40,16 @@ def _schedule_payload_from_create(request: ScheduleCreateRequest) -> SchedulePay
 
 def _schedule_payload_from_update(existing: dict[str, Any], request: ScheduleUpdateRequest) -> SchedulePayload:
     kind = request.kind or str(existing["schedule_kind"])
+    existing_data = dict(existing.get("schedule_data") or {})
+    run_if_missed = bool(
+        request.run_if_missed if request.run_if_missed is not None else existing_data.get("run_if_missed", False)
+    )
     if kind == "interval":
-        existing_data = dict(existing["schedule_data"])
         existing_seconds = int(existing_data.get("seconds", 0))
         seconds = request.seconds if request.seconds is not None else existing_seconds
         if int(seconds) <= 0:
             raise HTTPException(status_code=422, detail="Interval schedules require positive 'seconds'.")
-        data: dict[str, Any] = {"seconds": int(seconds)}
+        data: dict[str, Any] = {"seconds": int(seconds), "run_if_missed": run_if_missed}
         start_at = request.start_at if request.start_at is not None else existing_data.get("start_at")
         end_at = request.end_at if request.end_at is not None else existing_data.get("end_at")
         if start_at:
@@ -53,11 +57,11 @@ def _schedule_payload_from_update(existing: dict[str, Any], request: ScheduleUpd
         if end_at:
             data["end_at"] = str(end_at).strip()
     else:  # once
-        existing_run_at = str(dict(existing["schedule_data"]).get("run_at", ""))
+        existing_run_at = str(existing_data.get("run_at", ""))
         run_at = str(request.run_at if request.run_at is not None else existing_run_at).strip()
         if not run_at:
             raise HTTPException(status_code=422, detail="Once schedules require 'run_at'.")
-        data = {"run_at": run_at}
+        data = {"run_at": run_at, "run_if_missed": run_if_missed}
     return SchedulePayload(
         name=(request.name or str(existing["name"])).strip(),
         task_id=(request.task_id or str(existing["task_id"])).strip(),

@@ -51,6 +51,50 @@ const DATA_MAINTENANCE_STAGE_LABELS = {
 };
 
 const SUMMARY_PIPELINE_KEYS = new Set(["Stages Run", "Passed", "Failed", "All Stages"]);
+const SCHEDULE_UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600, days: 86400 };
+
+function splitIntervalSeconds(rawSeconds) {
+  const seconds = Number(rawSeconds || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return { intervalValue: 1, intervalUnit: "hours" };
+  }
+  if (seconds % 86400 === 0) {
+    return { intervalValue: Math.max(1, Math.floor(seconds / 86400)), intervalUnit: "days" };
+  }
+  if (seconds % 3600 === 0) {
+    return { intervalValue: Math.max(1, Math.floor(seconds / 3600)), intervalUnit: "hours" };
+  }
+  if (seconds % 60 === 0) {
+    return { intervalValue: Math.max(1, Math.floor(seconds / 60)), intervalUnit: "minutes" };
+  }
+  return { intervalValue: Math.max(1, Math.floor(seconds)), intervalUnit: "seconds" };
+}
+
+function toDateTimeLocalValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw.slice(0, 16);
+  const localValue = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+  return localValue.toISOString().slice(0, 16);
+}
+
+function buildTaskOptionSeed(taskDefinition, existingOptions = {}) {
+  const seeded = { ...buildDefaultOptionValues(taskDefinition) };
+  for (const option of taskDefinition?.options || []) {
+    if (!Object.prototype.hasOwnProperty.call(existingOptions || {}, option.key)) {
+      continue;
+    }
+    const value = existingOptions[option.key];
+    if (option.multi) {
+      seeded[option.key] = Array.isArray(value) ? value : value ? [value] : [];
+      continue;
+    }
+    seeded[option.key] = value;
+  }
+  return seeded;
+}
 
 function parseLogEvents(text) {
   const lines = text.split("\n");
@@ -210,6 +254,102 @@ function isDataMaintenancePipelineSummary(data) {
   return keys.some((key) => SUMMARY_PIPELINE_KEYS.has(key));
 }
 
+function summarizeExecutionEvents(events) {
+  const stats = {
+    planned: 0,
+    completed: 0,
+    warnings: 0,
+    errors: 0,
+    skipped: 0,
+    info: 0,
+    db: 0,
+    verbose: 0,
+    reportedTotal: null,
+  };
+
+  for (const evt of events || []) {
+    if (!evt || typeof evt !== "object") continue;
+    if (evt.type === "plan") {
+      stats.planned += 1;
+      continue;
+    }
+    if (evt.type === "ok") {
+      stats.completed += 1;
+      if (Number.isFinite(evt.total)) {
+        stats.reportedTotal = Math.max(stats.reportedTotal || 0, Number(evt.total));
+      }
+      continue;
+    }
+    if (evt.type === "warning") {
+      stats.warnings += 1;
+      continue;
+    }
+    if (evt.type === "error" || evt.type === "stage-error") {
+      stats.errors += 1;
+      continue;
+    }
+    if (evt.type === "skip") {
+      stats.skipped += 1;
+      continue;
+    }
+    if (evt.type === "info") {
+      stats.info += 1;
+      continue;
+    }
+    if (evt.type === "db") {
+      stats.db += 1;
+      continue;
+    }
+    if (evt.type === "verbose") {
+      stats.verbose += 1;
+    }
+  }
+  return stats;
+}
+
+function buildStageResultSummary(stage, statusLabel) {
+  const stats = summarizeExecutionEvents(stage?.events || []);
+  const expected = stats.reportedTotal ?? Math.max(stats.planned, stats.completed);
+  const completionText =
+    expected > 0
+      ? `${stats.completed.toLocaleString()} / ${expected.toLocaleString()} (${Math.round((stats.completed / expected) * 100)}%)`
+      : stats.completed.toLocaleString();
+
+  const summary = {
+    status: statusLabel,
+    duration: stage?.elapsed || "n/a",
+    completion: completionText,
+    warnings: stats.warnings,
+    errors: stats.errors,
+    skipped: stats.skipped,
+  };
+
+  if (stage?.exitCode != null) {
+    summary.exit_code = stage.exitCode;
+  }
+  if (stats.info > 0) {
+    summary.info_messages = stats.info;
+  }
+  if (stats.db > 0) {
+    summary.db_messages = stats.db;
+  }
+  if (stats.verbose > 0) {
+    summary.extra_output_lines = stats.verbose;
+  }
+  return summary;
+}
+
+function buildPipelineExecutionSummary(stages = []) {
+  const summary = {
+    stages_total: stages.length,
+    stages_completed: stages.filter((item) => item.status === "succeeded").length,
+    stages_failed: stages.filter((item) => item.status === "failed").length,
+    stages_pending: stages.filter((item) => item.status === "pending").length,
+    stages_running: stages.filter((item) => item.status === "running").length,
+  };
+  return summary;
+}
+
 function renderSummaryTable(data, { title = "Run Summary", iconName = "check-circle", keyPrefix = "summary" } = {}) {
   const entries = getSummaryEntries(data);
   if (entries.length === 0) return null;
@@ -234,7 +374,7 @@ function renderSummaryTable(data, { title = "Run Summary", iconName = "check-cir
   );
 }
 
-function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt" } = {}) {
+function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt", expandProgressDetails = false } = {}) {
   const iconMap = {
     start: "info",
     "start-live": "loader",
@@ -277,10 +417,12 @@ function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt" } =
       const total = lastOk ? lastOk.total : 0;
       const current = lastOk ? lastOk.current : 0;
       const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-      // Show items from the 8th-to-last ok onwards (includes interleaved events in that range)
+      // Keep the log responsive for very large batches while preserving recent details.
+      const maxProgressItems = 25;
       const okIndices = evt.items.map((item, idx) => (item.type === "ok" ? idx : -1)).filter((idx) => idx >= 0);
-      const startIdx = okIndices.length > 8 ? okIndices[okIndices.length - 8] : 0;
+      const startIdx = okIndices.length > maxProgressItems ? okIndices[okIndices.length - maxProgressItems] : 0;
       const displayItems = evt.items.slice(startIdx);
+      const hiddenProgressItems = Math.max(0, evt.items.length - displayItems.length);
       const intIconMap = { warning: "alertTriangle", error: "x-circle", db: "database", info: "info", skip: "x" };
       const intClassMap = { warning: "step-warning", error: "step-error", db: "step-db", info: "step-info", skip: "step-skip" };
       return (
@@ -299,11 +441,16 @@ function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt" } =
             )}
           </div>
           <div className="log-progress-items">
+            {hiddenProgressItems > 0 ? (
+              <div className="log-progress-truncation">
+                Showing latest {displayItems.length} items ({hiddenProgressItems.toLocaleString()} earlier lines hidden)
+              </div>
+            ) : null}
             {displayItems.map((item, j) => {
               const itemKey = `${eventKey}-${j}`;
               if (item.type === "ok") {
                 return (
-                  <details key={itemKey} className="log-progress-detail">
+                  <details key={itemKey} className="log-progress-detail" open={expandProgressDetails}>
                     <summary className="log-progress-item log-progress-item-done">
                       <Icon name="check-circle" />
                       <span className="log-progress-slug">{item.slug}</span>
@@ -316,7 +463,7 @@ function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt" } =
               }
               if (item.type === "plan") {
                 return (
-                  <details key={itemKey} className="log-progress-detail">
+                  <details key={itemKey} className="log-progress-detail" open={expandProgressDetails}>
                     <summary className={`log-progress-item log-progress-item-${isLive ? "live" : "pending"}`}>
                       <Icon name={isLive ? "loader" : "info"} />
                       <span className="log-progress-slug">{item.slug}</span>
@@ -511,6 +658,7 @@ export default function App() {
   const [logMaximized, setLogMaximized] = useState(false);
   const logOffsetRef = useRef(0);
   const logPollRef = useRef(null);
+  const openConfigRequestRef = useRef(0);
   const selectedRunStatusRef = useRef(null);
   const [selectedRunId, setSelectedRunId] = useState("");
 
@@ -524,7 +672,10 @@ export default function App() {
     end_at: "",
     run_at: "",
     enabled: true,
+    run_if_missed: false,
   });
+  const [editingScheduleId, setEditingScheduleId] = useState("");
+  const [scheduleEditForm, setScheduleEditForm] = useState(null);
 
   const [configFiles, setConfigFiles] = useState([]);
   const [activeConfig, setActiveConfig] = useState("categories");
@@ -860,6 +1011,17 @@ export default function App() {
   useEffect(() => {
     setTaskValues(buildDefaultOptionValues(selectedTaskDef));
   }, [selectedTaskDef]);
+
+  useEffect(() => {
+    if (!editingScheduleId) {
+      return;
+    }
+    const stillExists = schedules.some((item) => String(item.schedule_id) === String(editingScheduleId));
+    if (!stillExists) {
+      setEditingScheduleId("");
+      setScheduleEditForm(null);
+    }
+  }, [editingScheduleId, schedules]);
 
   const liveRunsTimer = React.useRef(null);
 
@@ -1354,8 +1516,6 @@ export default function App() {
     }
   }
 
-  const UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600, days: 86400 };
-
   async function createSchedule() {
     if (!selectedTaskDef) {
       setError("Select a task before saving a schedule.");
@@ -1380,7 +1540,7 @@ export default function App() {
       if (options.dry_run === false) {
         await togglePolicy(selectedTask, true);
       }
-      const intervalSeconds = Number(scheduleForm.intervalValue) * (UNIT_SECONDS[scheduleForm.intervalUnit] || 1);
+      const intervalSeconds = Number(scheduleForm.intervalValue) * (SCHEDULE_UNIT_SECONDS[scheduleForm.intervalUnit] || 1);
       await api("/schedules", {
         method: "POST",
         body: {
@@ -1393,11 +1553,99 @@ export default function App() {
           run_at: scheduleForm.kind === "once" ? scheduleForm.run_at : undefined,
           options,
           enabled: Boolean(scheduleForm.enabled),
+          run_if_missed: Boolean(scheduleForm.run_if_missed),
         },
       });
       await refreshSchedules();
       setScheduleMode(false);
       showNotice("Schedule saved.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  function startScheduleEdit(schedule) {
+    const scheduleData = schedule.schedule_data || {};
+    const scheduleKind = schedule.schedule_kind === "once" ? "once" : "interval";
+    const interval = splitIntervalSeconds(scheduleData.seconds);
+    const taskId = String(schedule.task_id || "");
+    const taskDef = tasks.find((item) => item.task_id === taskId) || null;
+    setEditingScheduleId(String(schedule.schedule_id || ""));
+    setScheduleEditForm({
+      name: String(schedule.name || ""),
+      task_id: taskId,
+      kind: scheduleKind,
+      intervalValue: interval.intervalValue,
+      intervalUnit: interval.intervalUnit,
+      start_at: toDateTimeLocalValue(scheduleData.start_at),
+      end_at: toDateTimeLocalValue(scheduleData.end_at),
+      run_at: toDateTimeLocalValue(scheduleData.run_at),
+      enabled: schedule.enabled !== false,
+      run_if_missed: Boolean(scheduleData.run_if_missed),
+      optionValues: buildTaskOptionSeed(taskDef, schedule.options || {}),
+    });
+  }
+
+  function cancelScheduleEdit() {
+    setEditingScheduleId("");
+    setScheduleEditForm(null);
+  }
+
+  async function saveScheduleEdit(scheduleId) {
+    if (!scheduleEditForm) {
+      return;
+    }
+    const selectedEditTaskDef = tasks.find((item) => item.task_id === scheduleEditForm.task_id) || null;
+    if (!selectedEditTaskDef) {
+      setError("Select a valid task before saving this schedule.");
+      return;
+    }
+    if (!scheduleEditForm.name.trim()) {
+      setError("Please enter a name for this schedule.");
+      return;
+    }
+    if (scheduleEditForm.kind === "once" && !scheduleEditForm.run_at) {
+      setError("Please choose a date and time for this schedule.");
+      return;
+    }
+    if (scheduleEditForm.kind === "interval" && !scheduleEditForm.start_at) {
+      setError("Please choose a start date for this schedule.");
+      return;
+    }
+    if (scheduleEditForm.kind === "interval" && Number(scheduleEditForm.intervalValue) <= 0) {
+      setError("Interval schedules require a positive interval value.");
+      return;
+    }
+
+    try {
+      clearBanners();
+      const options = normalizeTaskOptions(selectedEditTaskDef, scheduleEditForm.optionValues || {});
+      if (options.dry_run === false) {
+        await togglePolicy(selectedEditTaskDef.task_id, true);
+      }
+      const intervalSeconds =
+        Number(scheduleEditForm.intervalValue) * (SCHEDULE_UNIT_SECONDS[scheduleEditForm.intervalUnit] || 1);
+      await api(`/schedules/${scheduleId}`, {
+        method: "PATCH",
+        body: {
+          name: scheduleEditForm.name,
+          task_id: scheduleEditForm.task_id,
+          kind: scheduleEditForm.kind,
+          seconds: scheduleEditForm.kind === "interval" ? intervalSeconds : undefined,
+          start_at: scheduleEditForm.kind === "interval" ? scheduleEditForm.start_at : undefined,
+          end_at:
+            scheduleEditForm.kind === "interval" && scheduleEditForm.end_at
+              ? scheduleEditForm.end_at
+              : undefined,
+          run_at: scheduleEditForm.kind === "once" ? scheduleEditForm.run_at : undefined,
+          options,
+          enabled: Boolean(scheduleEditForm.enabled),
+          run_if_missed: Boolean(scheduleEditForm.run_if_missed),
+        },
+      });
+      await refreshSchedules();
+      cancelScheduleEdit();
+      showNotice("Schedule updated.");
     } catch (exc) {
       handleError(exc);
     }
@@ -1607,12 +1855,20 @@ export default function App() {
   }
 
   async function openConfig(name) {
+    const requestId = openConfigRequestRef.current + 1;
+    openConfigRequestRef.current = requestId;
     try {
       clearBanners();
       const payload = await api(`/config/files/${name}`);
+      if (requestId !== openConfigRequestRef.current) {
+        return;
+      }
       setActiveConfig(name);
       setConfigEditorState(payload.content, name);
     } catch (exc) {
+      if (requestId !== openConfigRequestRef.current) {
+        return;
+      }
       handleError(exc);
     }
   }
@@ -2264,6 +2520,17 @@ export default function App() {
                       onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
                     />
                   </label>
+
+                  <label className="field field-inline">
+                    <span>Run if schedule is missed</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(scheduleForm.run_if_missed)}
+                      onChange={(event) =>
+                        setScheduleForm((prev) => ({ ...prev, run_if_missed: event.target.checked }))
+                      }
+                    />
+                  </label>
                 </div>
               )}
 
@@ -2288,28 +2555,233 @@ export default function App() {
               <h3>Saved Schedules</h3>
               <p className="muted">{schedules.length} schedule{schedules.length !== 1 ? "s" : ""} configured.</p>
               <ul className="schedule-list">
-                {schedules.map((schedule) => (
-                  <li key={schedule.schedule_id}>
-                    <div>
-                      <strong>{schedule.name || schedule.schedule_id}</strong>
-                      <p className="tiny muted">
-                        {taskTitleById.get(schedule.task_id) || schedule.task_id} · {formatScheduleTiming(schedule)}
-                      </p>
-                    </div>
-                    <div className="schedule-item-actions">
-                      <button
-                        className={`ghost small ${schedule.enabled !== false ? "enabled-toggle" : "disabled-toggle"}`}
-                        title={schedule.enabled !== false ? "Disable schedule" : "Enable schedule"}
-                        onClick={() => toggleScheduleEnabled(schedule)}
-                      >
-                        <Icon name={schedule.enabled !== false ? "check-circle" : "x-circle"} />
-                      </button>
-                      <button className="ghost small danger" onClick={() => deleteSchedule(schedule.schedule_id)}>
-                        <Icon name="trash" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {schedules.map((schedule) => {
+                  const scheduleId = String(schedule.schedule_id || "");
+                  const isEditing = scheduleId === String(editingScheduleId || "");
+                  const editor = isEditing ? scheduleEditForm : null;
+                  const editTaskDef = editor ? tasks.find((item) => item.task_id === editor.task_id) || null : null;
+                  const visibleEditOptions = (editTaskDef?.options || []).filter((option) => {
+                    if (option.hidden) return false;
+                    if (!option.hidden_when) return true;
+                    const conds = Array.isArray(option.hidden_when) ? option.hidden_when : [option.hidden_when];
+                    return !conds.some(({ key, value: trigger }) => (editor?.optionValues || {})[key] === trigger);
+                  });
+                  return (
+                    <li key={scheduleId} className={`schedule-item${isEditing ? " is-editing" : ""}`}>
+                      <div className="schedule-item-main">
+                        <div>
+                          <strong>{schedule.name || schedule.schedule_id}</strong>
+                          <p className="tiny muted">
+                            {taskTitleById.get(schedule.task_id) || schedule.task_id}
+                            {" · "}
+                            {formatScheduleTiming(schedule)}
+                            {" · "}
+                            {schedule.schedule_data?.run_if_missed ? "Run if missed" : "Skip if missed"}
+                          </p>
+                        </div>
+                        <div className="schedule-item-actions">
+                          <button
+                            className={`ghost small${isEditing ? " active-edit" : ""}`}
+                            title={isEditing ? "Close editor" : "Edit schedule"}
+                            onClick={() => (isEditing ? cancelScheduleEdit() : startScheduleEdit(schedule))}
+                          >
+                            <Icon name="pencil" />
+                          </button>
+                          <button
+                            className={`ghost small ${schedule.enabled !== false ? "enabled-toggle" : "disabled-toggle"}`}
+                            title={schedule.enabled !== false ? "Disable schedule" : "Enable schedule"}
+                            onClick={() => toggleScheduleEnabled(schedule)}
+                          >
+                            <Icon name={schedule.enabled !== false ? "check-circle" : "x-circle"} />
+                          </button>
+                          <button className="ghost small danger" onClick={() => deleteSchedule(scheduleId)}>
+                            <Icon name="trash" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isEditing && editor ? (
+                        <div className="schedule-edit-panel">
+                          <div className="schedule-edit-grid">
+                            <label className="field">
+                              <span>Schedule Name</span>
+                              <input
+                                value={editor.name}
+                                onChange={(event) =>
+                                  setScheduleEditForm((prev) => (prev ? { ...prev, name: event.target.value } : prev))
+                                }
+                              />
+                            </label>
+
+                            <label className="field">
+                              <span>Task</span>
+                              <select
+                                value={editor.task_id}
+                                onChange={(event) => {
+                                  const nextTaskId = event.target.value;
+                                  const nextTaskDef = tasks.find((item) => item.task_id === nextTaskId) || null;
+                                  setScheduleEditForm((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          task_id: nextTaskId,
+                                          optionValues: buildTaskOptionSeed(nextTaskDef, {}),
+                                        }
+                                      : prev
+                                  );
+                                }}
+                              >
+                                {tasks.map((task) => (
+                                  <option key={task.task_id} value={task.task_id}>
+                                    {task.title || task.task_id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="field">
+                              <span>Type</span>
+                              <select
+                                value={editor.kind}
+                                onChange={(event) =>
+                                  setScheduleEditForm((prev) => (prev ? { ...prev, kind: event.target.value } : prev))
+                                }
+                              >
+                                <option value="interval">Interval</option>
+                                <option value="once">Once</option>
+                              </select>
+                            </label>
+
+                            {editor.kind === "interval" ? (
+                              <>
+                                <div className="interval-row">
+                                  <label className="field">
+                                    <span>Every</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={editor.intervalValue}
+                                      onChange={(event) =>
+                                        setScheduleEditForm((prev) =>
+                                          prev ? { ...prev, intervalValue: event.target.value } : prev
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="field">
+                                    <span>&nbsp;</span>
+                                    <select
+                                      value={editor.intervalUnit}
+                                      onChange={(event) =>
+                                        setScheduleEditForm((prev) =>
+                                          prev ? { ...prev, intervalUnit: event.target.value } : prev
+                                        )
+                                      }
+                                    >
+                                      <option value="seconds">Seconds</option>
+                                      <option value="minutes">Minutes</option>
+                                      <option value="hours">Hours</option>
+                                      <option value="days">Days</option>
+                                    </select>
+                                  </label>
+                                </div>
+                                <label className="field">
+                                  <span>Start date</span>
+                                  <input
+                                    type="datetime-local"
+                                    value={editor.start_at}
+                                    onChange={(event) =>
+                                      setScheduleEditForm((prev) => (prev ? { ...prev, start_at: event.target.value } : prev))
+                                    }
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>End date <span className="muted">(optional)</span></span>
+                                  <input
+                                    type="datetime-local"
+                                    value={editor.end_at}
+                                    onChange={(event) =>
+                                      setScheduleEditForm((prev) => (prev ? { ...prev, end_at: event.target.value } : prev))
+                                    }
+                                  />
+                                </label>
+                              </>
+                            ) : (
+                              <label className="field">
+                                <span>Run at</span>
+                                <input
+                                  type="datetime-local"
+                                  value={editor.run_at}
+                                  onChange={(event) =>
+                                    setScheduleEditForm((prev) => (prev ? { ...prev, run_at: event.target.value } : prev))
+                                  }
+                                />
+                              </label>
+                            )}
+
+                            <label className="field field-inline">
+                              <span>Enabled</span>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(editor.enabled)}
+                                onChange={(event) =>
+                                  setScheduleEditForm((prev) => (prev ? { ...prev, enabled: event.target.checked } : prev))
+                                }
+                              />
+                            </label>
+
+                            <label className="field field-inline">
+                              <span>Run if schedule is missed</span>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(editor.run_if_missed)}
+                                onChange={(event) =>
+                                  setScheduleEditForm((prev) =>
+                                    prev ? { ...prev, run_if_missed: event.target.checked } : prev
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+
+                          {visibleEditOptions.length > 0 ? (
+                            <div className="option-grid schedule-edit-options">
+                              {visibleEditOptions.map((option) =>
+                                fieldFromOption(
+                                  option,
+                                  (editor.optionValues || {})[option.key],
+                                  (key, value) =>
+                                    setScheduleEditForm((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            optionValues: { ...(prev.optionValues || {}), [key]: value },
+                                          }
+                                        : prev
+                                    ),
+                                  editor.optionValues || {}
+                                )
+                              )}
+                            </div>
+                          ) : (
+                            <p className="muted tiny">This task has no additional options.</p>
+                          )}
+
+                          <div className="schedule-edit-actions">
+                            <button type="button" className="primary small" onClick={() => saveScheduleEdit(scheduleId)}>
+                              <Icon name="save" />
+                              Save Changes
+                            </button>
+                            <button type="button" className="ghost small" onClick={cancelScheduleEdit}>
+                              <Icon name="x" />
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </article>
           ) : null}
@@ -2511,11 +2983,13 @@ export default function App() {
                             const stageKey = `dm-stage-${stage.stage}-${idx}`;
                             const stageIsLive = Boolean(isLive) && stage.status === "running";
                             const summaryTitle = `${stageDisplayName(stage.stage)} Summary`;
+                            const stageResultSummary = buildStageResultSummary(stage, meta.label);
+                            const showStageResults = stage.started || stage.events.length > 0 || Boolean(stage.summary);
                             return (
                               <details
                                 key={stageKey}
                                 className={`log-stage-card ${meta.cls}`}
-                                defaultOpen={stage.status === "running" || stage.status === "failed"}
+                                defaultOpen={stage.started || stage.status === "running" || stage.status === "failed"}
                               >
                                 <summary className="log-stage-summary">
                                   <span className="log-stage-summary-left">
@@ -2538,6 +3012,7 @@ export default function App() {
                                       {renderGroupedLogEvents(stageEvents, {
                                         isLive: stageIsLive,
                                         keyPrefix: `${stageKey}-events`,
+                                        expandProgressDetails: true,
                                       })}
                                       {stage.summary && renderSummaryTable(stage.summary, {
                                         title: summaryTitle,
@@ -2546,6 +3021,13 @@ export default function App() {
                                       })}
                                     </>
                                   )}
+                                  {showStageResults
+                                    ? renderSummaryTable(stageResultSummary, {
+                                        title: `${stageDisplayName(stage.stage)} Results`,
+                                        iconName: stage.status === "failed" ? "alertTriangle" : "check-circle",
+                                        keyPrefix: `${stageKey}-result`,
+                                      })
+                                    : null}
                                 </div>
                               </details>
                             );
@@ -2554,6 +3036,11 @@ export default function App() {
                         {renderGroupedLogEvents(groupLogEvents(dataMaintenanceView.trailer), {
                           isLive: Boolean(isLive),
                           keyPrefix: "dm-trailer",
+                        })}
+                        {renderSummaryTable(buildPipelineExecutionSummary(dataMaintenanceView.stages), {
+                          title: "Pipeline Results",
+                          iconName: "check-circle",
+                          keyPrefix: "dm-pipeline-summary",
                         })}
                       </>
                     ) : (

@@ -542,10 +542,20 @@ textarea {
   border-radius: 10px;
   background: var(--surface-soft);
   padding: 0.48rem 0.56rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.schedule-item-main {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.55rem;
+}
+
+.schedule-item.is-editing {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--line));
+  background: color-mix(in oklab, var(--accent-soft) 55%, var(--surface-soft));
 }
 
 .schedule-item-actions {
@@ -553,6 +563,11 @@ textarea {
   align-items: center;
   gap: 0.35rem;
   flex-shrink: 0;
+}
+
+.schedule-item-actions .active-edit {
+  color: var(--accent-strong);
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--line));
 }
 
 .schedule-item-actions .enabled-toggle {
@@ -569,6 +584,30 @@ textarea {
 .schedule-item-actions button.danger:hover {
   background: color-mix(in oklab, var(--danger) 12%, transparent);
   border-color: color-mix(in oklab, var(--danger) 35%, transparent);
+}
+
+.schedule-edit-panel {
+  display: grid;
+  gap: 0.6rem;
+  border-top: 1px dashed var(--line);
+  padding-top: 0.6rem;
+}
+
+.schedule-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.schedule-edit-grid .interval-row,
+.schedule-edit-options {
+  grid-column: 1 / -1;
+}
+
+.schedule-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }
 
 .settings-grid {
@@ -1348,6 +1387,14 @@ tbody tr:hover {
   gap: 2px;
 }
 
+.log-progress-truncation {
+  font-size: 0.66rem;
+  color: #8a7d73;
+  border-bottom: 1px dashed #2e2622;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
+
 /* Expandable item wrapper */
 .log-progress-detail {
   list-style: none;
@@ -1457,7 +1504,6 @@ details[open] > summary .log-progress-chevron {
 }
 
 .ai-task-list li,
-.schedule-list li,
 .config-shortcuts li,
 .policy-list li {
   border: 1px solid var(--line);
@@ -2751,6 +2797,7 @@ button.danger {
   .coverage-grid,
   .option-grid,
   .option-grid.two,
+  .schedule-edit-grid,
   .structured-toolbar,
   .cookbook-toolbar,
   .cookbook-add-fields,
@@ -2778,6 +2825,12 @@ button.danger {
   .card-head.split,
   .split-actions,
   .about-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .schedule-item-main,
+  .schedule-edit-actions {
     flex-direction: column;
     align-items: stretch;
   }

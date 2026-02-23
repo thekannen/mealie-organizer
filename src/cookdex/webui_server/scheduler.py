@@ -19,6 +19,9 @@ from .state import StateStore
 from .tasks import TaskRegistry
 
 _DISPATCHERS: dict[str, Callable[[str], None]] = {}
+_DEFAULT_MISFIRE_GRACE_SECONDS = 60
+_MISSED_INTERVAL_GRACE_SECONDS = 7 * 24 * 60 * 60
+_MISSED_ONCE_GRACE_SECONDS = 30 * 24 * 60 * 60
 
 
 def _dispatcher_id_for_path(sqlite_path: str) -> str:
@@ -149,18 +152,28 @@ class SchedulerService:
             except Exception:
                 pass
             return
-        trigger = self._build_trigger(record["schedule_kind"], dict(record["schedule_data"]))
+        schedule_data = dict(record["schedule_data"])
+        trigger = self._build_trigger(record["schedule_kind"], schedule_data)
+        misfire_grace_time = self._resolve_misfire_grace_time(str(record["schedule_kind"]), schedule_data)
         self.scheduler.add_job(
             func=_run_registered_dispatcher,
             trigger=trigger,
             id=schedule_id,
             replace_existing=True,
             kwargs={"dispatcher_id": self.dispatcher_id, "schedule_id": schedule_id},
-            misfire_grace_time=60,
+            misfire_grace_time=misfire_grace_time,
             coalesce=True,
             max_instances=1,
             jobstore="default",
         )
+
+    def _resolve_misfire_grace_time(self, kind: str, schedule_data: dict[str, Any]) -> int:
+        run_if_missed = bool(schedule_data.get("run_if_missed", False))
+        if not run_if_missed:
+            return _DEFAULT_MISFIRE_GRACE_SECONDS
+        if kind == "once":
+            return _MISSED_ONCE_GRACE_SECONDS
+        return _MISSED_INTERVAL_GRACE_SECONDS
 
     def _build_trigger(self, kind: str, schedule_data: dict[str, Any]) -> IntervalTrigger | DateTrigger:
         if kind == "interval":

@@ -139,6 +139,12 @@ const ICON_PATHS = {
       <path d="M8 20v-6h8v6" />
     </>
   ),
+  pencil: (
+    <>
+      <path d="m3 17.25 11.06-11.06a2 2 0 0 1 2.83 0l.91.91a2 2 0 0 1 0 2.83L6.75 21H3z" />
+      <path d="M14 6 18 10" />
+    </>
+  ),
   upload: (
     <>
       <path d="M12 16V6" />
