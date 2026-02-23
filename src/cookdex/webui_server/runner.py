@@ -278,12 +278,14 @@ class RunQueueManager:
         except OSError:
             return
 
+        can_kill_process_group = hasattr(os, "killpg") and hasattr(os, "getpgid")
         sent = False
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            sent = True
-        except OSError:
-            pass
+        if can_kill_process_group:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                sent = True
+            except OSError:
+                pass
 
         if not sent:
             try:
@@ -301,9 +303,15 @@ class RunQueueManager:
         except (subprocess.TimeoutExpired, OSError):
             pass
 
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except OSError:
+        if can_kill_process_group:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            except OSError:
+                try:
+                    process.kill()
+                except OSError:
+                    return
+        else:
             try:
                 process.kill()
             except OSError:

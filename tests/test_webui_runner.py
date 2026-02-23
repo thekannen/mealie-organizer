@@ -32,7 +32,7 @@ def test_cancel_running_run_terminates_process_group(tmp_path: Path) -> None:
     proc.poll.return_value = None
     manager._active["run-1"] = proc
 
-    with patch("os.getpgid", return_value=4321), patch("os.killpg") as killpg:
+    with patch("os.getpgid", return_value=4321, create=True), patch("os.killpg", create=True) as killpg:
         canceled = manager.cancel("run-1")
 
     assert canceled is True
