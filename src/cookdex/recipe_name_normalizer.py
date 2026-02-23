@@ -9,11 +9,11 @@ Transformations applied (in order):
   3. Strip common URL-artifact prefixes: "recipe for", "how to make",
      "how to cook", "how to", "make", "cook".
   4. Strip trailing word "recipe".
-  5. Title-case the result.
+  5. Smart title-case (preserves small words, apostrophes, and acronyms).
 
-A recipe is a candidate for renaming when its name matches its slug after
-URL-decoding and lowercasing (i.e. it was never given a human name).  You can
-also force all recipes through the normalizer with --all.
+A recipe is a candidate for renaming when its name is entirely lowercase
+(i.e. it was never given proper casing by a human).  You can also force all
+recipes through the normalizer with --all.
 
 Writes PATCH calls to Mealie via the HTTP API.  Use DRY_RUN=true (the default)
 to preview changes without writing anything.
@@ -42,7 +42,56 @@ _PREFIX_PATTERNS: list[re.Pattern] = [
     re.compile(r"^(?:make|cook)\s+", re.IGNORECASE),
 ]
 _SUFFIX_PATTERN = re.compile(r"\s+recipe$", re.IGNORECASE)
-_SLUG_MATCH_PATTERN = re.compile(r"[^a-z0-9]+")
+_HAS_UPPERCASE_RE = re.compile(r"[A-Z]")
+
+# Words that stay lowercase in title case (except when first or last).
+_SMALL_WORDS: frozenset[str] = frozenset({
+    "a", "an", "the",
+    "and", "but", "or", "nor", "for", "yet", "so",
+    "at", "by", "in", "of", "on", "to", "up", "as",
+    "from", "into", "with", "over", "via", "per",
+    "vs",
+})
+
+# Common food/cooking abbreviations that should stay uppercase.
+_ACRONYMS: dict[str, str] = {
+    "bbq": "BBQ", "blt": "BLT", "gf": "GF", "diy": "DIY",
+    "pb": "PB", "pbj": "PBJ", "xo": "XO", "hk": "HK",
+    "thc": "THC", "vgf": "VGF", "ac": "AC",
+}
+
+
+def _title_case_word(word: str) -> str:
+    """Capitalize a single word, handling apostrophes correctly."""
+    if "'" in word:
+        # "valentine's" → "Valentine's",  "don't" → "Don't"
+        parts = word.split("'", 1)
+        return parts[0].capitalize() + "'" + parts[1]
+    return word.capitalize()
+
+
+def _smart_title_case(text: str) -> str:
+    """Title-case *text* following standard English conventions.
+
+    - Small words (a, an, the, and, of, ...) stay lowercase unless first/last.
+    - Apostrophe contractions and possessives keep correct casing.
+    - Known acronyms (BBQ, BLT, ...) are uppercased.
+    """
+    words = text.lower().split()
+    if not words:
+        return text
+    result: list[str] = []
+    last_idx = len(words) - 1
+    for i, word in enumerate(words):
+        # Strip surrounding punctuation for dictionary lookups.
+        stripped = word.strip(",:;!?\"'()-")
+        if stripped in _ACRONYMS:
+            result.append(word.replace(stripped, _ACRONYMS[stripped]))
+        elif i == 0 or i == last_idx or stripped not in _SMALL_WORDS:
+            result.append(_title_case_word(word))
+        else:
+            result.append(word)  # already lowercase
+    return " ".join(result)
 
 
 def normalize_recipe_name(raw: str) -> str:
@@ -52,14 +101,13 @@ def normalize_recipe_name(raw: str) -> str:
     for pat in _PREFIX_PATTERNS:
         name = pat.sub("", name).strip()
     name = _SUFFIX_PATTERN.sub("", name).strip()
-    return name.title()
+    return _smart_title_case(name)
 
 
-def _slug_matches_name(name: str, slug: str) -> bool:
-    """True when the recipe's name appears to be derived directly from its slug."""
-    norm_name = _SLUG_MATCH_PATTERN.sub("", name.lower().replace(" ", ""))
-    norm_slug = _SLUG_MATCH_PATTERN.sub("", slug.lower())
-    return norm_name == norm_slug
+def _looks_unformatted(name: str) -> bool:
+    """True when the name has no uppercase letters, indicating it was
+    auto-generated from a URL slug or import and never human-edited."""
+    return not _HAS_UPPERCASE_RE.search(name)
 
 
 def _should_normalize(recipe: dict[str, Any], *, force_all: bool) -> bool:
@@ -69,7 +117,7 @@ def _should_normalize(recipe: dict[str, Any], *, force_all: bool) -> bool:
         return False
     if force_all:
         return normalize_recipe_name(name) != name
-    return _slug_matches_name(name, slug) and normalize_recipe_name(name) != name
+    return _looks_unformatted(name) and normalize_recipe_name(name) != name
 
 
 @dataclass

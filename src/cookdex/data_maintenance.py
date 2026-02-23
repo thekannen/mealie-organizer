@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -27,6 +28,7 @@ class StageResult:
     stage: str
     command: list[str]
     exit_code: int
+    elapsed_seconds: float = 0.0
 
 
 def parse_stage_list(raw: str) -> list[str]:
@@ -140,6 +142,14 @@ def default_stage_string() -> str:
     return ",".join(DEFAULT_STAGE_ORDER)
 
 
+def _fmt_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    secs = seconds % 60
+    return f"{minutes}m {secs:.0f}s"
+
+
 def run_stage(
     stage: str,
     *,
@@ -161,9 +171,19 @@ def run_stage(
             return StageResult(stage=stage, command=[], exit_code=0)
 
     cmd = stage_command(stage, apply_cleanups=apply_cleanups, use_db=use_db, nutrition_sample=nutrition_sample)
+    print(f"{'=' * 60}", flush=True)
     print(f"[start] {stage}", flush=True)
+    t0 = time.monotonic()
     completed = subprocess.run(cmd, check=False)
-    return StageResult(stage=stage, command=cmd, exit_code=completed.returncode)
+    elapsed = time.monotonic() - t0
+    if completed.returncode == 0:
+        print(f"[done] {stage} ({_fmt_elapsed(elapsed)})", flush=True)
+    else:
+        print(
+            f"[error] {stage}: exit code {completed.returncode} ({_fmt_elapsed(elapsed)})",
+            flush=True,
+        )
+    return StageResult(stage=stage, command=cmd, exit_code=completed.returncode, elapsed_seconds=elapsed)
 
 
 def run_pipeline(
@@ -246,17 +266,27 @@ def main() -> int:
     all_stages = [r.stage for r in results]
     failed_stages = [r.stage for r in failed]
     passed_count = len(results) - len(failed)
+    total_elapsed = sum(r.elapsed_seconds for r in results)
+    print(f"{'=' * 60}", flush=True)
     print(
         f"[done] {len(results)} stage(s) run — {passed_count} passed"
-        + (f", {len(failed)} failed: {', '.join(failed_stages)}" if failed else ""),
+        + (f", {len(failed)} failed: {', '.join(failed_stages)}" if failed else "")
+        + f" ({_fmt_elapsed(total_elapsed)} total)",
         flush=True,
     )
+    if failed:
+        for r in failed:
+            print(
+                f"  FAILED: {r.stage} (exit code {r.exit_code}, {_fmt_elapsed(r.elapsed_seconds)})",
+                flush=True,
+            )
     print("[summary] " + json.dumps({
         "Stages Run": len(results),
         "Passed": passed_count,
         "Failed": len(failed),
         "Failed Stages": ", ".join(failed_stages) if failed_stages else "none",
         "All Stages": ", ".join(all_stages),
+        "Elapsed": _fmt_elapsed(total_elapsed),
     }), flush=True)
     if failed:
         return 1
