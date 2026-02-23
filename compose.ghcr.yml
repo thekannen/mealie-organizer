@@ -4,7 +4,8 @@ services:
     container_name: cookdex
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       TAXONOMY_REFRESH_MODE: ${TAXONOMY_REFRESH_MODE:-merge}
       WEB_BIND_PORT: ${WEB_BIND_PORT:-4820}

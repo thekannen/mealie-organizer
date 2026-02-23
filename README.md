@@ -6,18 +6,14 @@ Web UI-first automation service for [Mealie](https://mealie.io). Manage recipe t
 
 ```bash
 mkdir -p cookdex && cd cookdex
-curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/.env.example -o .env
 curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/compose.ghcr.yml -o compose.yaml
-```
-
-Edit `.env` with your values (at minimum `MEALIE_URL`, `MEALIE_API_KEY`, `WEB_BOOTSTRAP_PASSWORD`, and `MO_WEBUI_MASTER_KEY`), then start:
-
-```bash
 docker compose pull cookdex
 docker compose up -d cookdex
 ```
 
-Open `http://localhost:4820/cookdex` and log in with the bootstrap credentials.
+Open `http://localhost:4820/cookdex`, create your admin account, then add your Mealie URL and API key in **Settings**.
+
+No `.env` file is required — configuration is managed through the web UI.
 
 ## What It Does
 
@@ -101,26 +97,25 @@ All endpoints are under `/cookdex/api/v1`. Authentication is cookie-based.
 
 ## Environment Variables
 
-Required at startup (set in `.env`):
-
-| Variable | Description |
-|---|---|
-| `MEALIE_URL` | Mealie API base URL (e.g. `http://mealie:9000/api`) |
-| `MEALIE_API_KEY` | Mealie API key with write access |
-| `WEB_BOOTSTRAP_PASSWORD` | Initial admin password (omit for first-time registration flow) |
-| `MO_WEBUI_MASTER_KEY` | Fernet key for encrypting secrets at rest |
-
-Optional (defaults shown):
+CookDex starts with no required environment variables. A `.env` file is optional — create one only to override defaults.
 
 | Variable | Default | Description |
 |---|---|---|
 | `WEB_BIND_HOST` | `0.0.0.0` | Server bind address |
 | `WEB_BIND_PORT` | `4820` | Server port |
 | `WEB_BASE_PATH` | `/cookdex` | URL base path |
-| `WEB_BOOTSTRAP_USER` | `admin` | Bootstrap admin username |
 | `WEB_COOKIE_SECURE` | `true` | Require HTTPS for session cookies |
 
-After first login, provider keys and runtime settings can be managed from the Settings page.
+For headless or automated deployments:
+
+| Variable | Description |
+|---|---|
+| `WEB_BOOTSTRAP_PASSWORD` | Pre-create admin user on first start (skips UI registration) |
+| `MO_WEBUI_MASTER_KEY` | Override the auto-generated encryption key |
+| `MEALIE_URL` | Pre-seed Mealie URL (can also be set in UI) |
+| `MEALIE_API_KEY` | Pre-seed Mealie API key (can also be set in UI) |
+
+After first login, all provider settings are managed from the Settings page.
 
 ## Direct DB Access (Optional)
 
@@ -150,7 +145,7 @@ See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including 
 | Host path | Container path | Purpose |
 |---|---|---|
 | `./configs` | `/app/configs` | Taxonomy JSON files |
-| `./cache` | `/app/cache` | SQLite state database |
+| `./cache` | `/app/cache` | SQLite state database and encryption key |
 | `./logs` | `/app/logs` | Task run logs |
 | `./reports` | `/app/reports` | Audit/maintenance reports |
 

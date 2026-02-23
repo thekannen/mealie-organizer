@@ -280,6 +280,43 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
         assert once_id not in ids
 
 
+def test_master_key_auto_generated(tmp_path: Path, monkeypatch):
+    """When MO_WEBUI_MASTER_KEY is unset, a key file is auto-generated next to the state DB."""
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    db_path = tmp_path / "db" / "state.db"
+    monkeypatch.delenv("MO_WEBUI_MASTER_KEY", raising=False)
+    monkeypatch.delenv("MO_WEBUI_MASTER_KEY_FILE", raising=False)
+    monkeypatch.delenv("WEB_BOOTSTRAP_PASSWORD", raising=False)
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(db_path))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    key_file = db_path.parent / ".master_key"
+    assert key_file.exists(), "Auto-generated key file should exist"
+    first_key = key_file.read_text(encoding="utf-8").strip()
+    assert len(first_key) > 0
+
+    # Second startup reuses the same key
+    importlib.reload(app_module)
+    app2 = app_module.create_app()
+    assert key_file.read_text(encoding="utf-8").strip() == first_key
+
+    with TestClient(app) as client:
+        health = client.get("/cookdex/api/v1/health")
+        assert health.status_code == 200
+
+        # Registration still works (no bootstrap password = setup required)
+        bootstrap = client.get("/cookdex/api/v1/auth/bootstrap-status")
+        assert bootstrap.json()["setup_required"] is True
+
+
 def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path, monkeypatch):
     config_root = tmp_path / "repo"
     _seed_config_root(config_root)

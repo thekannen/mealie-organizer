@@ -1,29 +1,30 @@
 # Getting Started
 
-## 1) Configure startup env
-
-Copy `.env.example` to `.env` and set:
-
-- `MEALIE_URL`
-- `MEALIE_API_KEY`
-- `WEB_BOOTSTRAP_PASSWORD`
-- `MO_WEBUI_MASTER_KEY`
-
-## 2) Launch service
+## 1) Start the service
 
 ```bash
 docker compose pull cookdex
 docker compose up -d cookdex
 ```
 
-## 3) Open Web UI
+No `.env` file is required.
+
+## 2) Open the Web UI
 
 `http://localhost:4820/cookdex`
 
-## 4) First login
+## 3) Create your admin account
 
-- Username: `WEB_BOOTSTRAP_USER` (default `admin`)
-- Password: `WEB_BOOTSTRAP_PASSWORD`
+On first visit, the setup screen prompts you to create an admin user. Choose a username and a strong password (at least 8 characters, mixed case, with a digit).
+
+## 4) Configure Mealie connection
+
+After login, go to **Settings** and enter:
+
+- **Mealie Server URL** — e.g. `http://mealie:9000/api`
+- **Mealie API Key** — your Mealie API token
+
+Click **Test Mealie** to verify. The dashboard shows a banner until both values are set.
 
 ## 5) Verify health
 
@@ -31,13 +32,9 @@ docker compose up -d cookdex
 curl http://localhost:4820/cookdex/api/v1/health
 ```
 
-## 6) Configure runtime variables in UI
+## 6) Run a dry task
 
-Use **Environment Variables** in the UI to manage `.env`-style runtime keys and secrets.
-
-## 7) Run a dry task
-
-- Open **Run Task**
+- Open **Tasks**
 - Pick `ingredient-parse`
 - Keep `dry_run=true`
 - Queue run and inspect logs

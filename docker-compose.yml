@@ -4,7 +4,8 @@ services:
     container_name: cookdex
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PROVIDER: ""
       TAXONOMY_REFRESH_MODE: merge

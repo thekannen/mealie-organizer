@@ -2,46 +2,45 @@
 
 CookDex is deployed from GitHub Container Registry (`ghcr.io/thekannen/cookdex`).
 
-## 1. Download config files
+## 1. Download the compose file
 
 ```bash
 mkdir -p cookdex && cd cookdex
-curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/.env.example -o .env
 curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/compose.ghcr.yml -o compose.yaml
 ```
 
-## 2. Configure environment
+No `.env` file is required. To override defaults (port, base path, etc.), optionally download and edit `.env.example`:
 
-Edit `.env` and set the required values:
+```bash
+curl -fsSL https://raw.githubusercontent.com/thekannen/cookdex/main/.env.example -o .env
+```
 
-| Variable | Description |
-|---|---|
-| `MEALIE_URL` | Mealie API base URL (e.g. `http://mealie:9000/api`) |
-| `MEALIE_API_KEY` | Mealie API key with write access |
-| `WEB_BOOTSTRAP_PASSWORD` | Initial admin password (omit to use first-time registration flow) |
-| `MO_WEBUI_MASTER_KEY` | Fernet key for encrypting secrets at rest |
-
-## 3. Start the service
+## 2. Start the service
 
 ```bash
 docker compose pull cookdex
 docker compose up -d cookdex
 ```
 
-## 4. Open the Web UI
+## 3. Open the Web UI and complete setup
 
-`http://localhost:4820/cookdex`
+Open `http://localhost:4820/cookdex` in your browser.
 
-Log in with the `WEB_BOOTSTRAP_USER` (default `admin`) and the password from `WEB_BOOTSTRAP_PASSWORD`.
+1. Create your admin account (first-time setup screen).
+2. Navigate to **Settings**.
+3. Enter your **Mealie Server URL** and **Mealie API Key**.
+4. Click **Test Mealie** to verify the connection.
 
 ## Required volumes
 
 | Host path | Container path | Purpose |
 |---|---|---|
 | `./configs` | `/app/configs` | Taxonomy JSON config files |
-| `./cache` | `/app/cache` | SQLite state database |
+| `./cache` | `/app/cache` | SQLite state database and encryption key |
 | `./logs` | `/app/logs` | Task run log files |
 | `./reports` | `/app/reports` | Audit and maintenance reports |
+
+The `./cache` volume stores the state database and the auto-generated encryption key. Keep this volume persistent.
 
 ## Updating
 
@@ -54,6 +53,6 @@ After updating, verify login and check `/cookdex/api/v1/health`.
 
 ## Notes
 
-- Runtime variable management is available in the Web UI after login.
-- Secrets are encrypted at rest using `MO_WEBUI_MASTER_KEY`.
-- GHCR is the standard deployment path for this project.
+- All runtime settings are managed from the Settings page after login.
+- Secrets are encrypted at rest using an auto-generated key (stored in `./cache`).
+- An optional `.env` file can pre-seed settings or override defaults for headless deployments.

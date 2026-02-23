@@ -12,6 +12,8 @@
   --accent-soft: #fff1e2;
   --danger: #a84d3e;
   --danger-soft: #fff1ee;
+  --warning: #9a7b2f;
+  --warning-soft: #fff8e1;
   --success: #2f8b57;
   --running: #af7a2f;
   --shadow: none;
@@ -31,6 +33,8 @@
   --accent-soft: #453123;
   --danger: #e28272;
   --danger-soft: #4b2b25;
+  --warning: #e0b84a;
+  --warning-soft: #3d3321;
   --success: #88c89f;
   --running: #f3bf67;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
@@ -2466,6 +2470,19 @@ button.danger {
   background: var(--danger-soft);
   border-color: color-mix(in oklab, var(--danger) 35%, var(--line));
   color: var(--danger);
+}
+
+.banner.warning {
+  background: var(--warning-soft);
+  border-color: color-mix(in oklab, var(--warning) 35%, var(--line));
+  color: var(--warning);
+}
+
+.link-inline {
+  all: unset;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 700;
 }
 
 .stacked-cards {

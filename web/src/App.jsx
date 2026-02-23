@@ -1510,6 +1510,7 @@ export default function App() {
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
     const hasFailed = runStats.failed > 0;
+    const needsConnectionSetup = envSpecs?.MEALIE_URL?.has_value === false || envSpecs?.MEALIE_API_KEY?.has_value === false;
     const statusMsg = hasFailed
       ? `${runStats.failed} run${runStats.failed === 1 ? "" : "s"} failed recently.`
       : !overviewMetrics?.ok && overviewMetrics?.reason
@@ -1529,6 +1530,17 @@ export default function App() {
             <p className="muted tiny">{overviewMetrics.reason}</p>
           ) : null}
         </article>
+
+        {needsConnectionSetup && (
+          <p className="banner warning">
+            <span>
+              <strong>Mealie connection not configured.</strong>{" "}
+              Go to{" "}
+              <button className="link-inline" onClick={() => setActivePage("settings")}>Settings</button>
+              {" "}to add your Mealie URL and API key before running tasks.
+            </span>
+          </p>
+        )}
 
         <section className="overview-stats">
           <article className="card stat-card">

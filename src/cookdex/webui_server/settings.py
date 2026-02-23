@@ -50,7 +50,7 @@ def _normalize_base_path(raw: str) -> str:
 def _normalize_fernet_key(raw: str) -> str:
     candidate = raw.strip()
     if not candidate:
-        raise RuntimeError("MO_WEBUI_MASTER_KEY is required for Web UI secrets encryption.")
+        raise RuntimeError("Encryption key value is empty.")
     try:
         Fernet(candidate.encode("utf-8"))
         return candidate
@@ -59,7 +59,8 @@ def _normalize_fernet_key(raw: str) -> str:
         return base64.urlsafe_b64encode(digest).decode("utf-8")
 
 
-def _load_master_key() -> str:
+def _load_master_key(state_db_path: Path) -> str:
+    # Priority 1: explicit env var
     value = os.environ.get("MO_WEBUI_MASTER_KEY", "").strip()
     if value:
         if value.lower() in _WEAK_MASTER_KEYS:
@@ -70,6 +71,7 @@ def _load_master_key() -> str:
             )
         return _normalize_fernet_key(value)
 
+    # Priority 2: key file env var
     key_file = os.environ.get("MO_WEBUI_MASTER_KEY_FILE", "").strip()
     if key_file:
         path = Path(key_file).expanduser().resolve()
@@ -77,9 +79,20 @@ def _load_master_key() -> str:
             raise RuntimeError(f"MO_WEBUI_MASTER_KEY_FILE does not exist: {path}")
         return _normalize_fernet_key(path.read_text(encoding="utf-8").strip())
 
-    raise RuntimeError(
-        "Missing encryption key. Set MO_WEBUI_MASTER_KEY or MO_WEBUI_MASTER_KEY_FILE."
-    )
+    # Priority 3: auto-generate and persist alongside the state DB
+    auto_key_path = state_db_path.parent / ".master_key"
+    if auto_key_path.exists():
+        return _normalize_fernet_key(auto_key_path.read_text(encoding="utf-8").strip())
+
+    auto_key_path.parent.mkdir(parents=True, exist_ok=True)
+    new_key = Fernet.generate_key().decode("utf-8")
+    auto_key_path.write_text(new_key, encoding="utf-8")
+    try:
+        auto_key_path.chmod(0o600)
+    except OSError:
+        pass
+    print(f"[webui] auto-generated encryption key at {auto_key_path}", flush=True)
+    return new_key
 
 
 def _int_env(name: str, default: int) -> int:
@@ -126,7 +139,7 @@ def load_webui_settings() -> WebUISettings:
         session_ttl_seconds=session_ttl,
         bootstrap_user=bootstrap_user,
         bootstrap_password=bootstrap_password,
-        fernet_key=_load_master_key(),
+        fernet_key=_load_master_key(state_db_path),
         cookie_name=cookie_name,
         cookie_secure=cookie_secure,
         static_dir=static_dir,
