@@ -181,8 +181,9 @@ def _build_taxonomy_refresh(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_health_check(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "scope_quality", "scope_taxonomy", "use_db", "nutrition_sample"})
-    env, dangerous = _common_env(options)
+    _validate_allowed(options, {"scope_quality", "scope_taxonomy", "use_db", "nutrition_sample"})
+    env = {"DRY_RUN": "true"}
+    dangerous = False
     scope_quality = _bool_option(options, "scope_quality", True)
     scope_taxonomy = _bool_option(options, "scope_taxonomy", True)
     use_db = _bool_option(options, "use_db", False)
@@ -362,6 +363,8 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     ]
     stages = ",".join(s for flag, s in stage_map if flag)
     cmd = _py_module("cookdex.data_maintenance", "--stages", stages)
+    if not dry_run:
+        cmd.append("--apply-cleanups")
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
@@ -500,7 +503,6 @@ class TaskRegistry:
                             {"value": "keyword", "label": "High-risk keywords"},
                             {"value": "utility", "label": "Utility pages"},
                             {"value": "bad_instructions", "label": "Placeholder instructions"},
-                            {"value": "no_instructions", "label": "Missing instructions"},
                         ],
                     ),
                     OptionSpec(

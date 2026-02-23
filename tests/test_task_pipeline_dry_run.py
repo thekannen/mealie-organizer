@@ -31,6 +31,9 @@ ALL_TASK_IDS = [
     "yield-normalize",
 ]
 
+# Tasks with a user-visible dry_run option
+DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t != "health-check"]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,14 +75,14 @@ def test_dry_run_defaults_are_safe(task_id: str) -> None:
     _assert_valid_command(execution)
 
 
-@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
 def test_explicit_dry_run_true_is_safe(task_id: str) -> None:
     execution = _build(task_id, {"dry_run": True})
     _assert_dry_run_safe(execution)
     _assert_valid_command(execution)
 
 
-@pytest.mark.parametrize("task_id", ALL_TASK_IDS)
+@pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
 def test_explicit_dry_run_false_is_dangerous(task_id: str) -> None:
     execution = _build(task_id, {"dry_run": False})
     assert execution.env.get("DRY_RUN") == "false"
@@ -103,6 +106,26 @@ def test_describe_tasks_returns_all_tasks() -> None:
     assert returned_ids == set(ALL_TASK_IDS)
 
 
+def test_help_task_guide_ids_match_registry() -> None:
+    """Every id in HELP_TASK_GUIDES must correspond to a registered task."""
+    import json
+    import re
+    from pathlib import Path
+
+    constants_path = Path(__file__).resolve().parent.parent / "web" / "src" / "constants.js"
+    text = constants_path.read_text()
+    # Extract all id values from HELP_TASK_GUIDES array
+    block_match = re.search(r"export const HELP_TASK_GUIDES\s*=\s*\[(.+?)\];", text, re.DOTALL)
+    assert block_match, "Could not find HELP_TASK_GUIDES in constants.js"
+    guide_ids = set(re.findall(r'id:\s*"([^"]+)"', block_match.group(1)))
+    assert guide_ids, "No guide ids found"
+    assert guide_ids == set(ALL_TASK_IDS), (
+        f"Guide ids out of sync with registry. "
+        f"Missing guides: {set(ALL_TASK_IDS) - guide_ids}. "
+        f"Unknown guides: {guide_ids - set(ALL_TASK_IDS)}."
+    )
+
+
 @pytest.mark.parametrize("task_id", ALL_TASK_IDS)
 def test_task_description_has_required_fields(task_id: str) -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
@@ -113,10 +136,6 @@ def test_task_description_has_required_fields(task_id: str) -> None:
         assert opt["key"]
         assert opt["label"]
         assert opt["type"] in {"boolean", "string", "integer", "number"}
-
-
-# Tasks with a user-visible dry_run option
-DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t != "health-check"]
 
 
 @pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
@@ -252,6 +271,19 @@ def test_clean_recipes_names_no_force_all_by_default() -> None:
     assert "--all" not in execution.command
 
 
+def test_clean_recipes_multi_op_apply_cleanups_flag() -> None:
+    execution = _build("clean-recipes", {"dry_run": False})
+    assert "cookdex.data_maintenance" in execution.command
+    assert "--apply-cleanups" in execution.command
+    assert execution.dangerous_requested is True
+
+
+def test_clean_recipes_multi_op_dry_run_no_apply_cleanups() -> None:
+    execution = _build("clean-recipes")
+    assert "cookdex.data_maintenance" in execution.command
+    assert "--apply-cleanups" not in execution.command
+
+
 # ---------------------------------------------------------------------------
 # Command construction: cleanup-duplicates
 # ---------------------------------------------------------------------------
@@ -297,6 +329,17 @@ def test_cleanup_duplicates_both_apply_cleanups_flag() -> None:
 # ---------------------------------------------------------------------------
 # Command construction: health-check
 # ---------------------------------------------------------------------------
+
+
+def test_health_check_always_safe() -> None:
+    execution = _build("health-check")
+    assert execution.env.get("DRY_RUN") == "true"
+    assert execution.dangerous_requested is False
+
+
+def test_health_check_rejects_dry_run_option() -> None:
+    with pytest.raises(ValueError, match="Unsupported options"):
+        _build("health-check", {"dry_run": False})
 
 
 def test_health_check_default_uses_data_maintenance() -> None:

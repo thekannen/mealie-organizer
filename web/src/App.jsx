@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import wordmark from "./assets/CookDex_wordmark.png";
 import emblem from "./assets/CookDex_light.png";
 
-import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING } from "./constants";
+import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING, HELP_TASK_GUIDES } from "./constants";
 import {
   api,
   buildDefaultOptionValues,
@@ -3354,6 +3354,51 @@ export default function App() {
       <section className="page-grid settings-grid help-grid">
         <div className="stacked-cards">
           <article className="card">
+            <h3>Task Guides</h3>
+            <p className="muted">Step-by-step instructions for every available task.</p>
+
+            <div className="accordion-stack">
+              {(() => {
+                let lastGroup = null;
+                return HELP_TASK_GUIDES.flatMap((guide) => {
+                  const items = [];
+                  if (guide.group !== lastGroup) {
+                    lastGroup = guide.group;
+                    items.push(
+                      <p key={`group-${guide.group}`} className="accordion-group-label">
+                        {guide.group}
+                      </p>
+                    );
+                  }
+                  items.push(
+                    <details className="accordion" key={guide.id}>
+                      <summary>
+                        <Icon name={guide.icon || "play"} />
+                        <span>{guide.title}</span>
+                        <Icon name="chevron" />
+                      </summary>
+                      <div className="doc-preview">
+                        <p style={{ fontSize: "0.82rem", marginBottom: "0.5rem" }}>{guide.what}</p>
+                        <ol style={{ margin: "0 0 0.6rem", paddingLeft: "1.2rem" }}>
+                          {guide.steps.map((step, i) => (
+                            <li key={i} className="muted" style={{ fontSize: "0.82rem", marginBottom: "0.25rem" }}>{step}</li>
+                          ))}
+                        </ol>
+                        {guide.tip && (
+                          <p className="muted" style={{ fontSize: "0.8rem", borderLeft: "3px solid var(--accent)", paddingLeft: "0.6rem", margin: 0 }}>
+                            <strong>Tip:</strong> {guide.tip}
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  );
+                  return items;
+                });
+              })()}
+            </div>
+          </article>
+
+          <article className="card">
             <h3>Frequently Asked Questions</h3>
             <p className="muted">Common workflows and quick answers for daily use.</p>
 
@@ -3370,7 +3415,9 @@ export default function App() {
               ))}
             </div>
           </article>
+        </div>
 
+        <aside className="stacked-cards">
           <article className="card">
             <h3>Troubleshooting</h3>
             <p className="muted">Common issues grouped by area.</p>
@@ -3396,9 +3443,7 @@ export default function App() {
               ))}
             </div>
           </article>
-        </div>
 
-        <aside className="stacked-cards">
           <article className="card">
             <h3>Reference Guides</h3>
             <p className="muted">Embedded documentation you can read without leaving the app.</p>

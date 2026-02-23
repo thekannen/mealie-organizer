@@ -33,21 +33,30 @@ Open `http://localhost:4820/cookdex` and log in with the bootstrap credentials.
 
 ## Available Tasks
 
+**Data Pipeline**
 | Task ID | Purpose |
 |---|---|
-| `categorize` | Classify recipes using the configured AI provider |
-| `taxonomy-refresh` | Sync categories and tags from config files |
-| `taxonomy-audit` | Generate taxonomy diagnostics report |
-| `cookbook-sync` | Create/update cookbooks from config rules |
-| `ingredient-parse` | Parse ingredients with parser fallback chain |
-| `foods-cleanup` | Merge duplicate food entries |
-| `units-cleanup` | Normalize unit aliases and merge duplicates |
-| `labels-sync` | Create/delete labels from taxonomy config |
-| `tools-sync` | Create/merge tools from taxonomy config |
-| `data-maintenance` | Run full staged maintenance pipeline |
-| `recipe-quality` | Score recipes on gold-medallion dimensions and estimate nutrition coverage |
-| `yield-normalize` | Fill missing yield text from servings count or parse yield text to set numeric servings |
-| `rule-tag` | Tag and tool-assign recipes using regex rules — no LLM required |
+| `data-maintenance` | Run the full staged pipeline: dedup → junk filter → name normalize → ingredient parse → foods/units cleanup → labels/tools sync → taxonomy refresh → categorize → cookbook sync → yield normalize → quality audit → taxonomy audit |
+
+**Actions**
+| Task ID | Purpose |
+|---|---|
+| `clean-recipes` | Remove URL duplicates, filter junk content, and normalize slug-derived names |
+| `ingredient-parse` | Parse raw ingredient text into structured food, unit, and quantity |
+| `yield-normalize` | Fill missing yield text from servings count, or parse yield text to set numeric servings |
+| `cleanup-duplicates` | Merge duplicate food and/or unit entries |
+
+**Organizers**
+| Task ID | Purpose |
+|---|---|
+| `tag-categorize` | Tag and categorize recipes — AI semantic classification or fast regex rule-based (no LLM) |
+| `taxonomy-refresh` | Sync categories, tags, labels, and tools from config files into Mealie |
+| `cookbook-sync` | Create and update cookbooks from cookbook configuration rules |
+
+**Audits**
+| Task ID | Purpose |
+|---|---|
+| `health-check` | Score recipes on completeness dimensions and audit taxonomy for unused/missing entries |
 
 ## API
 
@@ -115,7 +124,7 @@ After first login, provider keys and runtime settings can be managed from the Se
 
 ## Direct DB Access (Optional)
 
-The `recipe-quality`, `yield-normalize`, and `rule-tag` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `rule-tag`, it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
+The `health-check`, `yield-normalize`, and `tag-categorize` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `tag-categorize` (rule-based method), it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
 
 To enable it:
 

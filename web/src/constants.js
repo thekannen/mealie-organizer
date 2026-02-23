@@ -80,13 +80,13 @@ export const HELP_FAQ = [
     question: "Can I tag recipes without an AI provider?",
     icon: "tag",
     answer:
-      "Yes. The rule-tag task assigns tags and kitchen tools using configurable regex rules — no LLM required. Edit configs/taxonomy/tag_rules.json to define ingredient, text, and instruction patterns. Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to basic text rules.",
+      "Yes. The tag-categorize task (rule-based method) assigns tags and kitchen tools using configurable regex rules — no LLM required. Edit configs/taxonomy/tag_rules.json to define ingredient, text, and instruction patterns. Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to basic text rules.",
   },
   {
     question: "What does 'Use Direct DB' do?",
     icon: "database",
     answer:
-      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for rule-tag. Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
+      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for tag-categorize (rule-based method). Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
   },
 ];
 
@@ -124,8 +124,136 @@ export const HELP_TROUBLESHOOTING = [
     items: [
       "Set MEALIE_DB_TYPE to 'postgres' or 'sqlite' in Settings to enable Use Direct DB options.",
       "If Postgres is only accessible via SSH, set MEALIE_DB_SSH_HOST to your server address and ensure the SSH key is present at the path in MEALIE_DB_SSH_KEY.",
-      "Run recipe-quality with Use Direct DB enabled as a smoke test \u2014 it only reads data and reports results without making changes.",
+      "Run health-check with Use Direct DB enabled as a smoke test \u2014 it only reads data and reports results without making changes.",
     ],
+  },
+];
+
+export const HELP_TASK_GUIDES = [
+  {
+    id: "data-maintenance",
+    title: "Data Maintenance Pipeline",
+    icon: "database",
+    group: "Data Pipeline",
+    what: "Runs the full cleanup pipeline end-to-end in a fixed stage order: dedup \u2192 junk filter \u2192 name normalize \u2192 ingredient parse \u2192 foods and units cleanup \u2192 labels and tools sync \u2192 taxonomy refresh \u2192 AI categorize \u2192 cookbook sync \u2192 yield normalize \u2192 quality audit \u2192 taxonomy audit. Select specific stages to run a targeted subset.",
+    steps: [
+      "Run with Dry Run enabled (the default) and review the log \u2014 no data is changed.",
+      "Toggle Skip AI Stage if you have not configured an AI provider.",
+      "Enable Apply Cleanup Writes to allow deduplication and cleanup stages to write changes, then re-run.",
+      "Use Continue on Error to keep remaining stages running even if one fails.",
+    ],
+    tip: "Schedule data-maintenance monthly with Dry Run on to get an automatic status report with no risk.",
+  },
+  {
+    id: "clean-recipes",
+    title: "Clean Recipe Library",
+    icon: "trash",
+    group: "Actions",
+    what: "Three targeted operations in one: URL-based deduplication (removes imported copies of the same recipe, keeping the most complete version), junk filter (removes non-recipe content such as listicles, how-to articles, digest posts, and placeholder instructions), and name normalizer (converts slug-derived names like 'how-to-make-chicken-pasta-recipe' into proper title case).",
+    steps: [
+      "Toggle off any operation you do not need \u2014 e.g. disable Normalize Names to run only dedup and junk filter.",
+      "Run with Dry Run on to preview which recipes would be removed or renamed.",
+      "Use the Junk Filter Category dropdown to scan for only one category of junk at a time.",
+      "Disable Dry Run and confirm the policy unlock to write changes.",
+    ],
+    tip: "Run this first after a bulk import. The junk filter is fast and catches most non-recipe content automatically.",
+  },
+  {
+    id: "ingredient-parse",
+    title: "Ingredient Parser",
+    icon: "list",
+    group: "Actions",
+    what: "Parses raw ingredient text (e.g. '2 cups all-purpose flour, sifted') into structured food, unit, and quantity fields in Mealie. Uses an NLP model first; falls back to AI parsing when confidence is below the threshold. Must run before foods and units cleanup stages can operate on structured data.",
+    steps: [
+      "Run with Dry Run on to see how many ingredients would be parsed.",
+      "Lower the Confidence Threshold to accept more NLP results; raise it to push more to the AI fallback.",
+      "Disable Dry Run to write results (requires policy unlock).",
+      "Run cleanup-duplicates after parsing to merge any new near-duplicate food entries created during parsing.",
+    ],
+    tip: "Parsing is incremental \u2014 already-parsed ingredients are skipped. Re-run freely after importing new recipes.",
+  },
+  {
+    id: "yield-normalize",
+    title: "Yield Normalizer",
+    icon: "refresh",
+    group: "Actions",
+    what: "Repairs missing or inconsistent yield data. If a recipe has a servings count but no yield text it generates one (e.g. '4 servings'). If a recipe has yield text like '8 cookies' it parses out the number and writes it to the numeric servings field.",
+    steps: [
+      "Run with Dry Run on to see how many recipes would be updated.",
+      "Enable Use Direct DB to write all changes in a single database transaction \u2014 dramatically faster for large libraries.",
+      "Disable Dry Run to apply changes (requires policy unlock; DB credentials required if using Direct DB).",
+    ],
+    tip: "Safe to run after every import. It only changes recipes where yield data is missing or inconsistent.",
+  },
+  {
+    id: "cleanup-duplicates",
+    title: "Clean Up Duplicates",
+    icon: "copy",
+    group: "Actions",
+    what: "Merges duplicate food and unit entries that accumulate over time \u2014 for example 'Butter', 'butter', and 'Unsalted Butter' auto-created by Mealie's recipe scraper. Normalized duplicates are merged into the most-referenced canonical entry.",
+    steps: [
+      "Run with Dry Run on to preview what would be merged.",
+      "Use Target to run only Foods or only Units if you do not need both.",
+      "Disable Dry Run to apply merges (requires policy unlock).",
+      "Re-run after ingredient-parse to resolve new duplicates created during parsing.",
+    ],
+    tip: "A large food library with many variants is normal after bulk importing. Run this after any parsing job.",
+  },
+  {
+    id: "tag-categorize",
+    title: "Tag and Categorize Recipes",
+    icon: "tag",
+    group: "Organizers",
+    what: "Assigns categories, tags, and kitchen tools to recipes. AI method uses your configured LLM provider to classify recipes based on their full content. Rule-based method applies regex patterns from tag_rules.json \u2014 fast, free, and fully deterministic with no API cost.",
+    steps: [
+      "Select Method = Rule-Based and run with Dry Run on to see what your current rules match.",
+      "Edit configs/taxonomy/tag_rules.json to add or refine patterns, then dry-run again.",
+      "Enable Use Direct DB (rule-based only) to unlock ingredient and tool-detection matching in addition to text rules.",
+      "Switch to Method = AI for semantic classification \u2014 requires CATEGORIZER_PROVIDER configured in Settings.",
+    ],
+    tip: "Start with rule-based to cover obvious patterns for free, then use AI mode for recipes that fall through.",
+  },
+  {
+    id: "taxonomy-refresh",
+    title: "Refresh Taxonomy",
+    icon: "book-open",
+    group: "Organizers",
+    what: "Syncs categories, tags, labels, and tools from your local config files (configs/taxonomy/) into Mealie. Run this after editing taxonomy JSON files in the Recipe Organization page to push changes live.",
+    steps: [
+      "Edit taxonomy files in the Recipe Organization page or directly in configs/taxonomy/.",
+      "Run with Dry Run on to preview what would change in Mealie.",
+      "Use Refresh Mode = Merge (default) to add new entries without removing existing ones.",
+      "Use Refresh Mode = Replace to make Mealie exactly match your source files.",
+      "Enable Delete Unused Entries only when you are sure \u2014 it permanently removes categories and tags from Mealie.",
+    ],
+    tip: "Always preview with Dry Run before enabling Delete Unused Entries.",
+  },
+  {
+    id: "cookbook-sync",
+    title: "Cookbook Sync",
+    icon: "book-open",
+    group: "Organizers",
+    what: "Creates and updates Mealie cookbooks to match the rules defined in your cookbook config. Cookbooks are filter-based collections \u2014 each rule defines which recipes belong based on categories, tags, or other criteria.",
+    steps: [
+      "Edit configs/cookbooks.json via the Recipe Organization page to define cookbook rules.",
+      "Run with Dry Run on to preview what cookbooks would be created or updated.",
+      "Disable Dry Run to apply changes.",
+    ],
+    tip: "Cookbooks update dynamically in Mealie as recipes are tagged \u2014 you only need to re-run sync when the rules themselves change.",
+  },
+  {
+    id: "health-check",
+    title: "Health Check",
+    icon: "shield",
+    group: "Audits",
+    what: "Two read-only audits in one. Recipe Quality scores each recipe on completeness: categories, tags, tools, description, cook time, yield, and nutrition coverage. Taxonomy Audit finds unused taxonomy entries, near-duplicate names, and recipes missing categories or tags.",
+    steps: [
+      "Run with both scopes enabled to get a full library health report \u2014 no changes are ever made.",
+      "Enable Use Direct DB for fast, exact nutrition coverage instead of a sample estimate.",
+      "Review the summary card in the log output for pass/fail counts and top issues.",
+      "Use the report as a prioritized action list: fix missing categories and untagged recipes first.",
+    ],
+    tip: "Schedule health-check monthly as a read-only report. It never writes any data.",
   },
 ];
 

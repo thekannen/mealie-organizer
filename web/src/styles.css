@@ -2146,6 +2146,17 @@ button.danger {
   flex-wrap: wrap;
 }
 
+.accordion-group-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0.6rem 0 0.2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25rem;
+}
+
 .accordion-stack {
   display: grid;
   gap: 0.4rem;

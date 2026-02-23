@@ -2,7 +2,7 @@
 
 `data-maintenance` runs staged cleanup flow:
 
-`parse -> foods -> units -> taxonomy -> categorize -> cookbooks -> audit`
+`dedup -> junk -> names -> parse -> foods -> units -> labels -> tools -> taxonomy -> categorize -> cookbooks -> yield -> quality -> audit`
 
 ## Web UI Flow
 
