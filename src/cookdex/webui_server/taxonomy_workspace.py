@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any, Callable
 
 import requests
 
 from ..api_client import MealieApiClient
+from ..tag_rules_generation import build_default_tag_rules
 from .config_files import ConfigFilesManager
 
 TAXONOMY_FILE_NAMES: tuple[str, ...] = (
@@ -234,47 +234,13 @@ def _normalize_rules_payload(content: Any) -> dict[str, list[dict[str, Any]]]:
     return payload
 
 
-def _rule_pattern_for_name(name: Any) -> str:
-    """Create a conservative keyword pattern for a taxonomy name."""
-    normalized = _normalize_name(name)
-    tokens = re.findall(r"[A-Za-z0-9]+", normalized)
-    if not tokens:
-        escaped = re.escape(normalized)
-        return rf"\y{escaped}\y" if escaped else ""
-    core = r"[\s_-]+".join(re.escape(token) for token in tokens)
-    return rf"\y{core}\y"
-
-
 def _generate_default_rules_from_taxonomy(
     *,
     tags: list[dict[str, Any]],
     categories: list[dict[str, Any]],
     tools: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
-    def _sorted_names(items: list[dict[str, Any]]) -> list[str]:
-        seen: set[str] = set()
-        names: list[str] = []
-        for item in items:
-            name = _normalize_name(item.get("name"))
-            key = _name_key(name)
-            if not name or key in seen:
-                continue
-            seen.add(key)
-            names.append(name)
-        names.sort(key=lambda value: value.casefold())
-        return names
-
-    tag_names = _sorted_names(tags)
-    category_names = _sorted_names(categories)
-    tool_names = _sorted_names(tools)
-
-    return {
-        "ingredient_tags": [],
-        "ingredient_categories": [],
-        "text_tags": [{"tag": name, "pattern": _rule_pattern_for_name(name)} for name in tag_names],
-        "text_categories": [{"category": name, "pattern": _rule_pattern_for_name(name)} for name in category_names],
-        "tool_tags": [{"tool": name, "pattern": _rule_pattern_for_name(name)} for name in tool_names],
-    }
+    return build_default_tag_rules(tags=tags, categories=categories, tools=tools)
 
 
 def _merge_units(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:

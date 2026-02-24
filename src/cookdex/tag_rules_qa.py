@@ -26,6 +26,7 @@ from typing import Any
 import requests
 
 from .config import REPO_ROOT, resolve_mealie_api_key, resolve_mealie_url
+from .tag_rules_generation import build_default_tag_rules
 
 DEFAULT_RULES_PATH = REPO_ROOT / "configs" / "taxonomy" / "tag_rules.json"
 DEFAULT_REPORT_PATH = REPO_ROOT / "reports" / "qa" / "tag_rules_qa_report.json"
@@ -38,8 +39,8 @@ TARGET_SECTIONS: tuple[tuple[str, str], ...] = (
 
 @dataclass
 class QAThresholds:
-    min_text_tags_coverage_pct: float = 68.0
-    min_text_categories_coverage_pct: float = 40.0
+    min_text_tags_coverage_pct: float = 70.0
+    min_text_categories_coverage_pct: float = 48.0
     max_text_tags_zero_hit_ratio: float = 0.20
     max_text_categories_zero_hit_ratio: float = 0.20
     max_text_tags_desc_dominant: int = 0
@@ -100,16 +101,6 @@ def _rule_match_on(rule: dict[str, Any]) -> str:
     return "both"
 
 
-def _rule_pattern_for_name(name: Any) -> str:
-    normalized = _normalize_name(name)
-    tokens = re.findall(r"[A-Za-z0-9]+", normalized)
-    if not tokens:
-        escaped = re.escape(normalized)
-        return rf"\y{escaped}\y" if escaped else ""
-    core = r"[\s_-]+".join(re.escape(token) for token in tokens)
-    return rf"\y{core}\y"
-
-
 def _load_json_file(path: Path, default: Any) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -136,17 +127,10 @@ def _load_named_entries(path: Path) -> list[str]:
 
 def generate_rules_from_taxonomy(repo_root: Path) -> dict[str, list[dict[str, Any]]]:
     taxonomy_root = (repo_root / "configs" / "taxonomy").resolve()
-    tag_names = _load_named_entries(taxonomy_root / "tags.json")
-    category_names = _load_named_entries(taxonomy_root / "categories.json")
-    tool_names = _load_named_entries(taxonomy_root / "tools.json")
-
-    return {
-        "ingredient_tags": [],
-        "ingredient_categories": [],
-        "text_tags": [{"tag": name, "pattern": _rule_pattern_for_name(name)} for name in tag_names],
-        "text_categories": [{"category": name, "pattern": _rule_pattern_for_name(name)} for name in category_names],
-        "tool_tags": [{"tool": name, "pattern": _rule_pattern_for_name(name)} for name in tool_names],
-    }
+    tags = [{"name": name} for name in _load_named_entries(taxonomy_root / "tags.json")]
+    categories = [{"name": name} for name in _load_named_entries(taxonomy_root / "categories.json")]
+    tools = [{"name": name} for name in _load_named_entries(taxonomy_root / "tools.json")]
+    return build_default_tag_rules(tags=tags, categories=categories, tools=tools)
 
 
 def fetch_recipe_summaries(*, mealie_url: str, api_key: str) -> list[dict[str, Any]]:
@@ -482,9 +466,10 @@ def run_qa_pipeline(
     max_iterations: int,
     thresholds: QAThresholds,
 ) -> dict[str, Any]:
-    loaded_rules = _load_json_file(rules_path, default={})
-    if not isinstance(loaded_rules, dict):
-        loaded_rules = {}
+    disk_rules = _load_json_file(rules_path, default={})
+    if not isinstance(disk_rules, dict):
+        disk_rules = {}
+    loaded_rules = copy.deepcopy(disk_rules)
 
     generated = False
     if regenerate or _rules_need_generation(loaded_rules):
@@ -513,16 +498,18 @@ def run_qa_pipeline(
         current_eval = evaluate_rules(rules=current_rules, recipes=recipes, thresholds=thresholds)
 
     passed, checks = meets_acceptance(baseline=baseline, current=current_eval, thresholds=thresholds)
-    rules_changed = current_rules != initial_rules
-    if write and rules_changed:
+    tuned_rules_changed = current_rules != initial_rules
+    disk_rules_changed = current_rules != disk_rules
+    if write and disk_rules_changed:
         rules_path.parent.mkdir(parents=True, exist_ok=True)
         rules_path.write_text(json.dumps(current_rules, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
     report = {
         "status": "pass" if passed else "fail",
         "generated_baseline": generated,
-        "rules_changed": rules_changed,
-        "rules_written": bool(write and rules_changed),
+        "rules_changed": tuned_rules_changed,
+        "rules_changed_from_disk": disk_rules_changed,
+        "rules_written": bool(write and disk_rules_changed),
         "max_iterations": max(1, max_iterations),
         "changes_count": len(all_changes),
         "changes": all_changes,

@@ -4,11 +4,11 @@
   "text_tags": [
     {
       "tag": "30-Minute",
-      "pattern": "\\y30[\\s_-]+Minute\\y"
+      "pattern": "\\y(30[\\s_-]*minute|thirty[\\s_-]*minute)\\y"
     },
     {
       "tag": "5-Ingredient",
-      "pattern": "\\y5[\\s_-]+Ingredient\\y"
+      "pattern": "\\y(5[\\s_-]*ingredient|five[\\s_-]*ingredient)\\y"
     },
     {
       "tag": "Air Fryer",
@@ -24,12 +24,12 @@
     },
     {
       "tag": "Baking",
-      "pattern": "\\yBaking\\y",
-      "enabled": false
+      "pattern": "\\y(baking|baked)\\y",
+      "match_on": "name"
     },
     {
       "tag": "BBQ",
-      "pattern": "\\yBBQ\\y"
+      "pattern": "\\y(bbq|barbecue)\\y"
     },
     {
       "tag": "Beef",
@@ -37,7 +37,8 @@
     },
     {
       "tag": "Beginner-Friendly",
-      "pattern": "\\yBeginner[\\s_-]+Friendly\\y"
+      "pattern": "\\y(beginner[\\s_-]*friendly|easy|simple)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Casserole",
@@ -65,8 +66,8 @@
     },
     {
       "tag": "Comfort Food",
-      "pattern": "\\yComfort[\\s_-]+Food\\y",
-      "enabled": false
+      "pattern": "\\y(comfort[\\s_-]*food|cozy)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Condiment",
@@ -78,7 +79,7 @@
     },
     {
       "tag": "Dairy-Free",
-      "pattern": "\\yDairy[\\s_-]+Free\\y"
+      "pattern": "\\y(dairy[\\s_-]*free|df)\\y"
     },
     {
       "tag": "Freezer-Friendly",
@@ -90,7 +91,7 @@
     },
     {
       "tag": "Gluten-Free",
-      "pattern": "\\yGluten[\\s_-]+Free\\y"
+      "pattern": "\\y(gluten[\\s_-]*free|gf)\\y"
     },
     {
       "tag": "Grilled",
@@ -98,7 +99,8 @@
     },
     {
       "tag": "High-Protein",
-      "pattern": "\\yHigh[\\s_-]+Protein\\y"
+      "pattern": "\\y(high[\\s_-]*protein|protein[\\s_-]*packed)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Holiday",
@@ -122,7 +124,8 @@
     },
     {
       "tag": "Kid-Friendly",
-      "pattern": "\\yKid[\\s_-]+Friendly\\y"
+      "pattern": "\\y(kid[\\s_-]*friendly|family[\\s_-]*friendly)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Korean",
@@ -134,12 +137,12 @@
     },
     {
       "tag": "Low-Carb",
-      "pattern": "\\yLow[\\s_-]+Carb\\y"
+      "pattern": "\\y(low[\\s_-]*carb|keto)\\y"
     },
     {
       "tag": "Make-Ahead",
-      "pattern": "\\yMake[\\s_-]+Ahead\\y",
-      "enabled": false
+      "pattern": "\\y(make[\\s_-]*ahead|meal[\\s_-]*prep)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Meal Prep",
@@ -163,7 +166,8 @@
     },
     {
       "tag": "Non-Alcoholic",
-      "pattern": "\\yNon[\\s_-]+Alcoholic\\y"
+      "pattern": "\\y(non[\\s_-]*alcoholic|mocktail|virgin)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Noodles",
@@ -171,7 +175,7 @@
     },
     {
       "tag": "Nut-Free",
-      "pattern": "\\yNut[\\s_-]+Free\\y"
+      "pattern": "\\y(nut[\\s_-]*free)\\y"
     },
     {
       "tag": "One-Pot",
@@ -179,8 +183,8 @@
     },
     {
       "tag": "Party",
-      "pattern": "\\yParty\\y",
-      "enabled": false
+      "pattern": "\\y(party|potluck|game[\\s_-]*day)\\y",
+      "match_on": "name"
     },
     {
       "tag": "Pasta",
@@ -188,7 +192,7 @@
     },
     {
       "tag": "Pescatarian",
-      "pattern": "\\yPescatarian\\y"
+      "pattern": "\\y(pescatarian|fish[-\\s]*based)\\y"
     },
     {
       "tag": "Pork",
@@ -232,11 +236,11 @@
     },
     {
       "tag": "Vegan",
-      "pattern": "\\yVegan\\y"
+      "pattern": "\\y(vegan|plant[\\s_-]*based)\\y"
     },
     {
       "tag": "Vegetarian",
-      "pattern": "\\yVegetarian\\y"
+      "pattern": "\\y(vegetarian|meatless)\\y"
     },
     {
       "tag": "Vietnamese",
@@ -250,63 +254,73 @@
   "text_categories": [
     {
       "category": "Appetizer",
-      "pattern": "\\yAppetizer\\y"
+      "pattern": "\\y(appetizer|starter|small[\\s_-]+plate|dip|salsa|bruschetta|crostini|deviled[\\s_-]+eggs?|wings?)\\y",
+      "match_on": "name"
     },
     {
       "category": "Bread",
-      "pattern": "\\yBread\\y"
+      "pattern": "\\y(bread|loaf|rolls?|buns?|bagels?|focaccia|naan|pita|flatbread|sourdough|cornbread|biscuits?)\\y",
+      "match_on": "name"
     },
     {
       "category": "Breakfast",
-      "pattern": "\\yBreakfast\\y"
+      "pattern": "\\y(breakfast|omelet|omelette|frittata|pancakes?|waffles?|french[\\s_-]+toast|granola|oatmeal|porridge|shakshuka|overnight[\\s_-]+oats?|egg[\\s_-]+bites?)\\y",
+      "match_on": "name"
     },
     {
       "category": "Brunch",
-      "pattern": "\\yBrunch\\y",
-      "enabled": false
+      "pattern": "\\y(brunch|quiche|strata|benedict|avocado[\\s_-]+toast)\\y",
+      "match_on": "name"
     },
     {
       "category": "Dessert",
-      "pattern": "\\yDessert\\y"
+      "pattern": "\\y(dessert|cake|cookie|brownie|blondie|pie|tart|cobbler|crisp|pudding|custard|ice[\\s_-]+cream|gelato|sorbet|cheesecake|mousse|fudge|cupcakes?|donuts?|doughnuts?|macarons?)\\y",
+      "match_on": "name"
     },
     {
       "category": "Dinner",
-      "pattern": "\\yDinner\\y"
+      "pattern": "\\y(dinner|entree|main[\\s_-]+course|casserole|stir[\\s_-]*fry|roast(ed)?|curry|stew|skillet|meatloaf|pot[\\s_-]+pie|weeknight)\\y",
+      "match_on": "name"
     },
     {
       "category": "Drink",
-      "pattern": "\\yDrink\\y"
+      "pattern": "\\y(drink|cocktail|mocktail|smoothie|latte|lemonade|iced[\\s_-]+tea|tea|coffee|spritz|soda|milkshake|punch|agua[\\s_-]+fresca|hot[\\s_-]+chocolate)\\y",
+      "match_on": "name"
     },
     {
       "category": "Lunch",
-      "pattern": "\\yLunch\\y",
-      "enabled": false
+      "pattern": "\\y(lunch|sandwich|wrap|panini|quesadilla|bento|burger|lunchbox|grain[\\s_-]+bowl|rice[\\s_-]+bowl)\\y",
+      "match_on": "name"
     },
     {
       "category": "Originals",
-      "pattern": "\\yOriginals\\y"
+      "pattern": "\\y(originals?|signature|house[\\s_-]+special)\\y",
+      "match_on": "name"
     },
     {
       "category": "Salad",
-      "pattern": "\\ySalad\\y"
+      "pattern": "\\y(salad|slaw|coleslaw|tabbouleh)\\y",
+      "match_on": "name"
     },
     {
       "category": "Sauce",
-      "pattern": "\\ySauce\\y"
+      "pattern": "\\y(sauce|dressing|vinaigrette|marinade|aioli|pesto|chutney|salsa|gravy|reduction|glaze|dip|spread|relish|jam|jelly|compote)\\y",
+      "match_on": "name"
     },
     {
       "category": "Side",
-      "pattern": "\\ySide\\y",
-      "enabled": false
+      "pattern": "\\y(side|side[\\s_-]+dish|fries|chips|mashed[\\s_-]+potatoes|rice[\\s_-]+pilaf|roasted[\\s_-]+vegetables?|green[\\s_-]+beans|asparagus|slaw)\\y",
+      "match_on": "name"
     },
     {
       "category": "Snack",
-      "pattern": "\\ySnack\\y",
+      "pattern": "\\y(snack|energy[\\s_-]+bites?|granola[\\s_-]+bars?|trail[\\s_-]+mix|popcorn|chips|crackers|jerky|pretzels?)\\y",
       "match_on": "name"
     },
     {
       "category": "Soup",
-      "pattern": "\\ySoup\\y"
+      "pattern": "\\y(soup|stew|chowder|bisque|ramen|pho|broth|congee|gumbo|pozole|minestrone)\\y",
+      "match_on": "name"
     }
   ],
   "tool_tags": [
