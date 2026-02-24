@@ -183,6 +183,8 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
             json={"content": [{"name": "Breakfast"}]},
         )
         assert config_put.status_code == 200
+        assert "rule_sync" in config_put.json()
+        assert config_put.json()["rule_sync"]["generated_total"] >= 1
         config_get_updated = client.get("/cookdex/api/v1/config/files/categories")
         assert config_get_updated.json()["content"][0]["name"] == "Breakfast"
 

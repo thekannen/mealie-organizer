@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -233,6 +234,49 @@ def _normalize_rules_payload(content: Any) -> dict[str, list[dict[str, Any]]]:
     return payload
 
 
+def _rule_pattern_for_name(name: Any) -> str:
+    """Create a conservative keyword pattern for a taxonomy name."""
+    normalized = _normalize_name(name)
+    tokens = re.findall(r"[A-Za-z0-9]+", normalized)
+    if not tokens:
+        escaped = re.escape(normalized)
+        return rf"\y{escaped}\y" if escaped else ""
+    core = r"[\s_-]+".join(re.escape(token) for token in tokens)
+    return rf"\y{core}\y"
+
+
+def _generate_default_rules_from_taxonomy(
+    *,
+    tags: list[dict[str, Any]],
+    categories: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    def _sorted_names(items: list[dict[str, Any]]) -> list[str]:
+        seen: set[str] = set()
+        names: list[str] = []
+        for item in items:
+            name = _normalize_name(item.get("name"))
+            key = _name_key(name)
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            names.append(name)
+        names.sort(key=lambda value: value.casefold())
+        return names
+
+    tag_names = _sorted_names(tags)
+    category_names = _sorted_names(categories)
+    tool_names = _sorted_names(tools)
+
+    return {
+        "ingredient_tags": [],
+        "ingredient_categories": [],
+        "text_tags": [{"tag": name, "pattern": _rule_pattern_for_name(name)} for name in tag_names],
+        "text_categories": [{"category": name, "pattern": _rule_pattern_for_name(name)} for name in category_names],
+        "tool_tags": [{"tool": name, "pattern": _rule_pattern_for_name(name)} for name in tool_names],
+    }
+
+
 def _merge_units(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
     merged["aliases"] = _string_list([*(existing.get("aliases") or []), *(incoming.get("aliases") or [])])
@@ -421,10 +465,17 @@ class TaxonomyWorkspaceService:
             existing_payload = _empty_rule_payload()
 
         normalized = _normalize_rules_payload(existing_payload)
+        generated_defaults = _generate_default_rules_from_taxonomy(
+            tags=tags,
+            categories=categories,
+            tools=tools,
+        )
         synced = _empty_rule_payload()
 
         removed_by_section: dict[str, int] = {}
+        generated_by_section: dict[str, int] = {}
         canonicalized_total = 0
+        generated_total = 0
         removed_examples: dict[str, list[str]] = {}
 
         for section, target_field in RULE_TARGET_FIELDS.items():
@@ -432,6 +483,7 @@ class TaxonomyWorkspaceService:
             removed_count = 0
             removed_names: list[str] = []
             kept: list[dict[str, Any]] = []
+            seen_targets: set[str] = set()
 
             for rule in normalized.get(section, []):
                 target = _normalize_name(rule.get(target_field))
@@ -447,6 +499,21 @@ class TaxonomyWorkspaceService:
                     canonicalized_total += 1
                     rule_copy[target_field] = canonical_target
                 kept.append(rule_copy)
+                seen_targets.add(_name_key(canonical_target))
+
+            generated_count = 0
+            for default_rule in generated_defaults.get(section, []):
+                target = _normalize_name(default_rule.get(target_field))
+                target_key = _name_key(target)
+                if not target_key or target_key in seen_targets:
+                    continue
+                kept.append(dict(default_rule))
+                seen_targets.add(target_key)
+                generated_count += 1
+
+            if generated_count:
+                generated_by_section[section] = generated_count
+                generated_total += generated_count
 
             if removed_count:
                 removed_by_section[section] = removed_count
@@ -466,17 +533,29 @@ class TaxonomyWorkspaceService:
             "updated": changed,
             "created": (not before_exists) and changed,
             "removed_total": removed_total,
+            "generated_total": generated_total,
             "canonicalized_total": canonicalized_total,
             "kept_total": kept_total,
             "removed_by_section": removed_by_section,
+            "generated_by_section": generated_by_section,
             "removed_examples": removed_examples,
         }
+        changes: list[str] = []
+        if generated_total:
+            changes.append(f"generated {generated_total} default rule(s)")
+        if removed_total:
+            changes.append(f"removed {removed_total} stale rule(s)")
+        if canonicalized_total:
+            changes.append(f"normalized {canonicalized_total} target name(s)")
+
         if not changed:
             result["detail"] = "Tag rule targets already matched taxonomy."
-        elif removed_total == 0:
-            result["detail"] = "Tag rules aligned to taxonomy."
         else:
-            result["detail"] = f"Removed {removed_total} rule(s) with missing taxonomy targets."
+            result["detail"] = (
+                "Tag rules aligned to taxonomy."
+                if not changes
+                else "; ".join(changes).capitalize() + "."
+            )
         return result
 
     def _apply_payloads(

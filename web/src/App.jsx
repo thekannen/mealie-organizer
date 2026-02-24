@@ -1126,16 +1126,18 @@ export default function App() {
     const updated = Boolean(ruleSync.updated);
     if (!updated && quietIfUnchanged) return "";
     const removed = Number(ruleSync.removed_total || 0);
+    const generated = Number(ruleSync.generated_total || 0);
     const canonicalized = Number(ruleSync.canonicalized_total || 0);
-    if (removed > 0) {
-      return `Tag rules synchronized: removed ${removed} stale rule${removed === 1 ? "" : "s"}.`;
-    }
+    const parts = [];
+    if (generated > 0) parts.push(`generated ${generated} default rule${generated === 1 ? "" : "s"}`);
+    if (removed > 0) parts.push(`removed ${removed} stale rule${removed === 1 ? "" : "s"}`);
     if (canonicalized > 0) {
-      return `Tag rules synchronized: normalized ${canonicalized} target name${canonicalized === 1 ? "" : "s"}.`;
+      parts.push(`normalized ${canonicalized} target name${canonicalized === 1 ? "" : "s"}`);
     }
-    if (Boolean(ruleSync.created)) {
-      return "Tag rules file initialized and synchronized.";
+    if (parts.length > 0) {
+      return `Tag rules synchronized: ${parts.join(", ")}.`;
     }
+    if (Boolean(ruleSync.created)) return "Tag rules file initialized and synchronized.";
     return "Tag rules synchronized.";
   }
 
