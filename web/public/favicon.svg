@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CookDex">
+  <defs>
+    <linearGradient id="cookdexGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f79a4b" />
+      <stop offset="100%" stop-color="#f47a2a" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#cookdexGrad)" />
+  <path
+    d="M14 20h14c6 0 10 4 10 10v17c-2-2-4-3-8-3H14z"
+    fill="none"
+    stroke="#fff"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M50 20H36c-6 0-10 4-10 10v17c2-2 4-3 8-3h16z"
+    fill="none"
+    stroke="#fff"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
