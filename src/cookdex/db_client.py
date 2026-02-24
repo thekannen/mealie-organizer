@@ -517,16 +517,34 @@ class MealieDBClient:
         self,
         group_id: str,
         pattern: str,
+        *,
+        match_on: str = "both",
     ) -> list[str]:
-        """Return recipe IDs where name or description matches *pattern* (case-insensitive)."""
+        """Return recipe IDs where text fields match *pattern* (case-insensitive).
+
+        ``match_on`` values:
+          - ``both`` (default): name OR description
+          - ``name``: name only
+          - ``description``: description only
+        """
         p = self._db.placeholder
+        mode = str(match_on or "both").strip().casefold()
+        if mode == "name":
+            where_text = f"name ~* {p}"
+            params: tuple[Any, ...] = (group_id, pattern)
+        elif mode == "description":
+            where_text = f"description ~* {p}"
+            params = (group_id, pattern)
+        else:
+            where_text = f"(name ~* {p} OR description ~* {p})"
+            params = (group_id, pattern, pattern)
         sql = f"""
             SELECT id
             FROM recipes
             WHERE group_id = {p}
-              AND (name ~* {p} OR description ~* {p})
+              AND {where_text}
         """
-        return [str(row[0]) for row in self._db.execute(sql, (group_id, pattern, pattern)).fetchall()]
+        return [str(row[0]) for row in self._db.execute(sql, params).fetchall()]
 
     def find_recipe_ids_by_instruction(
         self,

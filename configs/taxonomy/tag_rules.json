@@ -1,191 +1,482 @@
 {
-  "ingredient_tags": [
-    {
-      "tag": "Chicken",
-      "pattern": "\\ychicken\\y",
-      "exclude_pattern": "\\ychicken broth\\y|\\ychicken stock\\y|\\ychicken bouillon\\y|\\ychicken base\\y",
-      "min_matches": 1
-    },
-    {
-      "tag": "Beef",
-      "pattern": "\\ybeef\\y|\\ysteak\\y|\\ybrisket\\y|\\yribeye\\y|\\ysirloin\\y|\\ychuck roast\\y|\\yshort rib\\y",
-      "exclude_pattern": "\\ybeef broth\\y|\\ybeef stock\\y|\\ybeef bouillon\\y|\\ybeef base\\y",
-      "min_matches": 1
-    },
-    {
-      "tag": "Pork",
-      "pattern": "\\ypork\\y|\\ybacon\\y|\\yham\\y|\\yprosciutto\\y|\\ypancetta\\y|\\ychorizo\\y|\\ylardons\\y|\\ypork chop\\y|\\ypork loin\\y|\\ypork belly\\y|\\ypork shoulder\\y|\\ypork tenderloin\\y",
-      "exclude_pattern": "\\ypork broth\\y|\\ypork stock\\y|\\ypork base\\y",
-      "min_matches": 1
-    },
-    {
-      "tag": "Seafood",
-      "pattern": "\\ysalmon\\y|\\ytuna\\y|\\yshrimp\\y|\\yprawn\\y|\\ycod\\y|\\yhalibut\\y|\\ytilapia\\y|\\ylobster\\y|\\ycrab\\y|\\yscallop\\y|\\yclam\\y|\\ymussel\\y|\\yoyster\\y|\\yswordfish\\y|\\ytrout\\y|\\ysea bass\\y|\\ycatfish\\y|\\ysardine\\y|\\yanchovy\\y|\\ysquid\\y|\\yoctopus\\y|\\ysnapper\\y|\\yflounder\\y|\\ymackerel\\y|\\yherring\\y|\\ymahi\\y",
-      "min_matches": 1
-    },
-    {
-      "tag": "Tofu",
-      "pattern": "\\ytofu\\y|\\ytempeh\\y|\\yedamame\\y",
-      "min_matches": 1
-    },
-    {
-      "tag": "Italian",
-      "pattern": "parmesan|parmigiano|pecorino|mozzarella|ricotta|mascarpone|pancetta|prosciutto|arborio|polenta|cannellini|gorgonzola|provolone|fontina|burrata|grana padano",
-      "min_matches": 2
-    },
-    {
-      "tag": "Mexican",
-      "pattern": "tomatillo|jalapeño|jalapeno|epazote|cotija|queso fresco|masa harina|chipotle|ancho chili|poblano|serrano|guajillo|pasilla|achiote|chayote",
-      "min_matches": 2
-    },
-    {
-      "tag": "Indian",
-      "pattern": "garam masala|paneer|ghee|fenugreek|tandoori|asafoetida|amchur|chaat masala|methi|curry leaves|mustard seed|turmeric",
-      "min_matches": 2
-    },
-    {
-      "tag": "Thai",
-      "pattern": "fish sauce|thai basil|kaffir lime|lemongrass|galangal|nam pla|bird eye chili|thai chili|kaffir|galangal root",
-      "min_matches": 2
-    },
-    {
-      "tag": "Japanese",
-      "pattern": "mirin|dashi|miso|nori|wakame|kombu|shiso|bonito|katsuobushi|ponzu|yuzu|sake|togarashi",
-      "min_matches": 2
-    }
-  ],
+  "ingredient_tags": [],
+  "ingredient_categories": [],
   "text_tags": [
     {
-      "tag": "Breakfast",
-      "pattern": "\\ybreakfast\\y|\\ypancake\\y|\\ywaffle\\y|\\yomelet\\y|\\yomelette\\y|\\yfrench toast\\y|\\ybenedict\\y|\\ygranola\\y|\\yoatmeal\\y|\\yfrittata\\y|\\yquiche\\y"
+      "tag": "30-Minute",
+      "pattern": "\\y30[\\s_-]+Minute\\y"
     },
     {
-      "tag": "Dessert",
-      "pattern": "\\ydessert\\y|\\ycake\\y|\\ycookie\\y|\\ybrownie\\y|\\yice cream\\y|\\ytiramisu\\y|\\ycheesecake\\y|\\ymousse\\y|\\ycustard\\y|\\yflan\\y|\\ypanna cotta\\y|\\ybaklava\\y|\\ymochi\\y|\\ysorbet\\y|\\ygelato\\y|\\ypudding\\y|\\ytart\\y|\\ycobbler\\y"
+      "tag": "5-Ingredient",
+      "pattern": "\\y5[\\s_-]+Ingredient\\y"
     },
     {
-      "tag": "Salad",
-      "pattern": "\\ysalad\\y"
+      "tag": "Air Fryer",
+      "pattern": "\\yAir[\\s_-]+Fryer\\y"
     },
     {
-      "tag": "Soup",
-      "pattern": "\\ysoup\\y|\\ystew\\y|\\ychowder\\y|\\ybisque\\y|\\ygazpacho\\y|\\ypho\\y|\\yminestrone\\y|\\yramen\\y|\\ypotage\\y|\\ybouillabaisse\\y|\\ygoulash\\y"
+      "tag": "American",
+      "pattern": "\\yAmerican\\y"
     },
     {
-      "tag": "Pasta",
-      "pattern": "\\ypasta\\y|\\yspaghetti\\y|\\ypenne\\y|\\ylinguine\\y|\\yfettuccine\\y|\\yrigatoni\\y|\\ylasagna\\y|\\yravioli\\y|\\ygnocchi\\y|\\yorzo\\y|\\ycarbonara\\y|\\ybologn\\y|\\ycacio e pepe\\y"
-    },
-    {
-      "tag": "Noodles",
-      "pattern": "\\ynoodle\\y|\\ypad thai\\y|\\ychow mein\\y|\\ylo mein\\y|\\yudon\\y|\\ysoba\\y|\\yramen\\y"
+      "tag": "Baked",
+      "pattern": "\\yBaked\\y"
     },
     {
       "tag": "Baking",
-      "pattern": "\\bbread\\b|\\bbrioche\\b|\\bbagel\\b|\\bsourdough\\b|\\bfocaccia\\b|\\bcroissant\\b|\\bmuffin\\b|\\bcupcake\\b|\\bscone\\b|\\bdoughnut\\b|\\bdonut\\b|\\bpretzel\\b|\\bcinnamon roll\\b|\\bbiscuit\\b"
+      "pattern": "\\yBaking\\y",
+      "enabled": false
     },
     {
-      "tag": "One-Pot",
-      "pattern": "one.pot|one.pan|\\yskillet meal\\y|\\ysheet pan\\y"
+      "tag": "BBQ",
+      "pattern": "\\yBBQ\\y"
+    },
+    {
+      "tag": "Beef",
+      "pattern": "\\yBeef\\y"
+    },
+    {
+      "tag": "Beginner-Friendly",
+      "pattern": "\\yBeginner[\\s_-]+Friendly\\y"
     },
     {
       "tag": "Casserole",
-      "pattern": "\\ycasserole\\y|\\ygratin\\y|\\ybake\\y"
+      "pattern": "\\yCasserole\\y"
+    },
+    {
+      "tag": "Chicken",
+      "pattern": "\\yChicken\\y"
+    },
+    {
+      "tag": "Chinese",
+      "pattern": "\\yChinese\\y"
+    },
+    {
+      "tag": "Chocolate",
+      "pattern": "\\yChocolate\\y"
+    },
+    {
+      "tag": "Citrus",
+      "pattern": "\\yCitrus\\y"
     },
     {
       "tag": "Cocktail",
-      "pattern": "\\ycocktail\\y|\\ymocktail\\y|\\ymargarita\\y|\\ymojito\\y|\\ydaiquiri\\y|\\ymartini\\y|\\ysangria\\y|\\ynegroni\\y|\\yold fashioned\\y"
+      "pattern": "\\yCocktail\\y"
+    },
+    {
+      "tag": "Comfort Food",
+      "pattern": "\\yComfort[\\s_-]+Food\\y",
+      "enabled": false
+    },
+    {
+      "tag": "Condiment",
+      "pattern": "\\yCondiment\\y"
+    },
+    {
+      "tag": "Crowd-Pleaser",
+      "pattern": "\\yCrowd[\\s_-]+Pleaser\\y"
+    },
+    {
+      "tag": "Dairy-Free",
+      "pattern": "\\yDairy[\\s_-]+Free\\y"
+    },
+    {
+      "tag": "Freezer-Friendly",
+      "pattern": "\\yFreezer[\\s_-]+Friendly\\y"
+    },
+    {
+      "tag": "Fresh",
+      "pattern": "\\yFresh\\y"
+    },
+    {
+      "tag": "Gluten-Free",
+      "pattern": "\\yGluten[\\s_-]+Free\\y"
     },
     {
       "tag": "Grilled",
-      "pattern": "\\ygrilled\\y|\\ygrilling\\y|\\ybarbecue\\y|\\ybbq\\y|\\ycharcoal\\y"
+      "pattern": "\\yGrilled\\y"
+    },
+    {
+      "tag": "High-Protein",
+      "pattern": "\\yHigh[\\s_-]+Protein\\y"
+    },
+    {
+      "tag": "Holiday",
+      "pattern": "\\yHoliday\\y"
+    },
+    {
+      "tag": "Indian",
+      "pattern": "\\yIndian\\y"
+    },
+    {
+      "tag": "Instant Pot",
+      "pattern": "\\yInstant[\\s_-]+Pot\\y"
+    },
+    {
+      "tag": "Italian",
+      "pattern": "\\yItalian\\y"
+    },
+    {
+      "tag": "Japanese",
+      "pattern": "\\yJapanese\\y"
+    },
+    {
+      "tag": "Kid-Friendly",
+      "pattern": "\\yKid[\\s_-]+Friendly\\y"
+    },
+    {
+      "tag": "Korean",
+      "pattern": "\\yKorean\\y"
+    },
+    {
+      "tag": "Latin American",
+      "pattern": "\\yLatin[\\s_-]+American\\y"
+    },
+    {
+      "tag": "Low-Carb",
+      "pattern": "\\yLow[\\s_-]+Carb\\y"
+    },
+    {
+      "tag": "Make-Ahead",
+      "pattern": "\\yMake[\\s_-]+Ahead\\y",
+      "enabled": false
+    },
+    {
+      "tag": "Meal Prep",
+      "pattern": "\\yMeal[\\s_-]+Prep\\y"
+    },
+    {
+      "tag": "Mediterranean",
+      "pattern": "\\yMediterranean\\y"
+    },
+    {
+      "tag": "Mexican",
+      "pattern": "\\yMexican\\y"
+    },
+    {
+      "tag": "Middle Eastern",
+      "pattern": "\\yMiddle[\\s_-]+Eastern\\y"
     },
     {
       "tag": "No-Cook",
-      "pattern": "no.cook|no.bake|\\yraw\\y|\\yuncooked\\y|\\yno heat\\y"
+      "pattern": "\\yNo[\\s_-]+Cook\\y"
+    },
+    {
+      "tag": "Non-Alcoholic",
+      "pattern": "\\yNon[\\s_-]+Alcoholic\\y"
+    },
+    {
+      "tag": "Noodles",
+      "pattern": "\\yNoodles\\y"
+    },
+    {
+      "tag": "Nut-Free",
+      "pattern": "\\yNut[\\s_-]+Free\\y"
+    },
+    {
+      "tag": "One-Pot",
+      "pattern": "\\yOne[\\s_-]+Pot\\y"
+    },
+    {
+      "tag": "Party",
+      "pattern": "\\yParty\\y",
+      "enabled": false
+    },
+    {
+      "tag": "Pasta",
+      "pattern": "\\yPasta\\y"
+    },
+    {
+      "tag": "Pescatarian",
+      "pattern": "\\yPescatarian\\y"
+    },
+    {
+      "tag": "Pork",
+      "pattern": "\\yPork\\y"
+    },
+    {
+      "tag": "Roasted",
+      "pattern": "\\yRoasted\\y"
+    },
+    {
+      "tag": "Seafood",
+      "pattern": "\\ySeafood\\y"
+    },
+    {
+      "tag": "Sheet Pan",
+      "pattern": "\\ySheet[\\s_-]+Pan\\y"
+    },
+    {
+      "tag": "Slow Cooker",
+      "pattern": "\\ySlow[\\s_-]+Cooker\\y"
+    },
+    {
+      "tag": "Spicy",
+      "pattern": "\\ySpicy\\y"
+    },
+    {
+      "tag": "Stovetop",
+      "pattern": "\\yStovetop\\y"
+    },
+    {
+      "tag": "Sweet",
+      "pattern": "\\ySweet\\y"
+    },
+    {
+      "tag": "Thai",
+      "pattern": "\\yThai\\y"
+    },
+    {
+      "tag": "Tofu",
+      "pattern": "\\yTofu\\y"
+    },
+    {
+      "tag": "Vegan",
+      "pattern": "\\yVegan\\y"
+    },
+    {
+      "tag": "Vegetarian",
+      "pattern": "\\yVegetarian\\y"
+    },
+    {
+      "tag": "Vietnamese",
+      "pattern": "\\yVietnamese\\y"
+    },
+    {
+      "tag": "Weeknight",
+      "pattern": "\\yWeeknight\\y"
     }
   ],
   "text_categories": [
     {
+      "category": "Appetizer",
+      "pattern": "\\yAppetizer\\y"
+    },
+    {
+      "category": "Bread",
+      "pattern": "\\yBread\\y"
+    },
+    {
       "category": "Breakfast",
-      "pattern": "\\ybreakfast\\y|\\ypancake\\y|\\ywaffle\\y|\\yomelet\\y|\\yomelette\\y|\\yfrench toast\\y|\\ybenedict\\y|\\ygranola\\y|\\yoatmeal\\y|\\yfrittata\\y|\\yquiche\\y"
+      "pattern": "\\yBreakfast\\y"
     },
     {
-      "category": "Lunch",
-      "pattern": "\\ylunch\\y|\\ysandwich\\y|\\ywrap\\y|\\yburrito\\y|\\ytaco\\y|\\ypanini\\y"
-    },
-    {
-      "category": "Dinner",
-      "pattern": "\\ydinner\\y|\\yentrée\\y|\\yentree\\y|\\ymain course\\y|\\ymain dish\\y|\\ysupper\\y"
+      "category": "Brunch",
+      "pattern": "\\yBrunch\\y",
+      "enabled": false
     },
     {
       "category": "Dessert",
-      "pattern": "\\ydessert\\y|\\ycake\\y|\\ycookie\\y|\\ybrownie\\y|\\yice cream\\y|\\ytiramisu\\y|\\ycheesecake\\y|\\ymousse\\y|\\ycustard\\y|\\yflan\\y|\\ypanna cotta\\y|\\ybaklava\\y|\\ymochi\\y|\\ysorbet\\y|\\ygelato\\y|\\ypudding\\y|\\ytart\\y|\\ycobbler\\y"
+      "pattern": "\\yDessert\\y"
     },
     {
-      "category": "Appetizer",
-      "pattern": "\\yappetizer\\y|\\ystarter\\y|\\yhors d.oeuvre\\y|\\ycrostini\\y|\\ybruschetta\\y|\\ydip\\y|\\yspread\\y|\\yfingers\\y"
+      "category": "Dinner",
+      "pattern": "\\yDinner\\y"
     },
     {
-      "category": "Side Dish",
-      "pattern": "\\yside dish\\y|\\yside salad\\y|\\yaccompaniment\\y"
+      "category": "Drink",
+      "pattern": "\\yDrink\\y"
     },
     {
-      "category": "Soup & Stew",
-      "pattern": "\\ysoup\\y|\\ystew\\y|\\ychowder\\y|\\ybisque\\y|\\ygazpacho\\y|\\ypho\\y|\\yminestrone\\y|\\yramen\\y|\\ypotage\\y|\\ybouillabaisse\\y|\\ygoulash\\y"
+      "category": "Lunch",
+      "pattern": "\\yLunch\\y",
+      "enabled": false
+    },
+    {
+      "category": "Originals",
+      "pattern": "\\yOriginals\\y"
     },
     {
       "category": "Salad",
-      "pattern": "\\ysalad\\y"
+      "pattern": "\\ySalad\\y"
+    },
+    {
+      "category": "Sauce",
+      "pattern": "\\ySauce\\y"
+    },
+    {
+      "category": "Side",
+      "pattern": "\\ySide\\y",
+      "enabled": false
     },
     {
       "category": "Snack",
-      "pattern": "\\ysnack\\y|\\ytrail mix\\y|\\ypopcorn\\y|\\ygranola bar\\y|\\yenergy ball\\y|\\yprotein ball\\y"
+      "pattern": "\\ySnack\\y",
+      "match_on": "name"
     },
     {
-      "category": "Beverage",
-      "pattern": "\\ybeverage\\y|\\ydrink\\y|\\ycocktail\\y|\\ymocktail\\y|\\ysmoothie\\y|\\yjuice\\y|\\ylemonade\\y|\\yinfusion\\y|\\ymilkshake\\y|\\yshake\\y"
+      "category": "Soup",
+      "pattern": "\\ySoup\\y"
     }
   ],
   "tool_tags": [
     {
       "tool": "Air Fryer",
-      "pattern": "air fryer|air-fryer"
-    },
-    {
-      "tool": "Instant Pot",
-      "pattern": "instant pot|instant-pot"
-    },
-    {
-      "tool": "Slow Cooker",
-      "pattern": "slow cooker|slow-cooker|crockpot|crock pot|crock-pot"
-    },
-    {
-      "tool": "Dutch Oven",
-      "pattern": "dutch oven|dutch-oven"
-    },
-    {
-      "tool": "Cast Iron Skillet",
-      "pattern": "cast iron|cast-iron"
-    },
-    {
-      "tool": "Pressure Cooker",
-      "pattern": "pressure cooker|pressure-cooker"
+      "pattern": "\\yAir[\\s_-]+Fryer\\y"
     },
     {
       "tool": "Blender",
-      "pattern": "\\yblender\\y|\\yblend until\\y"
+      "pattern": "\\yBlender\\y"
+    },
+    {
+      "tool": "Blow Torch",
+      "pattern": "\\yBlow[\\s_-]+Torch\\y"
+    },
+    {
+      "tool": "Bread Machine",
+      "pattern": "\\yBread[\\s_-]+Machine\\y"
+    },
+    {
+      "tool": "Cast Iron Skillet",
+      "pattern": "\\yCast[\\s_-]+Iron[\\s_-]+Skillet\\y"
+    },
+    {
+      "tool": "Charcoal Grill",
+      "pattern": "\\yCharcoal[\\s_-]+Grill\\y"
+    },
+    {
+      "tool": "Convection Oven",
+      "pattern": "\\yConvection[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Countertop Oven",
+      "pattern": "\\yCountertop[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Dehydrator",
+      "pattern": "\\yDehydrator\\y"
+    },
+    {
+      "tool": "Digital Meat Thermometer",
+      "pattern": "\\yDigital[\\s_-]+Meat[\\s_-]+Thermometer\\y"
+    },
+    {
+      "tool": "Dutch Oven",
+      "pattern": "\\yDutch[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Electric Griddle",
+      "pattern": "\\yElectric[\\s_-]+Griddle\\y"
+    },
+    {
+      "tool": "Electric Smoker",
+      "pattern": "\\yElectric[\\s_-]+Smoker\\y"
+    },
+    {
+      "tool": "Espresso Machine",
+      "pattern": "\\yEspresso[\\s_-]+Machine\\y"
+    },
+    {
+      "tool": "Fondue Set",
+      "pattern": "\\yFondue[\\s_-]+Set\\y"
     },
     {
       "tool": "Food Processor",
-      "pattern": "food processor"
+      "pattern": "\\yFood[\\s_-]+Processor\\y"
     },
     {
-      "tool": "Stand Mixer",
-      "pattern": "stand mixer|stand-mixer|kitchen aid|kitchenaid"
+      "tool": "Grill",
+      "pattern": "\\yGrill\\y"
+    },
+    {
+      "tool": "Ice Cream Maker",
+      "pattern": "\\yIce[\\s_-]+Cream[\\s_-]+Maker\\y"
     },
     {
       "tool": "Immersion Blender",
-      "pattern": "immersion blender|stick blender|hand blender"
+      "pattern": "\\yImmersion[\\s_-]+Blender\\y"
+    },
+    {
+      "tool": "Instant Pot",
+      "pattern": "\\yInstant[\\s_-]+Pot\\y"
+    },
+    {
+      "tool": "Mandoline",
+      "pattern": "\\yMandoline\\y"
+    },
+    {
+      "tool": "Microwave",
+      "pattern": "\\yMicrowave\\y"
+    },
+    {
+      "tool": "Outdoor Pizza Oven",
+      "pattern": "\\yOutdoor[\\s_-]+Pizza[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Pellet Grill",
+      "pattern": "\\yPellet[\\s_-]+Grill\\y"
+    },
+    {
+      "tool": "Pizza Steel",
+      "pattern": "\\yPizza[\\s_-]+Steel\\y"
+    },
+    {
+      "tool": "Pizza Stone",
+      "pattern": "\\yPizza[\\s_-]+Stone\\y"
+    },
+    {
+      "tool": "Pressure Cooker",
+      "pattern": "\\yPressure[\\s_-]+Cooker\\y"
+    },
+    {
+      "tool": "Rice Cooker",
+      "pattern": "\\yRice[\\s_-]+Cooker\\y"
+    },
+    {
+      "tool": "Roasting Pan",
+      "pattern": "\\yRoasting[\\s_-]+Pan\\y"
+    },
+    {
+      "tool": "Rotisserie",
+      "pattern": "\\yRotisserie\\y"
+    },
+    {
+      "tool": "Sandwich Press",
+      "pattern": "\\ySandwich[\\s_-]+Press\\y"
+    },
+    {
+      "tool": "Sheet Pan",
+      "pattern": "\\ySheet[\\s_-]+Pan\\y"
+    },
+    {
+      "tool": "Slow Cooker",
+      "pattern": "\\ySlow[\\s_-]+Cooker\\y"
+    },
+    {
+      "tool": "Smoker",
+      "pattern": "\\ySmoker\\y"
+    },
+    {
+      "tool": "Sous Vide",
+      "pattern": "\\ySous[\\s_-]+Vide\\y"
+    },
+    {
+      "tool": "Stand Mixer",
+      "pattern": "\\yStand[\\s_-]+Mixer\\y"
+    },
+    {
+      "tool": "Steam Oven",
+      "pattern": "\\ySteam[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Stock Pot",
+      "pattern": "\\yStock[\\s_-]+Pot\\y"
+    },
+    {
+      "tool": "Toaster Oven",
+      "pattern": "\\yToaster[\\s_-]+Oven\\y"
+    },
+    {
+      "tool": "Waffle Iron",
+      "pattern": "\\yWaffle[\\s_-]+Iron\\y"
+    },
+    {
+      "tool": "Wok",
+      "pattern": "\\yWok\\y"
+    },
+    {
+      "tool": "Wood Pellet Grill",
+      "pattern": "\\yWood[\\s_-]+Pellet[\\s_-]+Grill\\y"
     }
   ]
 }

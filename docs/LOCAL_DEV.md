@@ -109,6 +109,16 @@ python scripts/qa/run_local_webui_qa.py --iterations 1
 
 This requires Playwright browsers to be installed (`cd web && npx playwright install`).
 
+For taxonomy rule quality tuning against your live recipe corpus:
+
+```bash
+python -m cookdex.tag_rules_qa --regenerate --write
+```
+
+This generates a baseline from current taxonomy, tunes noisy text rules, writes
+updated `configs/taxonomy/tag_rules.json`, and emits a report at
+`reports/qa/tag_rules_qa_report.json`.
+
 ## Troubleshooting
 
 | Problem | Fix |

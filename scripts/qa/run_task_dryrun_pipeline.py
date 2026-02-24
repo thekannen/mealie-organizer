@@ -309,10 +309,48 @@ def main() -> int:
         default=180,
         help="Per-task timeout in seconds (default 180).",
     )
+    parser.add_argument(
+        "--tag-rules-qa",
+        action="store_true",
+        help="Run tag-rules QA tuning pipeline before task variants.",
+    )
+    parser.add_argument(
+        "--tag-rules-write",
+        action="store_true",
+        help="When used with --tag-rules-qa, persist tuned rules to configs/taxonomy/tag_rules.json.",
+    )
+    parser.add_argument(
+        "--tag-rules-regenerate",
+        action="store_true",
+        help="When used with --tag-rules-qa, regenerate baseline rules from taxonomy before tuning.",
+    )
     args = parser.parse_args()
 
     registry = TaskRegistry()
     all_variants = _build_variants()
+
+    if args.tag_rules_qa:
+        qa_cmd = [sys.executable, "-m", "cookdex.tag_rules_qa"]
+        if args.tag_rules_regenerate:
+            qa_cmd.append("--regenerate")
+        if args.tag_rules_write:
+            qa_cmd.append("--write")
+        print("[preflight] Running tag-rules QA pipeline...")
+        preflight = subprocess.run(
+            qa_cmd,
+            capture_output=True,
+            text=True,
+            env=_build_env(),
+            cwd=str(REPO_ROOT),
+            timeout=max(60, args.timeout),
+        )
+        if preflight.stdout:
+            print(preflight.stdout.strip())
+        if preflight.stderr:
+            print(preflight.stderr.strip())
+        if preflight.returncode != 0:
+            print("[preflight] tag-rules QA failed; aborting task dry-run pipeline.")
+            return 1
 
     if args.tasks:
         wanted = {t.strip() for t in args.tasks.split(",") if t.strip()}

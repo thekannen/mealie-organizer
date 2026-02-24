@@ -44,13 +44,15 @@ Config file schema (JSON)
       "text_tags": [
         {
           "tag": "Breakfast",
-          "pattern": "breakfast|pancake|waffle|omelet"
+          "pattern": "breakfast|pancake|waffle|omelet",
+          "match_on": "both"
         }
       ],
       "text_categories": [
         {
           "category": "Breakfast",
-          "pattern": "breakfast|pancake|waffle|omelet"
+          "pattern": "breakfast|pancake|waffle|omelet",
+          "match_on": "name"
         }
       ],
       "ingredient_categories": [
@@ -76,7 +78,9 @@ ingredient_tags
     fingerprinting (recipe must contain at least N distinct matching foods).
 
 text_tags
-    Match against ``recipes.name`` and ``recipes.description``.
+    Match against ``recipes.name`` and/or ``recipes.description``.
+    Optional per-rule ``match_on``: ``both`` (default), ``name``, ``description``.
+    Optional per-rule ``enabled`` flag to disable a rule without deleting it.
     Works in both API mode and DB mode.
 
 text_categories
@@ -162,6 +166,60 @@ class RecipeRuleTagger:
             )
         self.missing_targets = mode
         self.create_missing_targets = mode == "create"
+
+    @staticmethod
+    def _rule_enabled(rule: dict[str, Any]) -> bool:
+        raw = rule.get("enabled", True)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return bool(raw)
+        if isinstance(raw, str):
+            lowered = raw.strip().casefold()
+            if lowered in {"0", "false", "no", "off"}:
+                return False
+            if lowered in {"1", "true", "yes", "on"}:
+                return True
+        return True
+
+    @staticmethod
+    def _rule_match_on(rule: dict[str, Any]) -> str:
+        raw = str(rule.get("match_on") or "").strip().casefold()
+        if raw in {"name", "description", "both"}:
+            return raw
+        fields = rule.get("fields")
+        if isinstance(fields, str):
+            lowered = fields.strip().casefold()
+            if lowered in {"name", "description", "both"}:
+                return lowered
+        if isinstance(fields, list):
+            names = {str(item or "").strip().casefold() for item in fields}
+            has_name = "name" in names
+            has_desc = "description" in names
+            if has_name and has_desc:
+                return "both"
+            if has_name:
+                return "name"
+            if has_desc:
+                return "description"
+        return "both"
+
+    @staticmethod
+    def _recipe_matches_text(
+        recipe: dict[str, Any],
+        compiled: re.Pattern[str],
+        *,
+        match_on: str,
+    ) -> bool:
+        name = recipe.get("name") or ""
+        description = recipe.get("description") or ""
+        in_name = bool(compiled.search(name))
+        in_desc = bool(compiled.search(description))
+        if match_on == "name":
+            return in_name
+        if match_on == "description":
+            return in_desc
+        return in_name or in_desc
 
     # ------------------------------------------------------------------
     # Public API
@@ -335,8 +393,11 @@ class RecipeRuleTagger:
         allow_create: bool = True,
     ) -> int:
         """Match text pattern against recipe name/description; add tag via API."""
+        if not self._rule_enabled(rule):
+            return 0
         tag_name: str = rule["tag"]
         pattern: str = rule["pattern"]
+        match_on = self._rule_match_on(rule)
 
         # Translate \y word boundaries to \b for Python regex
         py_pattern = pattern.replace(r"\y", r"\b")
@@ -345,8 +406,7 @@ class RecipeRuleTagger:
         matched = [
             r
             for r in all_recipes
-            if compiled.search(r.get("name") or "")
-            or compiled.search(r.get("description") or "")
+            if self._recipe_matches_text(r, compiled, match_on=match_on)
         ]
         count = len(matched)
         if count:
@@ -457,8 +517,11 @@ class RecipeRuleTagger:
         allow_create: bool = True,
     ) -> int:
         """Match text pattern against recipe name/description; add category via API."""
+        if not self._rule_enabled(rule):
+            return 0
         cat_name: str = rule["category"]
         pattern: str = rule["pattern"]
+        match_on = self._rule_match_on(rule)
 
         py_pattern = pattern.replace(r"\y", r"\b")
         compiled = re.compile(py_pattern, re.IGNORECASE)
@@ -466,8 +529,7 @@ class RecipeRuleTagger:
         matched = [
             r
             for r in all_recipes
-            if compiled.search(r.get("name") or "")
-            or compiled.search(r.get("description") or "")
+            if self._recipe_matches_text(r, compiled, match_on=match_on)
         ]
         count = len(matched)
         if count:
@@ -682,13 +744,16 @@ class RecipeRuleTagger:
         group_id: str,
         rule: dict[str, Any],
     ) -> int:
+        if not self._rule_enabled(rule):
+            return 0
         tag_name: str = rule["tag"]
         pattern: str = rule["pattern"]
+        match_on = self._rule_match_on(rule)
         tag_id = self._db_resolve_tag_id(db, group_id, tag_name)
         if not tag_id:
             return 0
 
-        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern)
+        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern, match_on=match_on)
         count = len(recipe_ids)
         if count:
             print(
@@ -730,13 +795,16 @@ class RecipeRuleTagger:
         group_id: str,
         rule: dict[str, Any],
     ) -> int:
+        if not self._rule_enabled(rule):
+            return 0
         cat_name: str = rule["category"]
         pattern: str = rule["pattern"]
+        match_on = self._rule_match_on(rule)
         cat_id = self._db_resolve_category_id(db, group_id, cat_name)
         if not cat_id:
             return 0
 
-        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern)
+        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern, match_on=match_on)
         count = len(recipe_ids)
         if count:
             print(
