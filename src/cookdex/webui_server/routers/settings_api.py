@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -349,6 +350,16 @@ _MEALIE_ENV_MAP: dict[str, str] = {
     "POSTGRES_PORT": "MEALIE_PG_PORT",
     "DB_ENGINE": "MEALIE_DB_TYPE",
 }
+_MEALIE_FILE_ENV_MAP: dict[str, str] = {
+    "POSTGRES_USER_FILE": "MEALIE_PG_USER",
+    "POSTGRES_PASSWORD_FILE": "MEALIE_PG_PASS",
+    "POSTGRES_DB_FILE": "MEALIE_PG_DB",
+    "POSTGRES_SERVER_FILE": "MEALIE_PG_HOST",
+    "POSTGRES_PORT_FILE": "MEALIE_PG_PORT",
+    "DB_ENGINE_FILE": "MEALIE_DB_TYPE",
+    "POSTGRES_URL_OVERRIDE_FILE": "POSTGRES_URL_OVERRIDE",
+}
+_MEALIE_RAW_DB_KEYS = set(_MEALIE_ENV_MAP) | set(_MEALIE_FILE_ENV_MAP) | {"POSTGRES_URL_OVERRIDE"}
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
@@ -391,9 +402,33 @@ def _ssh_exec(
     timeout: int = 15,
 ) -> tuple[str, str, int]:
     """Run a single command over SSH and return (stdout, stderr, exit_code)."""
-    import paramiko
-
     resolved_key = _validated_ssh_key_path(key_path)
+
+    # Prefer paramiko when available; fall back to native ssh binary.
+    try:
+        import paramiko
+    except ModuleNotFoundError:
+        paramiko = None  # type: ignore[assignment]
+
+    if paramiko is None:
+        ssh_cmd = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", f"ConnectTimeout={max(3, timeout)}",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "PasswordAuthentication=no",
+            "-i", resolved_key,
+            f"{user}@{host}",
+            command,
+        ]
+        completed = subprocess.run(
+            ssh_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+            check=False,
+        )
+        return completed.stdout, completed.stderr, int(completed.returncode)
 
     known_hosts = os.path.join(
         os.path.realpath(os.path.expanduser("~/.ssh")), "known_hosts",
@@ -424,46 +459,118 @@ def _ssh_exec(
             os.makedirs(os.path.dirname(known_hosts), exist_ok=True)
             host_keys.save(known_hosts)
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(_TofuPolicy())
+    client = paramiko.SSHClient()  # type: ignore[union-attr]
+    client.set_missing_host_key_policy(_TofuPolicy())  # type: ignore[union-attr]
     try:
-        client.connect(
-            hostname=host,
-            username=user,
-            key_filename=resolved_key,
-            timeout=timeout,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-        _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-        exit_code = stdout.channel.recv_exit_status()
-        return (
-            stdout.read().decode("utf-8", errors="replace"),
-            stderr.read().decode("utf-8", errors="replace"),
-            exit_code,
-        )
+        try:
+            client.connect(
+                hostname=host,
+                username=user,
+                key_filename=resolved_key,
+                timeout=timeout,
+                allow_agent=False,
+                look_for_keys=False,
+            )
+            _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+            exit_code = stdout.channel.recv_exit_status()
+            return (
+                stdout.read().decode("utf-8", errors="replace"),
+                stderr.read().decode("utf-8", errors="replace"),
+                exit_code,
+            )
+        except Exception:
+            ssh_cmd = [
+                "ssh",
+                "-o", "BatchMode=yes",
+                "-o", f"ConnectTimeout={max(3, timeout)}",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", "PasswordAuthentication=no",
+                "-i", resolved_key,
+                f"{user}@{host}",
+                command,
+            ]
+            completed = subprocess.run(
+                ssh_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 5,
+                check=False,
+            )
+            return completed.stdout, completed.stderr, int(completed.returncode)
     finally:
         client.close()
 
 
 def _parse_mealie_env(text: str) -> dict[str, str]:
-    """Parse KEY=VALUE lines from Mealie container env and map to CookDex keys."""
+    """Parse Mealie DB env assignments and map to CookDex DB keys."""
     import re
 
-    result: dict[str, str] = {}
+    raw: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
             continue
-        key, _, value = line.partition("=")
-        key = key.strip()
+        if line.startswith("- "):
+            line = line[2:].strip()
+        if line.lower().startswith("export "):
+            line = line[7:].strip()
+
+        key = ""
+        value = ""
+        if "=" in line:
+            key, _, value = line.partition("=")
+        elif ":" in line:
+            key, _, value = line.partition(":")
+            if " #" in value:
+                value = value.split(" #", 1)[0].rstrip()
+        else:
+            continue
+
+        key = key.strip().strip("'\"").upper()
+        if not re.match(r"^[A-Z0-9_]+$", key):
+            continue
         value = value.strip().strip("'\"")
-        cookdex_key = _MEALIE_ENV_MAP.get(key)
-        if cookdex_key and value:
+        if key in _MEALIE_RAW_DB_KEYS and value:
+            raw[key] = value
+
+    result: dict[str, str] = {}
+    for key, cookdex_key in _MEALIE_ENV_MAP.items():
+        value = raw.get(key)
+        if value:
             result[cookdex_key] = value
 
+    # If *_FILE variants are set (Mealie docs: Docker secrets), they take precedence.
+    for key, cookdex_key in _MEALIE_FILE_ENV_MAP.items():
+        if cookdex_key == "POSTGRES_URL_OVERRIDE":
+            continue
+        value = raw.get(key)
+        if not value:
+            continue
+        # Keep path around for later remote resolution.
+        result[f"__FILE__:{cookdex_key}"] = value
+
+    # POSTGRES_URL_OVERRIDE has priority over individual POSTGRES_* values.
+    override = raw.get("POSTGRES_URL_OVERRIDE") or raw.get("POSTGRES_URL_OVERRIDE_FILE")
+    if override:
+        parsed = urlparse(override if "://" in override else f"postgresql://{override}")
+        if parsed.hostname:
+            result["MEALIE_PG_HOST"] = parsed.hostname
+        if parsed.port:
+            result["MEALIE_PG_PORT"] = str(parsed.port)
+        if parsed.path and parsed.path.strip("/"):
+            result["MEALIE_PG_DB"] = parsed.path.strip("/")
+        if parsed.username:
+            result["MEALIE_PG_USER"] = unquote(parsed.username)
+        if parsed.password:
+            result["MEALIE_PG_PASS"] = unquote(parsed.password)
+        result["MEALIE_DB_TYPE"] = "postgres"
+
     # Infer DB type from presence of Postgres vars if DB_ENGINE not set
-    if "MEALIE_DB_TYPE" not in result and "MEALIE_PG_USER" in result:
+    if "MEALIE_DB_TYPE" not in result and (
+        "MEALIE_PG_USER" in result or
+        "MEALIE_PG_HOST" in result or
+        "MEALIE_PG_DB" in result
+    ):
         result["MEALIE_DB_TYPE"] = "postgres"
 
     # If POSTGRES_SERVER is a Docker service name, map to localhost (tunnel handles routing)
@@ -474,10 +581,173 @@ def _parse_mealie_env(text: str) -> dict[str, str]:
     return result
 
 
+def _parse_env_probe_blocks(text: str) -> list[tuple[str, str]]:
+    marker = "__CFG_FILE__:"
+    blocks: list[tuple[str, str]] = []
+    current_path = ""
+    current_lines: list[str] = []
+    seen_paths: set[str] = set()
+
+    for raw_line in text.splitlines():
+        line = str(raw_line).strip()
+        if line.startswith(marker):
+            if current_path and current_path not in seen_paths:
+                blocks.append((current_path, "\n".join(current_lines)))
+                seen_paths.add(current_path)
+            current_path = line[len(marker) :].strip()
+            current_lines = []
+            continue
+        if current_path:
+            current_lines.append(line)
+
+    if current_path and current_path not in seen_paths:
+        blocks.append((current_path, "\n".join(current_lines)))
+
+    return blocks
+
+
+def _detect_db_credentials_from_env_files(
+    ssh_host: str, ssh_user: str, ssh_key: str,
+) -> tuple[bool, str, dict[str, str]]:
+    probe_cmd = r"""
+set +e
+emit() {
+  p="$1"
+  if [ -r "$p" ] && grep -q -E '(DB_ENGINE|POSTGRES_(USER|PASSWORD|DB|SERVER|PORT|URL_OVERRIDE)(_FILE)?|EnvironmentFile=.*mealie)' "$p" 2>/dev/null; then
+    echo "__CFG_FILE__:$p"
+    sed -n '1,260p' "$p" 2>/dev/null || true
+  fi
+}
+for p in \
+  /opt/mealie/mealie.env \
+  /opt/mealie/.env \
+  /opt/mealie/docker/docker-compose.yml \
+  /opt/mealie/docker/docker-compose.yaml \
+  /etc/mealie/mealie.env \
+  /etc/mealie/.env \
+  /etc/systemd/system/mealie.service \
+  /srv/mealie/mealie.env \
+  /srv/mealie/.env \
+  /var/lib/mealie/mealie.env \
+  /var/lib/mealie/.env \
+  "$HOME/docker/mealie/docker-compose.yml" \
+  "$HOME/docker/mealie/docker-compose.yaml" \
+  "$HOME/mealie/docker-compose.yml" \
+  "$HOME/mealie/docker-compose.yaml"
+do
+  emit "$p"
+done
+for p in $(find /opt /etc /srv /var/lib /home -maxdepth 6 -type f \
+  \( -name 'mealie.env' -o -name '.env' -o -name '*mealie*.env' -o -name 'docker-compose.yml' -o -name 'docker-compose.yaml' -o -name 'compose.yml' -o -name 'compose.yaml' -o -name 'mealie.service' \) \
+  2>/dev/null | head -n 140); do
+  emit "$p"
+done
+"""
+    try:
+        out, _err, _code = _ssh_exec(ssh_host, ssh_user, ssh_key, probe_cmd, timeout=20)
+    except Exception:
+        return False, "Could not read Mealie env files over SSH.", {}
+
+    blocks = _parse_env_probe_blocks(out)
+    if not blocks:
+        return (
+            False,
+            "No Mealie config with DB credentials found over SSH. "
+            "Checked documented paths such as /opt/mealie/mealie.env and docker-compose files under /opt/mealie and ~/docker/mealie.",
+            {},
+        )
+
+    def _sh_q(value: str) -> str:
+        return "'" + str(value).replace("'", "'\"'\"'") + "'"
+
+    cache: dict[str, str] = {}
+
+    def _read_remote(path: str, base_path: str) -> str:
+        raw_path = str(path or "").strip()
+        if not raw_path:
+            return ""
+        candidates: list[str] = []
+        if raw_path.startswith("/"):
+            candidates.append(raw_path)
+        else:
+            candidates.append(os.path.normpath(os.path.join(os.path.dirname(base_path), raw_path)))
+            candidates.append(raw_path)
+
+        # Mealie docs use /run/secrets/* inside container; resolve to common host-side files.
+        if raw_path.startswith("/run/secrets/"):
+            secret_name = os.path.basename(raw_path)
+            base_dir = os.path.dirname(base_path)
+            candidates.extend(
+                [
+                    os.path.join(base_dir, "secrets", secret_name),
+                    os.path.join(base_dir, "secrets", f"{secret_name}.txt"),
+                    os.path.join(base_dir, "secrets", "sensitive", secret_name),
+                    os.path.join(base_dir, "secrets", "sensitive", f"{secret_name}.txt"),
+                ]
+            )
+
+        for candidate in candidates:
+            if candidate in cache:
+                text = cache[candidate]
+            else:
+                cmd = f"p={_sh_q(candidate)}; if [ -r \"$p\" ]; then sed -n '1,4p' \"$p\"; fi"
+                out_text, _err_text, code = _ssh_exec(ssh_host, ssh_user, ssh_key, cmd, timeout=12)
+                text = out_text if code == 0 else ""
+                cache[candidate] = text
+            if text.strip():
+                return text
+        return ""
+
+    best_detected: dict[str, str] = {}
+    best_path = ""
+    for path, payload in blocks:
+        detected = _parse_mealie_env(payload)
+        # Resolve *_FILE secret indirections, when present.
+        for key in list(detected):
+            if not key.startswith("__FILE__:"):
+                continue
+            target_key = key.split(":", 1)[1]
+            secret_path = str(detected.get(key) or "").strip()
+            secret_value = _read_remote(secret_path, path).splitlines()[0].strip() if secret_path else ""
+            if secret_value:
+                detected[target_key] = secret_value.strip("'\"")
+            detected.pop(key, None)
+
+        # systemd unit may point at a separate env file
+        for line in payload.splitlines():
+            if "EnvironmentFile" not in line:
+                continue
+            _, _, env_path = line.partition("=")
+            env_path = env_path.strip().lstrip("-").strip("'\"")
+            if not env_path:
+                continue
+            env_payload = _read_remote(env_path, path)
+            if not env_payload:
+                continue
+            from_env_file = _parse_mealie_env(env_payload)
+            for env_key, env_val in from_env_file.items():
+                if env_key not in detected and env_val:
+                    detected[env_key] = env_val
+
+        if not detected:
+            continue
+        if len(detected) > len(best_detected):
+            best_detected = detected
+            best_path = path
+
+    if best_detected:
+        db_type = best_detected.get("MEALIE_DB_TYPE", "postgres")
+        return True, f"Detected {db_type} credentials from config '{best_path}'.", best_detected
+
+    return False, "Found candidate config file(s), but no recognized DB credential keys were parsed.", {}
+
+
 def _detect_db_credentials(
     ssh_host: str, ssh_user: str, ssh_key: str,
 ) -> tuple[bool, str, dict[str, str]]:
     """SSH into the Mealie host and auto-discover database credentials."""
+
+    docker_hint = ""
 
     # Strategy 1: find mealie container via docker ps
     try:
@@ -492,47 +762,56 @@ def _detect_db_credentials(
     except Exception:
         return False, "SSH connection failed. Check SSH host, user, and key settings.", {}
 
-    if code != 0:
-        return False, "Could not list Docker containers. Is Docker installed and accessible?", {}
+    if code == 0:
+        # Find container with "mealie" in the name
+        containers = [name.strip() for name in out.splitlines() if name.strip()]
+        mealie_containers = [c for c in containers if "mealie" in c.lower() and "cookdex" not in c.lower()]
 
-    # Find container with "mealie" in the name
-    containers = [name.strip() for name in out.splitlines() if name.strip()]
-    mealie_containers = [c for c in containers if "mealie" in c.lower() and "cookdex" not in c.lower()]
+        if mealie_containers:
+            container = mealie_containers[0]
 
-    if not mealie_containers:
-        return False, f"No Mealie container found. Running containers: {', '.join(containers) or '(none)'}", {}
+            # Strategy 2: docker inspect
+            try:
+                out, _err, inspect_code = _ssh_exec(
+                    ssh_host, ssh_user, ssh_key,
+                    f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {container}",
+                )
+                if inspect_code == 0 and out.strip():
+                    detected = _parse_mealie_env(out)
+                    if detected:
+                        db_type = detected.get("MEALIE_DB_TYPE", "postgres")
+                        return True, f"Detected {db_type} credentials from container '{container}'.", detected
+            except Exception:
+                pass
 
-    container = mealie_containers[0]
+            # Strategy 3: docker exec env
+            try:
+                out, _err, exec_code = _ssh_exec(
+                    ssh_host, ssh_user, ssh_key,
+                    f"docker exec {container} env",
+                )
+                if exec_code == 0 and out.strip():
+                    detected = _parse_mealie_env(out)
+                    if detected:
+                        db_type = detected.get("MEALIE_DB_TYPE", "postgres")
+                        return True, f"Detected {db_type} credentials from container '{container}'.", detected
+            except Exception:
+                pass
 
-    # Strategy 2: docker inspect
-    try:
-        out, _err, code = _ssh_exec(
-            ssh_host, ssh_user, ssh_key,
-            f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {container}",
-        )
-        if code == 0 and out.strip():
-            detected = _parse_mealie_env(out)
-            if detected:
-                db_type = detected.get("MEALIE_DB_TYPE", "postgres")
-                return True, f"Detected {db_type} credentials from container '{container}'.", detected
-    except Exception:
-        pass
+            docker_hint = f"Docker container '{container}' found, but credential extraction failed."
+        else:
+            docker_hint = "No Mealie Docker container found."
+    else:
+        docker_hint = "Docker discovery unavailable on remote host."
 
-    # Strategy 3: docker exec env
-    try:
-        out, _err, code = _ssh_exec(
-            ssh_host, ssh_user, ssh_key,
-            f"docker exec {container} env",
-        )
-        if code == 0 and out.strip():
-            detected = _parse_mealie_env(out)
-            if detected:
-                db_type = detected.get("MEALIE_DB_TYPE", "postgres")
-                return True, f"Detected {db_type} credentials from container '{container}'.", detected
-    except Exception:
-        pass
+    # Strategy 4: non-Docker fallback (documented env-file discovery)
+    ok, detail, detected = _detect_db_credentials_from_env_files(ssh_host, ssh_user, ssh_key)
+    if ok:
+        return True, detail, detected
 
-    return False, f"Found container '{container}' but could not extract database credentials.", {}
+    if docker_hint:
+        return False, f"{docker_hint} {detail}", {}
+    return False, detail, {}
 
 
 @router.post("/settings/detect/db")
