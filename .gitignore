@@ -28,6 +28,7 @@ htmlcov/
 .mypy_cache/
 .pytype/
 .ruff_cache/
+configs/.history
 
 # Local runtime/output folders
 cache/

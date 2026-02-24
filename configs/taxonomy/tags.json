@@ -1,61 +1,182 @@
 [
-  {"name": "Italian"},
-  {"name": "Mexican"},
-  {"name": "Mediterranean"},
-  {"name": "Middle Eastern"},
-  {"name": "Indian"},
-  {"name": "Thai"},
-  {"name": "Chinese"},
-  {"name": "Japanese"},
-  {"name": "Korean"},
-  {"name": "Vietnamese"},
-  {"name": "Latin American"},
-  {"name": "Vegetarian"},
-  {"name": "Vegan"},
-  {"name": "Pescatarian"},
-  {"name": "Gluten-Free"},
-  {"name": "Dairy-Free"},
-  {"name": "Nut-Free"},
-  {"name": "Low-Carb"},
-  {"name": "High-Protein"},
-  {"name": "One-Pot"},
-  {"name": "Sheet Pan"},
-  {"name": "Slow Cooker"},
-  {"name": "Instant Pot"},
-  {"name": "Air Fryer"},
-  {"name": "Stovetop"},
-  {"name": "Grilled"},
-  {"name": "Roasted"},
-  {"name": "Baked"},
-  {"name": "Baking"},
-  {"name": "Casserole"},
-  {"name": "No-Cook"},
-  {"name": "Chicken"},
-  {"name": "Beef"},
-  {"name": "Pork"},
-  {"name": "Seafood"},
-  {"name": "Tofu"},
-  {"name": "Noodles"},
-  {"name": "Pasta"},
-  {"name": "Cocktail"},
-  {"name": "Non-Alcoholic"},
-  {"name": "Condiment"},
-  {"name": "Weeknight"},
-  {"name": "Meal Prep"},
-  {"name": "Make-Ahead"},
-  {"name": "Freezer-Friendly"},
-  {"name": "Kid-Friendly"},
-  {"name": "Holiday"},
-  {"name": "Party"},
-  {"name": "Crowd-Pleaser"},
-  {"name": "30-Minute"},
-  {"name": "5-Ingredient"},
-  {"name": "Beginner-Friendly"},
-  {"name": "Spicy"},
-  {"name": "Comfort Food"},
-  {"name": "Fresh"},
-  {"name": "Citrus"},
-  {"name": "Chocolate"},
-  {"name": "Sweet"},
-  {"name": "BBQ"}
+  {
+    "name": "BBQ"
+  },
+  {
+    "name": "Pasta"
+  },
+  {
+    "name": "Noodles"
+  },
+  {
+    "name": "Tofu"
+  },
+  {
+    "name": "Seafood"
+  },
+  {
+    "name": "Pork"
+  },
+  {
+    "name": "Beef"
+  },
+  {
+    "name": "Chicken"
+  },
+  {
+    "name": "Casserole"
+  },
+  {
+    "name": "Sweet"
+  },
+  {
+    "name": "Chocolate"
+  },
+  {
+    "name": "Citrus"
+  },
+  {
+    "name": "Fresh"
+  },
+  {
+    "name": "Comfort Food"
+  },
+  {
+    "name": "Spicy"
+  },
+  {
+    "name": "Beginner-Friendly"
+  },
+  {
+    "name": "5-Ingredient"
+  },
+  {
+    "name": "30-Minute"
+  },
+  {
+    "name": "Crowd-Pleaser"
+  },
+  {
+    "name": "Party"
+  },
+  {
+    "name": "Holiday"
+  },
+  {
+    "name": "Kid-Friendly"
+  },
+  {
+    "name": "Freezer-Friendly"
+  },
+  {
+    "name": "Make-Ahead"
+  },
+  {
+    "name": "Meal Prep"
+  },
+  {
+    "name": "Weeknight"
+  },
+  {
+    "name": "Condiment"
+  },
+  {
+    "name": "Non-Alcoholic"
+  },
+  {
+    "name": "Cocktail"
+  },
+  {
+    "name": "No-Cook"
+  },
+  {
+    "name": "Baking"
+  },
+  {
+    "name": "Baked"
+  },
+  {
+    "name": "Roasted"
+  },
+  {
+    "name": "Grilled"
+  },
+  {
+    "name": "Stovetop"
+  },
+  {
+    "name": "Air Fryer"
+  },
+  {
+    "name": "Instant Pot"
+  },
+  {
+    "name": "Slow Cooker"
+  },
+  {
+    "name": "Sheet Pan"
+  },
+  {
+    "name": "One-Pot"
+  },
+  {
+    "name": "High-Protein"
+  },
+  {
+    "name": "Low-Carb"
+  },
+  {
+    "name": "Nut-Free"
+  },
+  {
+    "name": "Dairy-Free"
+  },
+  {
+    "name": "Gluten-Free"
+  },
+  {
+    "name": "Pescatarian"
+  },
+  {
+    "name": "Vegan"
+  },
+  {
+    "name": "Vegetarian"
+  },
+  {
+    "name": "Latin American"
+  },
+  {
+    "name": "Vietnamese"
+  },
+  {
+    "name": "Korean"
+  },
+  {
+    "name": "Japanese"
+  },
+  {
+    "name": "Chinese"
+  },
+  {
+    "name": "Thai"
+  },
+  {
+    "name": "Indian"
+  },
+  {
+    "name": "Middle Eastern"
+  },
+  {
+    "name": "Mediterranean"
+  },
+  {
+    "name": "Mexican"
+  },
+  {
+    "name": "Italian"
+  },
+  {
+    "name": "American"
+  }
 ]

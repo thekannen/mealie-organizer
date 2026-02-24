@@ -1,10 +1,162 @@
 [
-  {"name": "Batch Cook", "color": "#959595"},
-  {"name": "Family Favorite", "color": "#959595"},
-  {"name": "Leftovers", "color": "#959595"},
-  {"name": "Meal Prep", "color": "#959595"},
-  {"name": "New Recipe", "color": "#959595"},
-  {"name": "Quick Win", "color": "#959595"},
-  {"name": "Seasonal", "color": "#959595"},
-  {"name": "Test Kitchen", "color": "#959595"}
+  {
+    "name": "Test Kitchen",
+    "color": "#959595"
+  },
+  {
+    "name": "Seasonal",
+    "color": "#959595"
+  },
+  {
+    "name": "Quick Win",
+    "color": "#959595"
+  },
+  {
+    "name": "New Recipe",
+    "color": "#959595"
+  },
+  {
+    "name": "Meal Prep",
+    "color": "#959595"
+  },
+  {
+    "name": "Leftovers",
+    "color": "#959595"
+  },
+  {
+    "name": "Family Favorite",
+    "color": "#959595"
+  },
+  {
+    "name": "Batch Cook",
+    "color": "#959595"
+  },
+  {
+    "name": "Poultry",
+    "color": "#959595"
+  },
+  {
+    "name": "Seafood & Seaweed",
+    "color": "#959595"
+  },
+  {
+    "name": "Berries",
+    "color": "#959595"
+  },
+  {
+    "name": "Meats",
+    "color": "#959595"
+  },
+  {
+    "name": "Wine, Beer & Spirits",
+    "color": "#959595"
+  },
+  {
+    "name": "Vegetables & Greens",
+    "color": "#959595"
+  },
+  {
+    "name": "Dairy & Eggs",
+    "color": "#959595"
+  },
+  {
+    "name": "Cheeses",
+    "color": "#959595"
+  },
+  {
+    "name": "Beverages",
+    "color": "#959595"
+  },
+  {
+    "name": "Pasta",
+    "color": "#959595"
+  },
+  {
+    "name": "Nuts & Seeds",
+    "color": "#959595"
+  },
+  {
+    "name": "Oils & Fats",
+    "color": "#959595"
+  },
+  {
+    "name": "Fish",
+    "color": "#959595"
+  },
+  {
+    "name": "Bread & Salty Snackssta",
+    "color": "#959595"
+  },
+  {
+    "name": "Fruits",
+    "color": "#959595"
+  },
+  {
+    "name": "Soups, Stews & Stocks",
+    "color": "#959595"
+  },
+  {
+    "name": "Condiments",
+    "color": "#959595"
+  },
+  {
+    "name": "Sugar & Sweeteners",
+    "color": "#959595"
+  },
+  {
+    "name": "Sauces, Spreads & Dips",
+    "color": "#959595"
+  },
+  {
+    "name": "Legumes",
+    "color": "#959595"
+  },
+  {
+    "name": "Canned Food",
+    "color": "#959595"
+  },
+  {
+    "name": "Supplements & Extracts",
+    "color": "#959595"
+  },
+  {
+    "name": "Herbs & Spices",
+    "color": "#959595"
+  },
+  {
+    "name": "Dairy-Free & Meat Substitutes",
+    "color": "#959595"
+  },
+  {
+    "name": "Baking",
+    "color": "#959595"
+  },
+  {
+    "name": "Dressings & Vinegars",
+    "color": "#959595"
+  },
+  {
+    "name": "Mushrooms",
+    "color": "#959595"
+  },
+  {
+    "name": "Bread & Salty Snacks",
+    "color": "#959595"
+  },
+  {
+    "name": "Seasonings & Spice Blends",
+    "color": "#959595"
+  },
+  {
+    "name": "Pre-Made Doughs & Wrappers",
+    "color": "#959595"
+  },
+  {
+    "name": "Desserts & Sweet Snacks",
+    "color": "#959595"
+  },
+  {
+    "name": "Grains & Cereals",
+    "color": "#959595"
+  }
 ]

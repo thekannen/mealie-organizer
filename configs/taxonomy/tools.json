@@ -1,44 +1,170 @@
 [
-  {"name": "Air Fryer", "onHand": false},
-  {"name": "Bread Machine", "onHand": false},
-  {"name": "Blow Torch", "onHand": false},
-  {"name": "Blender", "onHand": false},
-  {"name": "Cast Iron Skillet", "onHand": false},
-  {"name": "Charcoal Grill", "onHand": false},
-  {"name": "Convection Oven", "onHand": false},
-  {"name": "Countertop Oven", "onHand": false},
-  {"name": "Dehydrator", "onHand": false},
-  {"name": "Digital Meat Thermometer", "onHand": false},
-  {"name": "Dutch Oven", "onHand": false},
-  {"name": "Electric Griddle", "onHand": false},
-  {"name": "Electric Smoker", "onHand": false},
-  {"name": "Espresso Machine", "onHand": false},
-  {"name": "Food Processor", "onHand": false},
-  {"name": "Fondue Set", "onHand": false},
-  {"name": "Grill", "onHand": false},
-  {"name": "Ice Cream Maker", "onHand": false},
-  {"name": "Immersion Blender", "onHand": false},
-  {"name": "Instant Pot", "onHand": false},
-  {"name": "Mandoline", "onHand": false},
-  {"name": "Microwave", "onHand": false},
-  {"name": "Outdoor Pizza Oven", "onHand": false},
-  {"name": "Pellet Grill", "onHand": false},
-  {"name": "Pizza Stone", "onHand": false},
-  {"name": "Pizza Steel", "onHand": false},
-  {"name": "Pressure Cooker", "onHand": false},
-  {"name": "Rice Cooker", "onHand": false},
-  {"name": "Roasting Pan", "onHand": false},
-  {"name": "Rotisserie", "onHand": false},
-  {"name": "Sandwich Press", "onHand": false},
-  {"name": "Sheet Pan", "onHand": false},
-  {"name": "Slow Cooker", "onHand": false},
-  {"name": "Smoker", "onHand": false},
-  {"name": "Sous Vide", "onHand": false},
-  {"name": "Stand Mixer", "onHand": false},
-  {"name": "Steam Oven", "onHand": false},
-  {"name": "Stock Pot", "onHand": false},
-  {"name": "Toaster Oven", "onHand": false},
-  {"name": "Waffle Iron", "onHand": false},
-  {"name": "Wok", "onHand": false},
-  {"name": "Wood Pellet Grill", "onHand": false}
+  {
+    "name": "Wood Pellet Grill",
+    "onHand": false
+  },
+  {
+    "name": "Wok",
+    "onHand": false
+  },
+  {
+    "name": "Waffle Iron",
+    "onHand": false
+  },
+  {
+    "name": "Toaster Oven",
+    "onHand": false
+  },
+  {
+    "name": "Stock Pot",
+    "onHand": false
+  },
+  {
+    "name": "Steam Oven",
+    "onHand": false
+  },
+  {
+    "name": "Stand Mixer",
+    "onHand": false
+  },
+  {
+    "name": "Sous Vide",
+    "onHand": false
+  },
+  {
+    "name": "Smoker",
+    "onHand": false
+  },
+  {
+    "name": "Slow Cooker",
+    "onHand": false
+  },
+  {
+    "name": "Sheet Pan",
+    "onHand": false
+  },
+  {
+    "name": "Sandwich Press",
+    "onHand": false
+  },
+  {
+    "name": "Rotisserie",
+    "onHand": false
+  },
+  {
+    "name": "Roasting Pan",
+    "onHand": false
+  },
+  {
+    "name": "Rice Cooker",
+    "onHand": false
+  },
+  {
+    "name": "Pressure Cooker",
+    "onHand": false
+  },
+  {
+    "name": "Pizza Steel",
+    "onHand": false
+  },
+  {
+    "name": "Pizza Stone",
+    "onHand": false
+  },
+  {
+    "name": "Pellet Grill",
+    "onHand": false
+  },
+  {
+    "name": "Outdoor Pizza Oven",
+    "onHand": false
+  },
+  {
+    "name": "Microwave",
+    "onHand": false
+  },
+  {
+    "name": "Mandoline",
+    "onHand": false
+  },
+  {
+    "name": "Instant Pot",
+    "onHand": false
+  },
+  {
+    "name": "Immersion Blender",
+    "onHand": false
+  },
+  {
+    "name": "Ice Cream Maker",
+    "onHand": false
+  },
+  {
+    "name": "Grill",
+    "onHand": false
+  },
+  {
+    "name": "Fondue Set",
+    "onHand": false
+  },
+  {
+    "name": "Food Processor",
+    "onHand": false
+  },
+  {
+    "name": "Espresso Machine",
+    "onHand": false
+  },
+  {
+    "name": "Electric Smoker",
+    "onHand": false
+  },
+  {
+    "name": "Electric Griddle",
+    "onHand": false
+  },
+  {
+    "name": "Dutch Oven",
+    "onHand": false
+  },
+  {
+    "name": "Digital Meat Thermometer",
+    "onHand": false
+  },
+  {
+    "name": "Dehydrator",
+    "onHand": false
+  },
+  {
+    "name": "Countertop Oven",
+    "onHand": false
+  },
+  {
+    "name": "Convection Oven",
+    "onHand": false
+  },
+  {
+    "name": "Charcoal Grill",
+    "onHand": false
+  },
+  {
+    "name": "Cast Iron Skillet",
+    "onHand": false
+  },
+  {
+    "name": "Blender",
+    "onHand": false
+  },
+  {
+    "name": "Blow Torch",
+    "onHand": false
+  },
+  {
+    "name": "Bread Machine",
+    "onHand": false
+  },
+  {
+    "name": "Air Fryer",
+    "onHand": false
+  }
 ]
