@@ -7,6 +7,9 @@
   --line-soft: #f5ece3;
   --text: #2b2b2b;
   --muted: #6f635a;
+  --fg: var(--text);
+  --text-muted: var(--muted);
+  --border: var(--line);
   --accent: #f47a2a;
   --accent-strong: #c44e1f;
   --accent-soft: #fff1e2;
