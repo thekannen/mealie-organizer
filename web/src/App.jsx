@@ -713,6 +713,9 @@ export default function App() {
 
   const [importTarget, setImportTarget] = useState("categories");
   const [importJsonText, setImportJsonText] = useState("");
+  const [taxonomyBootstrapMode, setTaxonomyBootstrapMode] = useState("replace");
+  const [starterPackMode, setStarterPackMode] = useState("merge");
+  const [taxonomyActionLoading, setTaxonomyActionLoading] = useState("");
 
   const [envSpecs, setEnvSpecs] = useState({});
   const [envDraft, setEnvDraft] = useState({});
@@ -1958,6 +1961,44 @@ export default function App() {
       showNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
     } catch (exc) {
       handleError(exc);
+    }
+  }
+
+  async function initializeFromMealieBaseline() {
+    try {
+      clearBanners();
+      setTaxonomyActionLoading("mealie");
+      const payload = await api("/config/taxonomy/initialize-from-mealie", {
+        method: "POST",
+        body: { mode: taxonomyBootstrapMode },
+      });
+      await loadData();
+      const changedCount = Object.keys(payload?.changes || {}).length;
+      showNotice(`Managed baseline initialized from Mealie (${taxonomyBootstrapMode}). Updated ${changedCount} file(s).`);
+    } catch (exc) {
+      handleError(exc);
+    } finally {
+      setTaxonomyActionLoading("");
+    }
+  }
+
+  async function importStarterPack() {
+    try {
+      clearBanners();
+      setTaxonomyActionLoading("starter-pack");
+      const payload = await api("/config/taxonomy/import-starter-pack", {
+        method: "POST",
+        body: {
+          mode: starterPackMode,
+        },
+      });
+      await loadData();
+      const changedCount = Object.keys(payload?.changes || {}).length;
+      showNotice(`Starter pack imported (${starterPackMode}). Updated ${changedCount} file(s).`);
+    } catch (exc) {
+      handleError(exc);
+    } finally {
+      setTaxonomyActionLoading("");
     }
   }
 
@@ -4061,6 +4102,55 @@ export default function App() {
         </article>
 
         <aside className="stacked-cards">
+          <article className="card">
+            <h3><Icon name="refresh" /> Managed Taxonomy Baseline</h3>
+            <p className="muted">
+              Recipe Organization edits managed taxonomy files. This does not change Mealie until you run
+              <strong> taxonomy-refresh </strong>
+              and
+              <strong> cookbook-sync</strong>.
+            </p>
+
+            <label className="field">
+              <span>Initialize from Mealie</span>
+              <select value={taxonomyBootstrapMode} onChange={(event) => setTaxonomyBootstrapMode(event.target.value)}>
+                <option value="replace">Replace managed files with current Mealie</option>
+                <option value="merge">Merge current Mealie into managed files</option>
+              </select>
+            </label>
+            <button
+              className="primary"
+              type="button"
+              onClick={initializeFromMealieBaseline}
+              disabled={taxonomyActionLoading === "mealie"}
+            >
+              <Icon name="download" />
+              {taxonomyActionLoading === "mealie" ? "Initializing..." : "Initialize from Mealie"}
+            </button>
+
+            <hr />
+
+            <label className="field">
+              <span>Starter Pack Import Mode</span>
+              <select value={starterPackMode} onChange={(event) => setStarterPackMode(event.target.value)}>
+                <option value="merge">Merge starter pack into managed files</option>
+                <option value="replace">Replace managed files with starter pack</option>
+              </select>
+            </label>
+            <button
+              className="ghost"
+              type="button"
+              onClick={importStarterPack}
+              disabled={taxonomyActionLoading === "starter-pack"}
+            >
+              <Icon name="upload" />
+              {taxonomyActionLoading === "starter-pack" ? "Importing..." : "Import Starter Pack"}
+            </button>
+            <p className="muted tiny">
+              Recommended for existing Mealie libraries: initialize from Mealie first, then import starter pack in merge mode.
+            </p>
+          </article>
+
           <article className="card">
             <h3><Icon name="upload" /> Import from JSON</h3>
             <p className="muted">Drop a .json file, browse for one, or paste JSON below.</p>

@@ -21,6 +21,7 @@ COPY requirements.txt pyproject.toml README.md VERSION ./
 COPY src ./src
 COPY scripts ./scripts
 COPY configs ./configs
+COPY configs ./configs.defaults
 COPY web ./web
 COPY --from=web-build /web/dist ./web/dist
 

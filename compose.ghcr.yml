@@ -3,6 +3,7 @@ services:
     image: ${COOKDEX_IMAGE:-ghcr.io/thekannen/cookdex}:${COOKDEX_TAG:-latest}
     container_name: cookdex
     restart: unless-stopped
+    user: "0:0"
     env_file:
       - path: .env
         required: false

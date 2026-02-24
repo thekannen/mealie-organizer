@@ -119,3 +119,14 @@ class DbDetectRequest(BaseModel):
 
 class ConfigWriteRequest(BaseModel):
     content: Any
+
+
+class TaxonomySyncRequest(BaseModel):
+    mode: str = Field(default="merge", pattern="^(merge|replace)$")
+    files: list[str] | None = None
+
+
+class StarterPackImportRequest(BaseModel):
+    mode: str = Field(default="merge", pattern="^(merge|replace)$")
+    files: list[str] | None = None
+    base_url: str | None = None

@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Fix volume permissions on first launch ──────────────────────
-# Docker-created volume mounts are owned by root. Ensure the app
-# user can write to all writable directories before dropping privs.
+# ── Fix volume permissions + seed configs on first launch ───────
+# Docker-created/bind-mounted paths may be owned by root. Ensure
+# app can write to runtime directories and that required taxonomy
+# JSON files exist before dropping privileges.
 if [ "$(id -u)" = "0" ]; then
-  for dir in /app/cache /app/logs /app/reports; do
+  for dir in /app/configs /app/configs/taxonomy /app/cache /app/logs /app/reports; do
     mkdir -p "$dir"
-    chown -R app:app "$dir"
+  done
+
+  # If a host bind-mount has empty/missing config files, seed from
+  # image-baked defaults so maintenance stages can run immediately.
+  if [ -d /app/configs.defaults ]; then
+    if [ ! -s /app/configs/config.json ] && [ -f /app/configs.defaults/config.json ]; then
+      cp /app/configs.defaults/config.json /app/configs/config.json || true
+    fi
+    for file in categories.json tags.json cookbooks.json labels.json tools.json units_aliases.json tag_rules.json; do
+      if [ ! -s "/app/configs/taxonomy/$file" ] && [ -f "/app/configs.defaults/taxonomy/$file" ]; then
+        cp "/app/configs.defaults/taxonomy/$file" "/app/configs/taxonomy/$file" || true
+      fi
+    done
+  fi
+
+  for dir in /app/configs /app/cache /app/logs /app/reports; do
+    chown -R app:app "$dir" 2>/dev/null || true
   done
 
   # If an SSH key is mounted, ensure the app user can read it.

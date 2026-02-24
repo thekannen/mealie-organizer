@@ -23,7 +23,7 @@ export const PAGE_META = {
   },
   "recipe-organization": {
     title: "Recipe Organization",
-    subtitle: "Manage categories, cookbooks, labels, tags, tools, and units from taxonomy files.",
+    subtitle: "Define your managed taxonomy baseline, then sync it to Mealie with tasks.",
   },
   users: {
     title: "Users and Access",
