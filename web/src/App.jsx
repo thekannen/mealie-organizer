@@ -1189,6 +1189,23 @@ export default function App() {
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   const staleTimer = React.useRef(null);
 
+  function patchCachedData(mutator) {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      const next = mutator(cached);
+      if (!next || typeof next !== "object") return;
+      next.savedAt = Date.now();
+      if (!next.timestamp) {
+        next.timestamp = new Date().toISOString();
+      }
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(next));
+    } catch {
+      // Cache update failures should never block UI actions.
+    }
+  }
+
   function applyData(data) {
     const nextTasks = data.tasks?.items || [];
     const nextRuns = data.runs?.items || [];
@@ -1326,7 +1343,9 @@ export default function App() {
   async function refreshSchedules() {
     try {
       const payload = await api("/schedules");
-      setSchedules(payload?.items || []);
+      const nextSchedules = payload?.items || [];
+      setSchedules(nextSchedules);
+      patchCachedData((cached) => ({ ...cached, schedules: { items: nextSchedules } }));
     } catch (exc) { handleError(exc); }
   }
 
