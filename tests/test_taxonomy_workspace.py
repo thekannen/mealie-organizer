@@ -27,6 +27,25 @@ def _seed_config_root(root: Path) -> None:
         root / "configs" / "taxonomy" / "units_aliases.json",
         [{"name": "Cup", "abbreviation": "c", "aliases": ["cups"], "fraction": True, "useAbbreviation": True}],
     )
+    _write_json(
+        root / "configs" / "taxonomy" / "tag_rules.json",
+        {
+            "ingredient_tags": [
+                {"tag": "Existing Tag", "pattern": "existing"},
+                {"tag": "Ghost Tag", "pattern": "ghost"},
+            ],
+            "text_tags": [],
+            "text_categories": [
+                {"category": "Existing Category", "pattern": "existing"},
+                {"category": "Ghost Category", "pattern": "ghost"},
+            ],
+            "ingredient_categories": [],
+            "tool_tags": [
+                {"tool": "Existing Tool", "pattern": "existing"},
+                {"tool": "Ghost Tool", "pattern": "ghost"},
+            ],
+        },
+    )
 
 
 def _login(client: TestClient) -> None:
@@ -76,10 +95,16 @@ def test_taxonomy_workspace_initialize_from_mealie_replace(tmp_path: Path) -> No
     )
 
     assert payload["mode"] == "replace"
+    assert payload["rule_sync"]["updated"] is True
+    assert payload["rule_sync"]["removed_total"] >= 1
     categories = manager.read_file("categories")["content"]
     assert categories == [{"name": "Dinner"}, {"name": "Lunch"}]
     tools = manager.read_file("tools")["content"]
     assert tools == [{"name": "Air Fryer", "onHand": True}]
+    synced_rules = json.loads((config_root / "configs" / "taxonomy" / "tag_rules.json").read_text(encoding="utf-8"))
+    rule_targets = [rule.get("tag") for rule in synced_rules.get("ingredient_tags", [])]
+    assert "Ghost Tag" not in rule_targets
+    assert "Existing Tag" not in rule_targets
 
 
 def test_taxonomy_workspace_import_starter_pack_merge(tmp_path: Path) -> None:
@@ -105,6 +130,8 @@ def test_taxonomy_workspace_import_starter_pack_merge(tmp_path: Path) -> None:
 
     payload = workspace.import_starter_pack(mode="merge", base_url="https://example.test/pack", fetcher=fake_fetcher)
     assert payload["mode"] == "merge"
+    assert payload["rule_sync"]["updated"] is True
+    assert payload["rule_sync"]["removed_total"] >= 1
 
     categories = manager.read_file("categories")["content"]
     assert {"name": "Existing Category"} in categories
@@ -118,6 +145,10 @@ def test_taxonomy_workspace_import_starter_pack_merge(tmp_path: Path) -> None:
     cup = next(item for item in units if item.get("name") == "Cup")
     assert "cups" in cup.get("aliases", [])
     assert "cup." in cup.get("aliases", [])
+
+    synced_rules = json.loads((config_root / "configs" / "taxonomy" / "tag_rules.json").read_text(encoding="utf-8"))
+    assert all(rule.get("tag") != "Ghost Tag" for rule in synced_rules.get("ingredient_tags", []))
+    assert any(rule.get("tag") == "Existing Tag" for rule in synced_rules.get("ingredient_tags", []))
 
 
 def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
@@ -155,6 +186,7 @@ def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
         )
         assert from_mealie.status_code == 200, from_mealie.text
         assert from_mealie.json()["source"] == "mealie"
+        assert "rule_sync" in from_mealie.json()
         categories = client.get("/cookdex/api/v1/config/files/categories").json()["content"]
         assert {"name": "Dinner"} in categories
 
@@ -164,3 +196,4 @@ def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
         )
         assert starter.status_code == 200, starter.text
         assert starter.json()["source"] == "starter-pack"
+        assert "rule_sync" in starter.json()

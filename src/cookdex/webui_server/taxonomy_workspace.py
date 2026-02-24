@@ -26,6 +26,14 @@ STARTER_PACK_FILES: dict[str, str] = {
     "tools": "tools.json",
     "units_aliases": "units_aliases.json",
 }
+TAG_RULES_RELATIVE_PATH = "configs/taxonomy/tag_rules.json"
+RULE_TARGET_FIELDS: dict[str, str] = {
+    "ingredient_tags": "tag",
+    "text_tags": "tag",
+    "text_categories": "category",
+    "ingredient_categories": "category",
+    "tool_tags": "tool",
+}
 
 
 def _normalize_name(value: Any) -> str:
@@ -209,6 +217,22 @@ def _normalize_payload(file_name: str, content: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _empty_rule_payload() -> dict[str, list[dict[str, Any]]]:
+    return {section: [] for section in RULE_TARGET_FIELDS}
+
+
+def _normalize_rules_payload(content: Any) -> dict[str, list[dict[str, Any]]]:
+    payload = _empty_rule_payload()
+    if not isinstance(content, dict):
+        return payload
+    for section in RULE_TARGET_FIELDS:
+        raw_items = content.get(section, [])
+        if not isinstance(raw_items, list):
+            continue
+        payload[section] = [dict(item) for item in raw_items if isinstance(item, dict)]
+    return payload
+
+
 def _merge_units(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
     merged["aliases"] = _string_list([*(existing.get("aliases") or []), *(incoming.get("aliases") or [])])
@@ -368,6 +392,93 @@ class TaxonomyWorkspaceService:
         content = payload.get("content")
         return _normalize_payload(file_name, content)
 
+    def sync_tag_rules_targets(self) -> dict[str, Any]:
+        """Reconcile tag_rules targets against current taxonomy files.
+
+        Rules that point to missing tags/categories/tools are removed to prevent
+        re-introducing stale "golden image" terms after users adopt their own
+        taxonomy baseline.
+        """
+        tags = self._read_file_array("tags")
+        categories = self._read_file_array("categories")
+        tools = self._read_file_array("tools")
+
+        tags_by_key = {_name_key(item.get("name")): _normalize_name(item.get("name")) for item in tags}
+        categories_by_key = {_name_key(item.get("name")): _normalize_name(item.get("name")) for item in categories}
+        tools_by_key = {_name_key(item.get("name")): _normalize_name(item.get("name")) for item in tools}
+
+        allowed_by_field: dict[str, dict[str, str]] = {
+            "tag": tags_by_key,
+            "category": categories_by_key,
+            "tool": tools_by_key,
+        }
+
+        rules_path = (self.repo_root / TAG_RULES_RELATIVE_PATH).resolve()
+        before_exists = rules_path.exists()
+        try:
+            existing_payload = json.loads(rules_path.read_text(encoding="utf-8")) if before_exists else _empty_rule_payload()
+        except Exception:
+            existing_payload = _empty_rule_payload()
+
+        normalized = _normalize_rules_payload(existing_payload)
+        synced = _empty_rule_payload()
+
+        removed_by_section: dict[str, int] = {}
+        canonicalized_total = 0
+        removed_examples: dict[str, list[str]] = {}
+
+        for section, target_field in RULE_TARGET_FIELDS.items():
+            allowed = allowed_by_field[target_field]
+            removed_count = 0
+            removed_names: list[str] = []
+            kept: list[dict[str, Any]] = []
+
+            for rule in normalized.get(section, []):
+                target = _normalize_name(rule.get(target_field))
+                target_key = _name_key(target)
+                canonical_target = allowed.get(target_key, "")
+                if not canonical_target:
+                    removed_count += 1
+                    if target:
+                        removed_names.append(target)
+                    continue
+                rule_copy = dict(rule)
+                if canonical_target != target:
+                    canonicalized_total += 1
+                    rule_copy[target_field] = canonical_target
+                kept.append(rule_copy)
+
+            if removed_count:
+                removed_by_section[section] = removed_count
+                if removed_names:
+                    removed_examples[section] = sorted(set(removed_names))[:8]
+            synced[section] = kept
+
+        changed = synced != normalized or not before_exists
+        if changed:
+            rules_path.parent.mkdir(parents=True, exist_ok=True)
+            rules_path.write_text(json.dumps(synced, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+        removed_total = sum(removed_by_section.values())
+        kept_total = sum(len(synced.get(section, [])) for section in RULE_TARGET_FIELDS)
+        result = {
+            "file": TAG_RULES_RELATIVE_PATH,
+            "updated": changed,
+            "created": (not before_exists) and changed,
+            "removed_total": removed_total,
+            "canonicalized_total": canonicalized_total,
+            "kept_total": kept_total,
+            "removed_by_section": removed_by_section,
+            "removed_examples": removed_examples,
+        }
+        if not changed:
+            result["detail"] = "Tag rule targets already matched taxonomy."
+        elif removed_total == 0:
+            result["detail"] = "Tag rules aligned to taxonomy."
+        else:
+            result["detail"] = f"Removed {removed_total} rule(s) with missing taxonomy targets."
+        return result
+
     def _apply_payloads(
         self,
         *,
@@ -387,9 +498,13 @@ class TaxonomyWorkspaceService:
                 "incoming_count": len(incoming),
                 "result_count": len(merged),
             }
+        rule_sync = None
+        if any(name in {"categories", "tags", "tools"} for name in include_files):
+            rule_sync = self.sync_tag_rules_targets()
         return {
             "source": source,
             "mode": mode,
             "files": include_files,
             "changes": changed,
+            "rule_sync": rule_sync,
         }

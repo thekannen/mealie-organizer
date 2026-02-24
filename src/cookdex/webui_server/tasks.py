@@ -110,7 +110,7 @@ _JUNK_REASON_CHOICES: list[dict[str, str]] = [
 # ---------------------------------------------------------------------------
 
 def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file"})
+    _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file", "missing_targets"})
     env, dangerous = _common_env(options)
     method = _str_option(options, "method", "ai") or "ai"
 
@@ -118,11 +118,15 @@ def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
         dry_run = _bool_option(options, "dry_run", True)
         use_db = _bool_option(options, "use_db", False)
         config_file = _str_option(options, "config_file", "")
+        missing_targets = (_str_option(options, "missing_targets", "skip") or "skip").strip().lower()
+        if missing_targets not in {"skip", "create"}:
+            raise ValueError("Option 'missing_targets' must be 'skip' or 'create'.")
         cmd = _py_module("cookdex.rule_tagger")
         if not dry_run:
             cmd.append("--apply")
         if use_db:
             cmd.append("--use-db")
+        cmd.extend(["--missing-targets", missing_targets])
         if config_file:
             cmd.extend(["--config", config_file])
     else:
@@ -808,6 +812,18 @@ class TaskRegistry:
                         help_text="Match ingredients via direct DB queries instead of the API — faster and works offline.",
                         hidden_when={"key": "method", "value": "ai"},
                         advanced=True,
+                    ),
+                    OptionSpec(
+                        "missing_targets",
+                        "Missing Target Handling",
+                        "string",
+                        default="skip",
+                        help_text="When a rule points to a tag/category/tool that does not exist in current taxonomy, skip it (recommended) or create it automatically.",
+                        hidden_when={"key": "method", "value": "ai"},
+                        choices=[
+                            {"value": "skip", "label": "Skip Missing Targets"},
+                            {"value": "create", "label": "Create Missing Targets"},
+                        ],
                     ),
                 ],
                 build=_build_tag_categorize,

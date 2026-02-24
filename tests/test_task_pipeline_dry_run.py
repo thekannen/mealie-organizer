@@ -158,6 +158,7 @@ def test_non_power_options_marked_advanced_on_other_tasks() -> None:
 
     tag_opts = {o["key"]: o for o in descriptions["tag-categorize"]["options"]}
     assert tag_opts["use_db"]["advanced"] is True
+    assert tag_opts["missing_targets"]["advanced"] is False
 
 
 @pytest.mark.parametrize("task_id", DRY_RUN_OPTION_TASKS)
@@ -224,6 +225,19 @@ def test_tag_categorize_rules_use_db_flag() -> None:
 def test_tag_categorize_rules_use_db_absent_by_default() -> None:
     execution = _build("tag-categorize", {"method": "rules"})
     assert "--use-db" not in execution.command
+
+
+def test_tag_categorize_rules_missing_targets_defaults_to_skip() -> None:
+    execution = _build("tag-categorize", {"method": "rules"})
+    assert "--missing-targets" in execution.command
+    idx = execution.command.index("--missing-targets")
+    assert execution.command[idx + 1] == "skip"
+
+
+def test_tag_categorize_rules_missing_targets_create() -> None:
+    execution = _build("tag-categorize", {"method": "rules", "missing_targets": "create"})
+    idx = execution.command.index("--missing-targets")
+    assert execution.command[idx + 1] == "create"
 
 
 # ---------------------------------------------------------------------------

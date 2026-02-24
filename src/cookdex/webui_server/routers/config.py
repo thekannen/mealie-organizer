@@ -45,7 +45,14 @@ async def put_config_file(
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     try:
-        return services.config_files.write_file(name, payload.content)
+        result = services.config_files.write_file(name, payload.content)
+        if name in {"categories", "tags", "tools"}:
+            workspace = TaxonomyWorkspaceService(
+                repo_root=services.settings.config_root,
+                config_files=services.config_files,
+            )
+            result["rule_sync"] = workspace.sync_tag_rules_targets()
+        return result
     except KeyError:
         raise HTTPException(status_code=404, detail="Unknown config file.")
     except ValueError as exc:

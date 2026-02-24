@@ -393,6 +393,33 @@ class MealieDBClient:
     def _slug(self, name: str) -> str:
         return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
+    def lookup_tag_id(self, name: str, group_id: str) -> Optional[str]:
+        """Return tag id for an exact name match (case-insensitive), else None."""
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM tags WHERE group_id = {p} AND lower(name) = lower({p}) LIMIT 1",
+            (group_id, name),
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def lookup_tool_id(self, name: str, group_id: str) -> Optional[str]:
+        """Return tool id for an exact name match (case-insensitive), else None."""
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM tools WHERE group_id = {p} AND lower(name) = lower({p}) LIMIT 1",
+            (group_id, name),
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def lookup_category_id(self, name: str, group_id: str) -> Optional[str]:
+        """Return category id for an exact name match (case-insensitive), else None."""
+        p = self._db.placeholder
+        row = self._db.execute(
+            f"SELECT id FROM categories WHERE group_id = {p} AND lower(name) = lower({p}) LIMIT 1",
+            (group_id, name),
+        ).fetchone()
+        return str(row[0]) if row else None
+
     def ensure_tag(self, name: str, group_id: str, *, dry_run: bool = True) -> Optional[str]:
         """Return tag id, creating it if necessary (unless dry_run)."""
         slug = self._slug(name)

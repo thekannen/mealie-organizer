@@ -115,6 +115,7 @@ from .config import REPO_ROOT, resolve_mealie_api_key, resolve_mealie_url
 from .db_client import MealieDBClient, is_db_enabled
 
 DEFAULT_RULES_FILE = str(REPO_ROOT / "configs" / "taxonomy" / "tag_rules.json")
+_MISSING_TARGET_CHOICES = {"skip", "create"}
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +150,18 @@ class RecipeRuleTagger:
         *,
         dry_run: bool = True,
         use_db: bool = False,
+        missing_targets: str = "skip",
     ) -> None:
         self.rules_file = rules_file
         self.dry_run = dry_run
         self.use_db = use_db
+        mode = str(missing_targets or "skip").strip().lower()
+        if mode not in _MISSING_TARGET_CHOICES:
+            raise ValueError(
+                f"missing_targets must be one of {sorted(_MISSING_TARGET_CHOICES)}"
+            )
+        self.missing_targets = mode
+        self.create_missing_targets = mode == "create"
 
     # ------------------------------------------------------------------
     # Public API
@@ -178,7 +187,9 @@ class RecipeRuleTagger:
             "text_categories": {},
             "ingredient_categories": {},
             "tool_tags": {},
+            "missing_target_skips": 0,
         }
+        self._missing_target_skips = 0
 
         skipped: list[str] = []
         if rules.get("ingredient_tags"):
@@ -202,7 +213,7 @@ class RecipeRuleTagger:
         }
 
         print(
-            f"[start] Rule tagger (API mode) — dry_run={self.dry_run}",
+            f"[start] Rule tagger (API mode) — dry_run={self.dry_run}  missing_targets={self.missing_targets}",
             flush=True,
         )
 
@@ -214,14 +225,14 @@ class RecipeRuleTagger:
             for rule in text_rules:
                 tag_name = rule.get("tag", "")
                 count = self._api_apply_text_rule(
-                    all_recipes, rule, mealie_url, headers, tag_cache
+                    all_recipes, rule, mealie_url, headers, tag_cache, allow_create=self.create_missing_targets
                 )
                 stats["text_tags"][tag_name] = count
             cat_cache: dict[str, Optional[dict]] = {}
             for rule in category_rules:
                 cat_name = rule.get("category", "")
                 count = self._api_apply_text_category_rule(
-                    all_recipes, rule, mealie_url, headers, cat_cache
+                    all_recipes, rule, mealie_url, headers, cat_cache, allow_create=self.create_missing_targets
                 )
                 stats["text_categories"][cat_name] = count
 
@@ -236,8 +247,10 @@ class RecipeRuleTagger:
             "Total Assignments": total_tags + total_cats,
             "Tag Rules": len(stats["text_tags"]),
             "Category Rules": len(stats["text_categories"]),
+            "Missing Target Rules Skipped": self._missing_target_skips,
             "Dry Run": self.dry_run,
         }), flush=True)
+        stats["missing_target_skips"] = self._missing_target_skips
         if self.dry_run:
             print("[dry-run] No changes written.", flush=True)
         return stats
@@ -271,6 +284,8 @@ class RecipeRuleTagger:
         mealie_url: str,
         headers: dict,
         cache: dict[str, Optional[dict]],
+        *,
+        allow_create: bool = True,
     ) -> Optional[dict]:
         """Return existing tag dict (by name) or create it; cached."""
         key = tag_name.lower()
@@ -288,6 +303,10 @@ class RecipeRuleTagger:
 
         if key in cache:
             return cache[key]
+
+        if not allow_create:
+            cache[key] = None
+            return None
 
         if self.dry_run:
             placeholder = {"id": "dry-run-id", "name": tag_name, "slug": "dry-run"}
@@ -312,6 +331,8 @@ class RecipeRuleTagger:
         mealie_url: str,
         headers: dict,
         tag_cache: dict[str, Optional[dict]],
+        *,
+        allow_create: bool = True,
     ) -> int:
         """Match text pattern against recipe name/description; add tag via API."""
         tag_name: str = rule["tag"]
@@ -338,8 +359,16 @@ class RecipeRuleTagger:
         if not matched:
             return 0
 
-        tag = self._api_get_or_create_tag(tag_name, mealie_url, headers, tag_cache)
+        tag = self._api_get_or_create_tag(
+            tag_name, mealie_url, headers, tag_cache, allow_create=allow_create
+        )
         if tag is None:
+            self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+            print(
+                f"[skip] tag '{tag_name}' is not in current Mealie taxonomy "
+                f"(missing_targets={self.missing_targets}).",
+                flush=True,
+            )
             return 0
         tag_id = tag["id"]
 
@@ -377,6 +406,8 @@ class RecipeRuleTagger:
         mealie_url: str,
         headers: dict,
         cache: dict[str, Optional[dict]],
+        *,
+        allow_create: bool = True,
     ) -> Optional[dict]:
         """Return existing category dict (by name) or create it; cached."""
         key = cat_name.lower()
@@ -394,6 +425,10 @@ class RecipeRuleTagger:
 
         if key in cache:
             return cache[key]
+
+        if not allow_create:
+            cache[key] = None
+            return None
 
         if self.dry_run:
             placeholder = {"id": "dry-run-id", "name": cat_name, "slug": "dry-run"}
@@ -418,6 +453,8 @@ class RecipeRuleTagger:
         mealie_url: str,
         headers: dict,
         cat_cache: dict[str, Optional[dict]],
+        *,
+        allow_create: bool = True,
     ) -> int:
         """Match text pattern against recipe name/description; add category via API."""
         cat_name: str = rule["category"]
@@ -443,8 +480,16 @@ class RecipeRuleTagger:
         if not matched:
             return 0
 
-        cat = self._api_get_or_create_category(cat_name, mealie_url, headers, cat_cache)
+        cat = self._api_get_or_create_category(
+            cat_name, mealie_url, headers, cat_cache, allow_create=allow_create
+        )
         if cat is None:
+            self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+            print(
+                f"[skip] category '{cat_name}' is not in current Mealie taxonomy "
+                f"(missing_targets={self.missing_targets}).",
+                flush=True,
+            )
             return 0
         cat_id = cat["id"]
 
@@ -496,7 +541,9 @@ class RecipeRuleTagger:
             "text_categories": {},
             "ingredient_categories": {},
             "tool_tags": {},
+            "missing_target_skips": 0,
         }
+        self._missing_target_skips = 0
 
         with MealieDBClient() as db:
             group_id = db.get_group_id()
@@ -505,7 +552,8 @@ class RecipeRuleTagger:
                 sys.exit(1)
 
             print(
-                f"[start] Rule tagger (DB mode) — dry_run={self.dry_run}  group_id={group_id}",
+                f"[start] Rule tagger (DB mode) — dry_run={self.dry_run}  "
+                f"group_id={group_id}  missing_targets={self.missing_targets}",
                 flush=True,
             )
 
@@ -549,12 +597,53 @@ class RecipeRuleTagger:
             f"{len(stats['text_tags'])} text-tag, "
             f"{len(stats['text_categories'])} text-category, "
             f"{len(stats['ingredient_categories'])} ingredient-category, "
-            f"{len(stats['tool_tags'])} tool rules)",
+            f"{len(stats['tool_tags'])} tool rules, "
+            f"{self._missing_target_skips} missing-target skip(s))",
             flush=True,
         )
+        stats["missing_target_skips"] = self._missing_target_skips
         if self.dry_run:
             print("[dry-run] No changes written.", flush=True)
         return stats
+
+    def _db_resolve_tag_id(self, db: MealieDBClient, group_id: str, tag_name: str) -> Optional[str]:
+        if self.create_missing_targets:
+            return db.ensure_tag(tag_name, group_id, dry_run=self.dry_run)
+        tag_id = db.lookup_tag_id(tag_name, group_id)
+        if tag_id:
+            return tag_id
+        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+        print(
+            f"[skip] tag '{tag_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
+            flush=True,
+        )
+        return None
+
+    def _db_resolve_tool_id(self, db: MealieDBClient, group_id: str, tool_name: str) -> Optional[str]:
+        if self.create_missing_targets:
+            return db.ensure_tool(tool_name, group_id, dry_run=self.dry_run)
+        tool_id = db.lookup_tool_id(tool_name, group_id)
+        if tool_id:
+            return tool_id
+        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+        print(
+            f"[skip] tool '{tool_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
+            flush=True,
+        )
+        return None
+
+    def _db_resolve_category_id(self, db: MealieDBClient, group_id: str, cat_name: str) -> Optional[str]:
+        if self.create_missing_targets:
+            return db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
+        cat_id = db.lookup_category_id(cat_name, group_id)
+        if cat_id:
+            return cat_id
+        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+        print(
+            f"[skip] category '{cat_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
+            flush=True,
+        )
+        return None
 
     def _db_apply_ingredient_rule(
         self,
@@ -566,6 +655,9 @@ class RecipeRuleTagger:
         pattern: str = rule["pattern"]
         exclude: str = rule.get("exclude_pattern", "")
         min_matches: int = int(rule.get("min_matches", 1))
+        tag_id = self._db_resolve_tag_id(db, group_id, tag_name)
+        if not tag_id:
+            return 0
 
         recipe_ids = db.find_recipe_ids_by_ingredient(
             group_id,
@@ -580,7 +672,6 @@ class RecipeRuleTagger:
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
-        tag_id = db.ensure_tag(tag_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_tag(recipe_id, tag_id, dry_run=self.dry_run)
         return count
@@ -593,6 +684,9 @@ class RecipeRuleTagger:
     ) -> int:
         tag_name: str = rule["tag"]
         pattern: str = rule["pattern"]
+        tag_id = self._db_resolve_tag_id(db, group_id, tag_name)
+        if not tag_id:
+            return 0
 
         recipe_ids = db.find_recipe_ids_by_text(group_id, pattern)
         count = len(recipe_ids)
@@ -602,7 +696,6 @@ class RecipeRuleTagger:
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
-        tag_id = db.ensure_tag(tag_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_tag(recipe_id, tag_id, dry_run=self.dry_run)
         return count
@@ -615,6 +708,9 @@ class RecipeRuleTagger:
     ) -> int:
         tool_name: str = rule["tool"]
         pattern: str = rule["pattern"]
+        tool_id = self._db_resolve_tool_id(db, group_id, tool_name)
+        if not tool_id:
+            return 0
 
         recipe_ids = db.find_recipe_ids_by_instruction(group_id, pattern)
         count = len(recipe_ids)
@@ -624,7 +720,6 @@ class RecipeRuleTagger:
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
-        tool_id = db.ensure_tool(tool_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_tool(recipe_id, tool_id, dry_run=self.dry_run)
         return count
@@ -637,6 +732,9 @@ class RecipeRuleTagger:
     ) -> int:
         cat_name: str = rule["category"]
         pattern: str = rule["pattern"]
+        cat_id = self._db_resolve_category_id(db, group_id, cat_name)
+        if not cat_id:
+            return 0
 
         recipe_ids = db.find_recipe_ids_by_text(group_id, pattern)
         count = len(recipe_ids)
@@ -646,7 +744,6 @@ class RecipeRuleTagger:
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
-        cat_id = db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
         return count
@@ -661,6 +758,9 @@ class RecipeRuleTagger:
         pattern: str = rule["pattern"]
         exclude: str = rule.get("exclude_pattern", "")
         min_matches: int = int(rule.get("min_matches", 1))
+        cat_id = self._db_resolve_category_id(db, group_id, cat_name)
+        if not cat_id:
+            return 0
 
         recipe_ids = db.find_recipe_ids_by_ingredient(
             group_id,
@@ -675,7 +775,6 @@ class RecipeRuleTagger:
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
-        cat_id = db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
         for recipe_id in recipe_ids:
             db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
         return count
@@ -716,12 +815,22 @@ def main() -> None:
         metavar="FILE",
         help=f"Tag rules JSON config file (default: {DEFAULT_RULES_FILE}).",
     )
+    parser.add_argument(
+        "--missing-targets",
+        choices=sorted(_MISSING_TARGET_CHOICES),
+        default="skip",
+        help=(
+            "How to handle rules whose target tag/category/tool is missing from current taxonomy: "
+            "'skip' (default) or 'create'."
+        ),
+    )
     args = parser.parse_args()
 
     tagger = RecipeRuleTagger(
         rules_file=args.config,
         dry_run=not args.apply,
         use_db=args.use_db,
+        missing_targets=args.missing_targets,
     )
     tagger.run()
 

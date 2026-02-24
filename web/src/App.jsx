@@ -1121,6 +1121,24 @@ export default function App() {
     setError(normalizeErrorMessage(exc?.message || exc));
   }
 
+  function formatRuleSyncNotice(ruleSync, { quietIfUnchanged = true } = {}) {
+    if (!ruleSync || typeof ruleSync !== "object") return "";
+    const updated = Boolean(ruleSync.updated);
+    if (!updated && quietIfUnchanged) return "";
+    const removed = Number(ruleSync.removed_total || 0);
+    const canonicalized = Number(ruleSync.canonicalized_total || 0);
+    if (removed > 0) {
+      return `Tag rules synchronized: removed ${removed} stale rule${removed === 1 ? "" : "s"}.`;
+    }
+    if (canonicalized > 0) {
+      return `Tag rules synchronized: normalized ${canonicalized} target name${canonicalized === 1 ? "" : "s"}.`;
+    }
+    if (Boolean(ruleSync.created)) {
+      return "Tag rules file initialized and synchronized.";
+    }
+    return "Tag rules synchronized.";
+  }
+
   function setConfigEditorState(content, configName = activeConfig) {
     const editor = parseLineEditorContent(content, configName);
     setActiveConfigMode(editor.mode);
@@ -1940,7 +1958,7 @@ export default function App() {
         content = parsed;
       }
 
-      await api(`/config/files/${activeConfig}`, {
+      const savePayload = await api(`/config/files/${activeConfig}`, {
         method: "PUT",
         body: { content },
       });
@@ -1951,7 +1969,10 @@ export default function App() {
 
       setConfigEditorState(content, activeConfig);
       await loadData();
-      showNotice(`${CONFIG_LABELS[activeConfig] || activeConfig} saved.`);
+      const ruleNote = formatRuleSyncNotice(savePayload?.rule_sync);
+      showNotice(
+        `${CONFIG_LABELS[activeConfig] || activeConfig} saved.${ruleNote ? ` ${ruleNote}` : ""}`
+      );
     } catch (exc) {
       handleError(exc);
     }
@@ -1967,7 +1988,7 @@ export default function App() {
         return;
       }
 
-      await api(`/config/files/${target}`, {
+      const result = await api(`/config/files/${target}`, {
         method: "PUT",
         body: { content: payload },
       });
@@ -1977,7 +1998,8 @@ export default function App() {
         setConfigEditorState(payload, target);
       }
       await loadData();
-      showNotice(`${CONFIG_LABELS[target] || target} imported from JSON.`);
+      const ruleNote = formatRuleSyncNotice(result?.rule_sync);
+      showNotice(`${CONFIG_LABELS[target] || target} imported from JSON.${ruleNote ? ` ${ruleNote}` : ""}`);
     } catch (exc) {
       handleError(exc);
     }
@@ -1993,7 +2015,10 @@ export default function App() {
       });
       await loadData();
       const changedCount = Object.keys(payload?.changes || {}).length;
-      showNotice(`Managed baseline initialized from Mealie (${taxonomyBootstrapMode}). Updated ${changedCount} file(s).`);
+      const ruleNote = formatRuleSyncNotice(payload?.rule_sync);
+      showNotice(
+        `Managed baseline initialized from Mealie (${taxonomyBootstrapMode}). Updated ${changedCount} file(s).${ruleNote ? ` ${ruleNote}` : ""}`
+      );
     } catch (exc) {
       handleError(exc);
     } finally {
@@ -2013,7 +2038,10 @@ export default function App() {
       });
       await loadData();
       const changedCount = Object.keys(payload?.changes || {}).length;
-      showNotice(`Starter pack imported (${starterPackMode}). Updated ${changedCount} file(s).`);
+      const ruleNote = formatRuleSyncNotice(payload?.rule_sync);
+      showNotice(
+        `Starter pack imported (${starterPackMode}). Updated ${changedCount} file(s).${ruleNote ? ` ${ruleNote}` : ""}`
+      );
     } catch (exc) {
       handleError(exc);
     } finally {
