@@ -352,22 +352,33 @@ _MEALIE_ENV_MAP: dict[str, str] = {
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
-    """Resolve a user-provided SSH key name to a safe path inside ~/.ssh/.
+    """Resolve a user-provided SSH key path.
 
-    The filename is matched against files actually present in ~/.ssh/ so the
-    returned path is constructed entirely from filesystem data — not from
-    user input — which breaks the taint chain for static analysis.
+    Supports:
+    - plain filename (resolved under ~/.ssh/)
+    - explicit path (absolute or relative to home/current context)
     """
-    target = os.path.basename(os.path.expanduser(raw_path))
-    if not target:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
         raise ValueError("Invalid SSH key path.")
+
     ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
+
+    # Fast path: explicit path provided and file exists.
+    if ("/" in candidate or "\\" in candidate) and os.path.isfile(os.path.realpath(os.path.expanduser(candidate))):
+        return os.path.realpath(os.path.expanduser(candidate))
+
+    # Filename-only fallback: resolve against files present in ~/.ssh/.
+    target = os.path.basename(os.path.expanduser(candidate))
     try:
         for entry in os.listdir(ssh_dir):
             if entry == target:
-                return os.path.join(ssh_dir, entry)
+                resolved = os.path.join(ssh_dir, entry)
+                if os.path.isfile(resolved):
+                    return resolved
     except OSError:
         pass
+
     raise FileNotFoundError("SSH key not found.")
 
 
@@ -472,7 +483,12 @@ def _detect_db_credentials(
     try:
         out, _err, code = _ssh_exec(ssh_host, ssh_user, ssh_key, "docker ps --format '{{.Names}}'")
     except (FileNotFoundError, ValueError):
-        return False, "SSH key not found or path not allowed. Check your SSH key setting.", {}
+        return (
+            False,
+            "Auto-detect uses SSH only: key not found or path not allowed. "
+            "Set MEALIE_DB_SSH_KEY to a valid key filename/path, or skip auto-detect and use Test DB with manual credentials.",
+            {},
+        )
     except Exception:
         return False, "SSH connection failed. Check SSH host, user, and key settings.", {}
 
