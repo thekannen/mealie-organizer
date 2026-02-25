@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import subprocess
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -393,18 +395,25 @@ _DB_ENV_KEYS = (
 )
 
 
+_ALLOWED_DB_TYPES = frozenset({"postgres", "sqlite"})
+
+
 def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
     db_type_val = runtime_env.get("MEALIE_DB_TYPE", "").strip().lower()
     if not db_type_val:
         return False, "MEALIE_DB_TYPE is not configured. Set it to 'postgres' or 'sqlite'."
+    if db_type_val not in _ALLOWED_DB_TYPES:
+        return False, f"Unsupported MEALIE_DB_TYPE '{db_type_val}'. Use 'postgres' or 'sqlite'."
 
     saved: dict[str, str | None] = {}
     try:
         for key in _DB_ENV_KEYS:
             saved[key] = os.environ.get(key)
-            val = runtime_env.get(key, "")
+            val = str(runtime_env.get(key, "")).strip()
+            if "\x00" in val or "\n" in val:
+                continue
             if val:
-                os.environ[key] = str(val)
+                os.environ[key] = val
             else:
                 os.environ.pop(key, None)
 
@@ -460,6 +469,35 @@ _MEALIE_FILE_ENV_MAP: dict[str, str] = {
 _MEALIE_RAW_DB_KEYS = set(_MEALIE_ENV_MAP) | set(_MEALIE_FILE_ENV_MAP) | {"POSTGRES_URL_OVERRIDE"}
 
 
+_RE_SSH_HOST = re.compile(r"^[A-Za-z0-9._:%-]+$")
+_RE_SSH_USER = re.compile(r"^[A-Za-z0-9._-]+$")
+_RE_DOCKER_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def _validated_ssh_host(value: str) -> str:
+    """Validate an SSH hostname/IP to prevent argument injection."""
+    clean = str(value or "").strip()
+    if not clean or not _RE_SSH_HOST.match(clean):
+        raise ValueError("Invalid SSH host.")
+    return clean
+
+
+def _validated_ssh_user(value: str) -> str:
+    """Validate an SSH username to prevent argument injection."""
+    clean = str(value or "").strip()
+    if not clean or not _RE_SSH_USER.match(clean):
+        raise ValueError("Invalid SSH user.")
+    return clean
+
+
+def _validated_container_name(value: str) -> str:
+    """Validate a Docker container name to prevent command injection."""
+    clean = str(value or "").strip()
+    if not clean or not _RE_DOCKER_NAME.match(clean):
+        raise ValueError("Invalid container name.")
+    return clean
+
+
 def _validated_ssh_key_path(raw_path: str) -> str:
     """Resolve a user-provided SSH key path.
 
@@ -500,6 +538,8 @@ def _ssh_exec(
     timeout: int = 15,
 ) -> tuple[str, str, int]:
     """Run a single command over SSH and return (stdout, stderr, exit_code)."""
+    host = _validated_ssh_host(host)
+    user = _validated_ssh_user(user)
     resolved_key = _validated_ssh_key_path(key_path)
 
     # Prefer paramiko when available; fall back to native ssh binary.
@@ -866,13 +906,14 @@ def _detect_db_credentials(
         mealie_containers = [c for c in containers if "mealie" in c.lower() and "cookdex" not in c.lower()]
 
         if mealie_containers:
-            container = mealie_containers[0]
+            container = _validated_container_name(mealie_containers[0])
+            q_container = shlex.quote(container)
 
             # Strategy 2: docker inspect
             try:
                 out, _err, inspect_code = _ssh_exec(
                     ssh_host, ssh_user, ssh_key,
-                    f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {container}",
+                    f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {q_container}",
                 )
                 if inspect_code == 0 and out.strip():
                     detected = _parse_mealie_env(out)
@@ -886,7 +927,7 @@ def _detect_db_credentials(
             try:
                 out, _err, exec_code = _ssh_exec(
                     ssh_host, ssh_user, ssh_key,
-                    f"docker exec {container} env",
+                    f"docker exec {q_container} env",
                 )
                 if exec_code == 0 and out.strip():
                     detected = _parse_mealie_env(out)

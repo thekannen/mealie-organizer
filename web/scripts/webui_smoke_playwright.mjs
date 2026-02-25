@@ -379,7 +379,10 @@ async function main() {
       method,
       data: body === null ? undefined : body,
       failOnStatusCode: false,
-      headers: body === null ? undefined : { "Content-Type": "application/json" },
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        ...(body === null ? {} : { "Content-Type": "application/json" }),
+      },
     });
 
     const status = response.status();
