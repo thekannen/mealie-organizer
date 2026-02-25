@@ -45,6 +45,7 @@ class WebUISettings:
     logs_dir: Path
     config_root: Path
     max_log_files: int
+    weak_master_key: bool
     ssl_enabled: bool
     ssl_certfile: Path | None
     ssl_keyfile: Path | None
@@ -69,17 +70,18 @@ def _normalize_fernet_key(raw: str) -> str:
         return base64.urlsafe_b64encode(digest).decode("utf-8")
 
 
-def _load_master_key(state_db_path: Path) -> str:
+def _load_master_key(state_db_path: Path) -> tuple[str, bool]:
     # Priority 1: explicit env var
     value = os.environ.get("MO_WEBUI_MASTER_KEY", "").strip()
     if value:
-        if value.lower() in _WEAK_MASTER_KEYS:
+        is_weak = value.lower() in _WEAK_MASTER_KEYS
+        if is_weak:
             print(
                 "[webui] WARNING: MO_WEBUI_MASTER_KEY is set to a weak default. "
                 "Replace it with a strong random value to protect encrypted secrets.",
                 flush=True,
             )
-        return _normalize_fernet_key(value)
+        return _normalize_fernet_key(value), is_weak
 
     # Priority 2: key file env var
     key_file = os.environ.get("MO_WEBUI_MASTER_KEY_FILE", "").strip()
@@ -87,12 +89,12 @@ def _load_master_key(state_db_path: Path) -> str:
         path = Path(key_file).expanduser().resolve()
         if not path.exists():
             raise RuntimeError(f"MO_WEBUI_MASTER_KEY_FILE does not exist: {path}")
-        return _normalize_fernet_key(path.read_text(encoding="utf-8").strip())
+        return _normalize_fernet_key(path.read_text(encoding="utf-8").strip()), False
 
     # Priority 3: auto-generate and persist alongside the state DB
     auto_key_path = state_db_path.parent / ".master_key"
     if auto_key_path.exists():
-        return _normalize_fernet_key(auto_key_path.read_text(encoding="utf-8").strip())
+        return _normalize_fernet_key(auto_key_path.read_text(encoding="utf-8").strip()), False
 
     auto_key_path.parent.mkdir(parents=True, exist_ok=True)
     new_key = Fernet.generate_key().decode("utf-8")
@@ -102,14 +104,21 @@ def _load_master_key(state_db_path: Path) -> str:
     except OSError:
         pass
     print(f"[webui] auto-generated encryption key at {auto_key_path}", flush=True)
-    return new_key
+    return new_key, False
 
 
-def _int_env(name: str, default: int) -> int:
+def _int_env(name: str, default: int, *, min_val: int | None = None, max_val: int | None = None) -> int:
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
-    return int(raw)
+    value = int(raw)
+    if min_val is not None and value < min_val:
+        print(f"[webui] WARNING: {name}={value} is below minimum {min_val}, using {min_val}", flush=True)
+        return min_val
+    if max_val is not None and value > max_val:
+        print(f"[webui] WARNING: {name}={value} is above maximum {max_val}, using {max_val}", flush=True)
+        return max_val
+    return value
 
 
 def _bool_env(name: str, default: bool) -> bool:
@@ -185,7 +194,7 @@ def _ensure_ssl_cert(state_db_path: Path) -> tuple[Path, Path]:
 
 def load_webui_settings() -> WebUISettings:
     bind_host = os.environ.get("WEB_BIND_HOST", DEFAULT_BIND_HOST).strip() or DEFAULT_BIND_HOST
-    bind_port = _int_env("WEB_BIND_PORT", DEFAULT_BIND_PORT)
+    bind_port = _int_env("WEB_BIND_PORT", DEFAULT_BIND_PORT, min_val=1, max_val=65535)
     base_path = _normalize_base_path(os.environ.get("WEB_BASE_PATH", DEFAULT_BASE_PATH))
     db_raw = os.environ.get("WEB_STATE_DB_PATH", DEFAULT_DB_PATH).strip() or DEFAULT_DB_PATH
     state_db_path = Path(db_raw)
@@ -204,11 +213,12 @@ def load_webui_settings() -> WebUISettings:
     else:
         config_root = REPO_ROOT
 
-    session_ttl = _int_env("WEB_SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS)
+    session_ttl = _int_env("WEB_SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS, min_val=60)
     bootstrap_user = os.environ.get("WEB_BOOTSTRAP_USER", DEFAULT_BOOTSTRAP_USER).strip() or DEFAULT_BOOTSTRAP_USER
     bootstrap_password = os.environ.get("WEB_BOOTSTRAP_PASSWORD", "").strip()
     cookie_name = os.environ.get("WEB_SESSION_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME
-    max_log_files = _int_env("WEB_MAX_LOG_FILES", DEFAULT_MAX_LOG_FILES)
+    max_log_files = _int_env("WEB_MAX_LOG_FILES", DEFAULT_MAX_LOG_FILES, min_val=1)
+    fernet_key, weak_master_key = _load_master_key(state_db_path)
 
     # --- SSL / TLS ---
     ssl_enabled = _bool_env("WEB_SSL", True)
@@ -245,7 +255,7 @@ def load_webui_settings() -> WebUISettings:
         session_ttl_seconds=session_ttl,
         bootstrap_user=bootstrap_user,
         bootstrap_password=bootstrap_password,
-        fernet_key=_load_master_key(state_db_path),
+        fernet_key=fernet_key,
         cookie_name=cookie_name,
         cookie_secure=cookie_secure,
         static_dir=static_dir,
@@ -253,6 +263,7 @@ def load_webui_settings() -> WebUISettings:
         logs_dir=logs_dir,
         config_root=config_root,
         max_log_files=max_log_files,
+        weak_master_key=weak_master_key,
         ssl_enabled=ssl_enabled,
         ssl_certfile=ssl_certfile,
         ssl_keyfile=ssl_keyfile,

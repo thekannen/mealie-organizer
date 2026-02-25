@@ -35,3 +35,25 @@ class LoginRateLimiter:
     def clear(self, key: str) -> None:
         with self._lock:
             self._attempts.pop(key, None)
+
+
+class ActionRateLimiter:
+    """Simple per-key rate limiter for sensitive operations."""
+
+    def __init__(self, max_per_minute: int = 30) -> None:
+        self.max_per_minute = max_per_minute
+        self._hits: dict[str, list[float]] = defaultdict(list)
+        self._lock = Lock()
+
+    def check(self, key: str) -> None:
+        with self._lock:
+            now = time.monotonic()
+            cutoff = now - 60
+            hits = [t for t in self._hits[key] if t > cutoff]
+            hits.append(now)
+            self._hits[key] = hits
+            if len(hits) > self.max_per_minute:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many requests. Please slow down.",
+                )

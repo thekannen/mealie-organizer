@@ -48,10 +48,14 @@ def _seed_config_root(root: Path) -> None:
     )
 
 
+_CSRF = {"X-Requested-With": "XMLHttpRequest"}
+
+
 def _login(client: TestClient) -> None:
     response = client.post(
         "/cookdex/api/v1/auth/login",
         json={"username": "admin", "password": "Secret-pass1"},
+        headers=_CSRF,
     )
     assert response.status_code == 200
 
@@ -185,6 +189,7 @@ def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
         from_mealie = client.post(
             "/cookdex/api/v1/config/taxonomy/initialize-from-mealie",
             json={"mode": "replace"},
+            headers=_CSRF,
         )
         assert from_mealie.status_code == 200, from_mealie.text
         assert from_mealie.json()["source"] == "mealie"
@@ -195,6 +200,7 @@ def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
         starter = client.post(
             "/cookdex/api/v1/config/taxonomy/import-starter-pack",
             json={"mode": "merge", "base_url": "https://example.invalid/pack"},
+            headers=_CSRF,
         )
         assert starter.status_code == 200, starter.text
         assert starter.json()["source"] == "starter-pack"

@@ -5,10 +5,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import Services, normalize_username, require_services, require_session
+from ..rate_limit import ActionRateLimiter
 from ..schemas import UserCreateRequest, UserPasswordResetRequest
 from ..security import hash_password
 
 router = APIRouter(tags=["users"])
+_action_limiter = ActionRateLimiter(max_per_minute=20)
 
 
 @router.get("/users")
@@ -22,9 +24,10 @@ async def list_users(
 @router.post("/users", status_code=201)
 async def create_user(
     payload: UserCreateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
+    _action_limiter.check(session["username"])
     username = normalize_username(payload.username)
     created = services.state.create_user(username, hash_password(payload.password), force_reset=payload.force_reset)
     if not created:
@@ -36,9 +39,10 @@ async def create_user(
 async def reset_user_password(
     username: str,
     payload: UserPasswordResetRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
+    _action_limiter.check(session["username"])
     normalized = normalize_username(username)
     updated = services.state.update_password(normalized, hash_password(payload.password))
     if not updated:

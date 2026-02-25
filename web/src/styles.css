@@ -157,6 +157,10 @@ a {
   letter-spacing: 0.06em;
 }
 
+.mobile-header {
+  display: none;
+}
+
 .sidebar {
   position: fixed;
   top: 0;
@@ -2851,6 +2855,82 @@ button.danger {
 @media (max-width: 760px) {
   .app-shell {
     padding: 0.65rem;
+    padding-left: 0;
+  }
+
+  .app-shell.sidebar-collapsed {
+    padding-left: 0;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    border-right: 1px solid var(--line);
+    border-bottom: none;
+    transform: translateX(-100%);
+    z-index: 100;
+  }
+
+  .sidebar.collapsed {
+    width: 280px;
+    transform: translateX(-100%);
+  }
+
+  .sidebar.mobile-open,
+  .sidebar.collapsed.mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar.collapsed.mobile-open .nav-item span,
+  .sidebar.collapsed.mobile-open .sidebar-actions span,
+  .sidebar.collapsed.mobile-open .user-chip div,
+  .sidebar.collapsed.mobile-open .user-chip .role-badge,
+  .sidebar.collapsed.mobile-open .sidebar-nav > p {
+    display: initial;
+  }
+
+  .sidebar.collapsed.mobile-open .sidebar-actions-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sidebar.collapsed.mobile-open .nav-item {
+    justify-content: flex-start;
+  }
+
+  .sidebar-top {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .sidebar-top .brand-wrap {
+    display: block;
+  }
+
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .mobile-header .brand-mark {
+    height: 32px;
+    width: auto;
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 99;
   }
 
   .pill-line {

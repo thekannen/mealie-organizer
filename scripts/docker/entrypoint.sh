@@ -27,10 +27,24 @@ if [ "$(id -u)" = "0" ]; then
     chown -R app:app "$dir" 2>/dev/null || true
   done
 
-  # If an SSH key is mounted, ensure the app user can read it.
+  # Verify the app user can write to critical directories.
+  for dir in /app/configs /app/configs/taxonomy /app/cache /app/logs /app/reports; do
+    if ! su -s /bin/sh app -c "touch '$dir/.write_test' 2>/dev/null && rm -f '$dir/.write_test'" 2>/dev/null; then
+      echo "[warn] app user cannot write to $dir — tasks may fail. Check host directory ownership."
+    fi
+  done
+
+  # If SSH keys are mounted (possibly read-only), copy to a writable location.
   if [ -d /app/.ssh ]; then
-    chown -R app:app /app/.ssh 2>/dev/null || true
-    chmod 600 /app/.ssh/* 2>/dev/null || true
+    SSH_DIR="/tmp/.ssh-app"
+    mkdir -p "$SSH_DIR"
+    cp -a /app/.ssh/* "$SSH_DIR/" 2>/dev/null || true
+    chown -R app:app "$SSH_DIR" 2>/dev/null || true
+    find "$SSH_DIR" -type f -exec chmod 600 {} \; 2>/dev/null || true
+    find "$SSH_DIR" -type d -exec chmod 700 {} \; 2>/dev/null || true
+    export HOME="/tmp/app-home"
+    mkdir -p "$HOME"
+    ln -sfn "$SSH_DIR" "$HOME/.ssh"
   fi
 
   exec gosu app "$0" "$@"

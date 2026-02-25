@@ -36,6 +36,8 @@ logs/
 reports/
 .tmp/
 *.log
+.playwright-mcp/
+qa-*.png
 
 # Editor and OS files
 .vscode/

@@ -648,6 +648,7 @@ export default function App() {
   });
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("cookdex_sidebar") === "collapsed");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState(() => {
     const stored = window.localStorage.getItem("cookdex_page");
     return stored || "overview";
@@ -1078,7 +1079,9 @@ export default function App() {
         const data = await api(`/runs/${selectedRunId}/log/tail?offset=${logOffsetRef.current}`);
         if (data.content) setLogBuffer(prev => append ? prev + data.content : data.content);
         logOffsetRef.current = data.size;
-      } catch {}
+      } catch (e) {
+        console.warn("API request failed:", e);
+      }
     }
 
     doTail(false);
@@ -1221,8 +1224,8 @@ export default function App() {
         next.timestamp = new Date().toISOString();
       }
       sessionStorage.setItem(CACHE_KEY, JSON.stringify(next));
-    } catch {
-      // Cache update failures should never block UI actions.
+    } catch (e) {
+      console.warn("sessionStorage unavailable:", e);
     }
   }
 
@@ -1416,7 +1419,7 @@ export default function App() {
 
       applyData(data);
 
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch (e) { console.warn("sessionStorage unavailable:", e); }
 
       await loadTaxonomyContent();
       clearBanners();
@@ -3006,6 +3009,10 @@ export default function App() {
                         key={run.run_id}
                         className={selectedRunId === run.run_id ? "selected-row" : ""}
                         onClick={() => { if (selectedRunId !== run.run_id) setSelectedRunId(run.run_id); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (selectedRunId !== run.run_id) setSelectedRunId(run.run_id); } }}
+                        tabIndex={0}
+                        role="button"
+                        aria-selected={selectedRunId === run.run_id}
                       >
                         <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
                         <td>{runTypeLabel(run)}</td>
@@ -3094,7 +3101,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div className="log-box">
+            <div className="log-box" role="log" aria-live="polite">
               {!selectedRunId ? (
                 <span className="log-empty">Select a run above to inspect its output.</span>
               ) : !logBuffer ? (
@@ -3304,6 +3311,7 @@ export default function App() {
                       inputElement = (
                         <input
                           type={item.secret ? "password" : "text"}
+                          autoComplete={item.secret ? "off" : undefined}
                           value={draftValue}
                           placeholder={item.secret && hasValue ? "Stored secret" : ""}
                           onChange={(e) => onChangeDraft(e.target.value)}
@@ -4292,6 +4300,7 @@ export default function App() {
               <div className="password-row">
                 <input
                   type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={newUserPassword}
                   onChange={(event) => setNewUserPassword(event.target.value)}
                   placeholder="At least 8 characters"
@@ -4743,6 +4752,7 @@ export default function App() {
               <span>Password</span>
               <input
                 type="password"
+                autoComplete="new-password"
                 value={registerPassword}
                 onChange={(event) => setRegisterPassword(event.target.value)}
                 placeholder="At least 8 characters"
@@ -4752,6 +4762,7 @@ export default function App() {
               <span>Confirm Password</span>
               <input
                 type="password"
+                autoComplete="new-password"
                 value={registerPasswordConfirm}
                 onChange={(event) => setRegisterPasswordConfirm(event.target.value)}
                 placeholder="Re-enter password"
@@ -4790,11 +4801,11 @@ export default function App() {
           <form onSubmit={doLogin}>
             <label className="field">
               <span>Username</span>
-              <input value={username} onChange={(event) => setUsername(event.target.value)} />
+              <input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
             </label>
             <label className="field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </label>
             <button type="submit" className="primary">
               <Icon name="play" />
@@ -4812,12 +4823,25 @@ export default function App() {
 
   return (
     <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+      <div className="mobile-header">
+        <button className="icon-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Open menu">
+          <Icon name="menu" />
+        </button>
+        <img src={wordmark} alt="CookDex" className="brand-mark" />
+      </div>
+      {mobileSidebarOpen && <div className="mobile-sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />}
+      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""} ${mobileSidebarOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-top">
           <div className="brand-wrap">
             <img src={sidebarCollapsed ? emblem : wordmark} alt="CookDex" className="brand-mark" />
           </div>
-          <button className="icon-btn" onClick={() => setSidebarCollapsed((prev) => !prev)} aria-label="Toggle sidebar">
+          <button className="icon-btn" onClick={() => {
+            if (window.innerWidth <= 760) {
+              setMobileSidebarOpen((prev) => !prev);
+            } else {
+              setSidebarCollapsed((prev) => !prev);
+            }
+          }} aria-label="Toggle sidebar">
             <Icon name="menu" />
           </button>
         </div>
@@ -4828,7 +4852,7 @@ export default function App() {
             <button
               key={item.id}
               className={`nav-item ${activePage === item.id ? "active" : ""}`}
-              onClick={() => setActivePage(item.id)}
+              onClick={() => { setActivePage(item.id); setMobileSidebarOpen(false); }}
               title={item.label}
             >
               <Icon name={item.icon} />
@@ -4892,8 +4916,8 @@ export default function App() {
       </section>
 
       {confirmModal && (
-        <div className="modal-backdrop" onClick={() => setConfirmModal(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setConfirmModal(null)} onKeyDown={(e) => { if (e.key === "Escape") setConfirmModal(null); }}>
+          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <p>{confirmModal.message}</p>
             <div className="modal-actions">
               <button className="ghost" onClick={() => setConfirmModal(null)}>Cancel</button>
@@ -4905,7 +4929,7 @@ export default function App() {
 
       {forcedResetPending && (
         <div className="modal-backdrop">
-          <div className="modal-card forced-reset-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card forced-reset-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>Password Reset Required</h3>
             <p className="muted">Your password was set by an administrator. Choose a new password before continuing.</p>
             <form className="run-form" onSubmit={doForcedReset}>
@@ -4914,6 +4938,7 @@ export default function App() {
                 <div className="password-row">
                   <input
                     type={forcedResetShowPass ? "text" : "password"}
+                    autoComplete="new-password"
                     value={forcedResetPassword}
                     onChange={(e) => setForcedResetPassword(e.target.value)}
                     placeholder="At least 8 characters"

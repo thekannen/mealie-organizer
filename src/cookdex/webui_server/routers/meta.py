@@ -368,7 +368,10 @@ async def get_debug_log(
         if log_available:
             try:
                 text = log_file.read_text(encoding="utf-8", errors="replace")
-                all_lines = text.splitlines()
+                all_lines = [
+                    ln for ln in text.splitlines()
+                    if "Invalid HTTP request received" not in ln
+                ]
                 log_content = "\n".join(all_lines[-lines:])
             except OSError:
                 log_content = "(unable to read log file)"

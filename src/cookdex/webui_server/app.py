@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -19,6 +19,22 @@ from .security import SecretCipher, hash_password
 from .settings import WebUISettings, load_webui_settings
 from .state import StateStore
 from .tasks import TaskRegistry
+
+
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class CSRFMiddleware(BaseHTTPMiddleware):
+    """Require X-Requested-With header on state-changing API requests."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in _CSRF_SAFE_METHODS and "/api/" in request.url.path:
+            if request.headers.get("x-requested-with") != "XMLHttpRequest":
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF validation failed"},
+                )
+        return await call_next(request)
 
 
 def _select_ui_root(settings: WebUISettings) -> Path:
@@ -108,6 +124,7 @@ def create_app() -> FastAPI:
             services.runner.stop()
 
     app = FastAPI(title="CookDex Web UI", version="1.0", lifespan=lifespan)
+    app.add_middleware(CSRFMiddleware)
     api_prefix = f"{settings.base_path}/api/v1"
 
     # --- Include routers ---

@@ -117,12 +117,33 @@ async def get_settings(
     }
 
 
+def _payload_has_secret_values(payload: SettingsUpdateRequest) -> bool:
+    """Return True if the payload contains any non-empty secret values to encrypt."""
+    for value in payload.secrets.values():
+        if value is not None and str(value) != "":
+            return True
+    for key, value in payload.env.items():
+        if value is None or str(value).strip() == "":
+            continue
+        spec = ENV_SPEC_BY_KEY.get(key.strip().upper())
+        if spec is not None and spec.secret:
+            return True
+    return False
+
+
 @router.put("/settings")
 async def put_settings(
     payload: SettingsUpdateRequest,
     _session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
+    if services.settings.weak_master_key and _payload_has_secret_values(payload):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot store secrets: MO_WEBUI_MASTER_KEY is set to a weak default. "
+            "Set a strong key and restart.",
+        )
+
     if payload.settings:
         services.state.set_settings(payload.settings)
 

@@ -16,6 +16,8 @@ services:
       - ./cache:/app/cache
       - ./logs:/app/logs
       - ./reports:/app/reports
+      # To enable Direct DB tunnel access, mount your SSH key (read-only is fine):
+      # - ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie:ro
     ports:
       - "4820:4820"
     extra_hosts:

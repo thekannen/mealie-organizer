@@ -24,10 +24,14 @@ def _seed_config_root(root: Path) -> None:
     _write_json(root / "configs" / "taxonomy" / "units_aliases.json", [])
 
 
+_CSRF = {"X-Requested-With": "XMLHttpRequest"}
+
+
 def _login(client: TestClient) -> None:
     response = client.post(
         "/cookdex/api/v1/auth/login",
         json={"username": "admin", "password": "Secret-pass1"},
+        headers=_CSRF,
     )
     assert response.status_code == 200
 
@@ -78,6 +82,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         create_user = client.post(
             "/cookdex/api/v1/users",
             json={"username": "kitchen-tablet", "password": "Tablet-pass01"},
+            headers=_CSRF,
         )
         assert create_user.status_code == 201
         assert create_user.json()["username"] == "kitchen-tablet"
@@ -89,13 +94,14 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         reset_password = client.post(
             "/cookdex/api/v1/users/kitchen-tablet/reset-password",
             json={"password": "Tablet-pass02"},
+            headers=_CSRF,
         )
         assert reset_password.status_code == 200
 
-        delete_active_user = client.delete("/cookdex/api/v1/users/admin")
+        delete_active_user = client.delete("/cookdex/api/v1/users/admin", headers=_CSRF)
         assert delete_active_user.status_code == 409
 
-        delete_user = client.delete("/cookdex/api/v1/users/kitchen-tablet")
+        delete_user = client.delete("/cookdex/api/v1/users/kitchen-tablet", headers=_CSRF)
         assert delete_user.status_code == 200
 
         tasks = client.get("/cookdex/api/v1/tasks")
@@ -115,12 +121,14 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         blocked = client.post(
             "/cookdex/api/v1/runs",
             json={"task_id": "ingredient-parse", "options": {"dry_run": False}},
+            headers=_CSRF,
         )
         assert blocked.status_code == 403
 
         policies = client.put(
             "/cookdex/api/v1/policies",
             json={"policies": {"ingredient-parse": {"allow_dangerous": True}}},
+            headers=_CSRF,
         )
         assert policies.status_code == 200
         assert policies.json()["policies"]["ingredient-parse"]["allow_dangerous"] is True
@@ -128,6 +136,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         queued = client.post(
             "/cookdex/api/v1/runs",
             json={"task_id": "ingredient-parse", "options": {"dry_run": False, "max_recipes": 1}},
+            headers=_CSRF,
         )
         assert queued.status_code == 202
         assert queued.json()["task_id"] == "ingredient-parse"
@@ -142,6 +151,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
                 "options": {"dry_run": True},
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert schedule_create.status_code == 201
         schedule_id = schedule_create.json()["schedule_id"]
@@ -154,6 +164,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         settings_put = client.put(
             "/cookdex/api/v1/settings",
             json={"env": {"MEALIE_URL": "http://example/api", "MEALIE_API_KEY": "abc123"}},
+            headers=_CSRF,
         )
         assert settings_put.status_code == 200
         settings_get = client.get("/cookdex/api/v1/settings")
@@ -167,6 +178,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         unsupported_env = client.put(
             "/cookdex/api/v1/settings",
             json={"env": {"NOT_ALLOWED_ENV": "x"}},
+            headers=_CSRF,
         )
         assert unsupported_env.status_code == 422
 
@@ -181,6 +193,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         config_put = client.put(
             "/cookdex/api/v1/config/files/categories",
             json={"content": [{"name": "Breakfast"}]},
+            headers=_CSRF,
         )
         assert config_put.status_code == 200
         assert "rule_sync" in config_put.json()
@@ -227,6 +240,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "run_if_missed": True,
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert r.status_code == 201, r.text
         once_id = r.json()["schedule_id"]
@@ -244,6 +258,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "run_at": future_full,
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert r2.status_code == 201, r2.text
 
@@ -256,6 +271,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "kind": "once",
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert r3.status_code == 422, r3.text
 
@@ -269,6 +285,7 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "seconds": 0,
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert r4.status_code == 422, r4.text
 
@@ -281,11 +298,12 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
                 "kind": "cron",
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert r5.status_code == 422, r5.text
 
         # --- delete the once schedule ---
-        del_r = client.delete(f"/cookdex/api/v1/schedules/{once_id}")
+        del_r = client.delete(f"/cookdex/api/v1/schedules/{once_id}", headers=_CSRF)
         assert del_r.status_code == 200
 
         # --- verify it's gone ---
@@ -329,6 +347,7 @@ def test_schedule_update_supports_run_if_missed_and_task_options(tmp_path: Path,
                 "options": {"dry_run": True},
                 "enabled": True,
             },
+            headers=_CSRF,
         )
         assert created.status_code == 201, created.text
         schedule_id = created.json()["schedule_id"]
@@ -342,6 +361,7 @@ def test_schedule_update_supports_run_if_missed_and_task_options(tmp_path: Path,
                 "run_if_missed": True,
                 "options": {"dry_run": True, "max_recipes": 3},
             },
+            headers=_CSRF,
         )
         assert updated.status_code == 200, updated.text
         payload = updated.json()
@@ -413,12 +433,14 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
         blocked_login = client.post(
             "/cookdex/api/v1/auth/login",
             json={"username": "admin", "password": "secret-pass"},
+            headers=_CSRF,
         )
         assert blocked_login.status_code == 409
 
         register = client.post(
             "/cookdex/api/v1/auth/register",
             json={"username": "admin", "password": "Secret-pass1"},
+            headers=_CSRF,
         )
         assert register.status_code == 200
         assert register.json()["username"] == "admin"
@@ -426,3 +448,72 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
         users = client.get("/cookdex/api/v1/users")
         assert users.status_code == 200
         assert any(item["username"] == "admin" for item in users.json()["items"])
+
+
+def test_csrf_middleware_rejects_missing_header(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        # POST without CSRF header should be rejected
+        response = client.post(
+            "/cookdex/api/v1/auth/login",
+            json={"username": "admin", "password": "Secret-pass1"},
+        )
+        assert response.status_code == 403
+        assert "CSRF" in response.json().get("detail", "")
+
+        # GET requests should still work without the header
+        health = client.get("/cookdex/api/v1/health")
+        assert health.status_code == 200
+
+
+def test_weak_master_key_blocks_secret_storage(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", "changeme")
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+
+        # Saving a secret should be blocked
+        result = client.put(
+            "/cookdex/api/v1/settings",
+            json={"env": {}, "secrets": {"OPENAI_API_KEY": "sk-test"}},
+            headers=_CSRF,
+        )
+        assert result.status_code == 400
+        assert "weak" in result.json()["detail"].lower()
+
+        # Saving non-secret env vars should still work
+        result2 = client.put(
+            "/cookdex/api/v1/settings",
+            json={"env": {"MEALIE_URL": "http://example/api"}},
+            headers=_CSRF,
+        )
+        assert result2.status_code == 200

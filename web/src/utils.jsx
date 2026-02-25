@@ -468,7 +468,7 @@ function errorMessageFromPayload(payload, status) {
 }
 
 export async function api(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const headers = { "X-Requested-With": "XMLHttpRequest", ...(options.headers || {}) };
   let body = options.body;
 
   if (body && typeof body !== "string") {
@@ -476,38 +476,56 @@ export async function api(path, options = {}) {
     body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API}${path}`, {
-    ...options,
-    headers,
-    body,
-    credentials: "include",
-  });
+  const externalSignal = options.signal;
+  const timeoutMs = options.timeout ?? 30000;
+  const controller = new AbortController();
+  const timeoutId = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
-  const contentType = response.headers.get("content-type") || "";
-  let jsonPayload = null;
-  let textPayload = "";
-
-  if (contentType.includes("application/json")) {
-    try {
-      jsonPayload = await response.json();
-    } catch {
-      jsonPayload = null;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
     }
-  } else {
-    textPayload = await response.text();
   }
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${API}${path}`, {
+      ...options,
+      headers,
+      body,
+      credentials: "include",
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    let jsonPayload = null;
+    let textPayload = "";
+
+    if (contentType.includes("application/json")) {
+      try {
+        jsonPayload = await response.json();
+      } catch {
+        jsonPayload = null;
+      }
+    } else {
+      textPayload = await response.text();
+    }
+
+    if (!response.ok) {
+      if (jsonPayload !== null) {
+        throw new Error(errorMessageFromPayload(jsonPayload, response.status));
+      }
+      throw new Error(textPayload || `Request failed (${response.status})`);
+    }
+
     if (jsonPayload !== null) {
-      throw new Error(errorMessageFromPayload(jsonPayload, response.status));
+      return jsonPayload;
     }
-    throw new Error(textPayload || `Request failed (${response.status})`);
+    return textPayload;
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
   }
-
-  if (jsonPayload !== null) {
-    return jsonPayload;
-  }
-  return textPayload;
 }
 
 export function fieldFromOption(option, value, onChange, allValues = {}) {

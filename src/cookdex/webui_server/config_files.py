@@ -71,6 +71,18 @@ class ConfigFilesManager:
             backup_path = history_dir / backup_name
             backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
+            # Rotate old backups — keep the most recent 20 per config name.
+            prefix = f"{item.name}."
+            backups = sorted(
+                (p for p in history_dir.iterdir() if p.name.startswith(prefix) and p.name.endswith(".json")),
+                key=lambda p: p.name,
+            )
+            for old in backups[:-20]:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+
         temp_path = path.with_suffix(path.suffix + ".tmp")
         serialized = json.dumps(content, indent=2, ensure_ascii=True) + "\n"
         temp_path.write_text(serialized, encoding="utf-8")

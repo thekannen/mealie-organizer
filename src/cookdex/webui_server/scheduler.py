@@ -72,9 +72,9 @@ class SchedulerService:
         )
 
     def start(self) -> None:
+        self._restore_from_db()
         if not self.scheduler.running:
             self.scheduler.start()
-        self._restore_from_db()
 
     def shutdown(self) -> None:
         _DISPATCHERS.pop(self.dispatcher_id, None)

@@ -7,9 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ..deps import Services, build_runtime_env, enforce_safety, require_services, require_session
+from ..rate_limit import ActionRateLimiter
 from ..schemas import PoliciesUpdateRequest, RunCreateRequest
 
 router = APIRouter(tags=["runs"])
+_action_limiter = ActionRateLimiter(max_per_minute=30)
 
 
 @router.get("/tasks")
@@ -69,6 +71,7 @@ async def create_run(
     session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
+    _action_limiter.check(session["username"])
     task_id = payload.task_id.strip()
     if task_id not in services.registry.task_ids:
         raise HTTPException(status_code=404, detail=f"Unknown task '{task_id}'.")

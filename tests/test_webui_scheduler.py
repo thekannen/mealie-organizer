@@ -110,3 +110,29 @@ class TestRestoreFromDb:
             svc._restore_from_db()
         finally:
             svc.scheduler.shutdown(wait=False)
+
+
+class TestStartOrder:
+    def test_start_restores_before_starting_scheduler(self, tmp_path):
+        """Verify _restore_from_db runs before scheduler.start()."""
+        from unittest.mock import MagicMock
+
+        svc = SchedulerService.__new__(SchedulerService)
+        svc.state = MagicMock()
+        svc.runner = MagicMock()
+        svc.registry = MagicMock()
+        svc.dispatcher_id = "test-dispatcher"
+        svc.state.list_schedules.return_value = []
+
+        # Use a mock scheduler to track call order
+        mock_scheduler = MagicMock()
+        mock_scheduler.running = False
+        svc.scheduler = mock_scheduler
+
+        call_order = []
+        svc.state.list_schedules.side_effect = lambda: (call_order.append("restore"), [])[-1]
+        mock_scheduler.start.side_effect = lambda: call_order.append("start")
+
+        svc.start()
+
+        assert call_order == ["restore", "start"], f"Expected restore before start, got {call_order}"

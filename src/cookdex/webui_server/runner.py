@@ -104,16 +104,15 @@ class RunQueueManager:
             proc = self._active.get(run_id)
             if proc is not None:
                 self._terminate_process_tree(proc, wait_for_exit=False)
-
-        self.state.update_run_status(
-            run_id,
-            status="canceled",
-            finished_at=utc_now_iso(),
-            exit_code=None,
-            error_text="Canceled while running.",
-        )
-        logger.info("run %s canceled while running", run_id)
-        return True
+            self.state.update_run_status(
+                run_id,
+                status="canceled",
+                finished_at=utc_now_iso(),
+                exit_code=None,
+                error_text="Canceled while running.",
+            )
+            logger.info("run %s canceled while running", run_id)
+            return True
 
     def read_log(self, run_id: str, max_bytes: int = 200_000) -> str:
         record = self.state.get_run(run_id)

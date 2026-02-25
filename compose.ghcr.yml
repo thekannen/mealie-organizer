@@ -15,8 +15,8 @@ services:
       - ./cache:/app/cache
       - ./logs:/app/logs
       - ./reports:/app/reports
-      # Uncomment to mount an SSH key for Direct DB tunnel access:
-      # - ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie
+      # To enable Direct DB tunnel access, mount your SSH key (read-only is fine):
+      # - ~/.ssh/cookdex_mealie:/app/.ssh/cookdex_mealie:ro
     ports:
       - "${WEB_BIND_PORT:-4820}:${WEB_BIND_PORT:-4820}"
     extra_hosts:
