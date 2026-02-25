@@ -175,29 +175,42 @@ class SchedulerService:
             return _MISSED_ONCE_GRACE_SECONDS
         return _MISSED_INTERVAL_GRACE_SECONDS
 
+    @staticmethod
+    def _parse_dt(val: str | None) -> datetime | None:
+        """Parse a datetime string to a timezone-aware UTC datetime.
+
+        Accepts ISO 8601 with Z suffix (from frontend), naive datetime-local
+        strings (legacy), and full ISO 8601 with offset.
+        """
+        if not val:
+            return None
+        s = str(val).strip()
+        if not s:
+            return None
+        # Pad "YYYY-MM-DDTHH:MM" → "YYYY-MM-DDTHH:MM:00" for fromisoformat
+        if len(s) == 16 and "T" in s:
+            s = s + ":00"
+        # Replace trailing Z with +00:00 for fromisoformat (Python 3.9 compat)
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     def _build_trigger(self, kind: str, schedule_data: dict[str, Any]) -> IntervalTrigger | DateTrigger:
         if kind == "interval":
             seconds = int(schedule_data.get("seconds", 0))
             if seconds <= 0:
                 raise ValueError("Interval schedules require positive 'seconds'.")
-            def _normalise_dt(val: str | None) -> str | None:
-                if not val:
-                    return None
-                s = str(val).strip()
-                if len(s) == 16:  # "YYYY-MM-DDTHH:MM" from datetime-local input
-                    s = s + ":00"
-                return s
-
-            start_date = _normalise_dt(schedule_data.get("start_at"))
-            end_date = _normalise_dt(schedule_data.get("end_at"))
+            start_date = self._parse_dt(schedule_data.get("start_at"))
+            end_date = self._parse_dt(schedule_data.get("end_at"))
             return IntervalTrigger(seconds=seconds, timezone="UTC", start_date=start_date, end_date=end_date)
         if kind == "once":
-            run_at = str(schedule_data.get("run_at", "")).strip()
-            if not run_at:
+            run_at_raw = str(schedule_data.get("run_at", "")).strip()
+            if not run_at_raw:
                 raise ValueError("Once schedules require non-empty 'run_at'.")
-            # datetime-local inputs produce "YYYY-MM-DDTHH:MM" without seconds
-            if len(run_at) == 16:
-                run_at = run_at + ":00"
+            run_at = self._parse_dt(run_at_raw)
             return DateTrigger(run_date=run_at)
         raise ValueError(f"Unsupported schedule kind: {kind}")
 

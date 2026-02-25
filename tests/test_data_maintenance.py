@@ -20,15 +20,34 @@ def test_stage_command_adds_apply_flag_for_cleanups():
     assert "--apply" in units_cmd
 
 
+def test_stage_command_categorize_uses_tag_pipeline():
+    cmd = data_maintenance.stage_command(
+        "categorize",
+        apply_cleanups=False,
+    )
+    assert "cookdex.tag_pipeline" in cmd
+
+
 def test_stage_command_categorize_provider_override():
     cmd = data_maintenance.stage_command(
         "categorize",
         apply_cleanups=False,
         stage_options=StageRuntimeOptions(provider="chatgpt"),
     )
+    assert "cookdex.tag_pipeline" in cmd
     assert "--provider" in cmd
     idx = cmd.index("--provider")
     assert cmd[idx + 1] == "chatgpt"
+
+
+def test_stage_command_categorize_skip_ai():
+    cmd = data_maintenance.stage_command(
+        "categorize",
+        apply_cleanups=False,
+        skip_ai=True,
+    )
+    assert "cookdex.tag_pipeline" in cmd
+    assert "--skip-ai" in cmd
 
 
 def test_stage_command_yield_use_db_flag():
@@ -37,12 +56,11 @@ def test_stage_command_yield_use_db_flag():
 
 
 def test_run_stage_categorize_uses_provider_override(monkeypatch):
-    monkeypatch.setattr(data_maintenance, "_categorizer_provider_active", lambda: False)
-
     class _Completed:
         returncode = 0
 
     def _fake_run(cmd, check):
+        assert "cookdex.tag_pipeline" in cmd
         assert "--provider" in cmd
         idx = cmd.index("--provider")
         assert cmd[idx + 1] == "chatgpt"

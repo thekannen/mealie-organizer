@@ -78,6 +78,7 @@ def stage_command(
     stage: str,
     *,
     apply_cleanups: bool,
+    skip_ai: bool = False,
     use_db: bool = False,
     nutrition_sample: int | None = None,
     stage_options: StageRuntimeOptions | None = None,
@@ -148,7 +149,9 @@ def stage_command(
             cmd.append("--cleanup-apply")
         return cmd
     if stage == "categorize":
-        cmd = python_cmd + ["cookdex.recipe_categorizer"]
+        cmd = python_cmd + ["cookdex.tag_pipeline"]
+        if skip_ai:
+            cmd.append("--skip-ai")
         if opts.provider:
             cmd.extend(["--provider", opts.provider])
         return cmd
@@ -222,21 +225,11 @@ def run_stage(
     stage_options: StageRuntimeOptions | None = None,
 ) -> StageResult:
     opts = stage_options or StageRuntimeOptions()
-    if stage == "categorize":
-        if skip_ai:
-            print(f"[skip] {stage}: skipped (--skip-ai flag set)", flush=True)
-            return StageResult(stage=stage, command=[], exit_code=0)
-        if not opts.provider and not _categorizer_provider_active():
-            print(
-                f"[skip] {stage}: no AI provider configured "
-                "(set CATEGORIZER_PROVIDER or pass --provider)",
-                flush=True,
-            )
-            return StageResult(stage=stage, command=[], exit_code=0)
 
     cmd = stage_command(
         stage,
         apply_cleanups=apply_cleanups,
+        skip_ai=skip_ai,
         use_db=use_db,
         nutrition_sample=nutrition_sample,
         stage_options=opts,
@@ -303,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["chatgpt", "ollama"],
+        choices=["chatgpt", "ollama", "anthropic"],
         default=None,
         help="Override AI provider for the categorize stage.",
     )

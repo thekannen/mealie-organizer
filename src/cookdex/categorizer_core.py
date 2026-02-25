@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
-from .config import env_or_config
+from .config import config_value, env_or_config
 
 
 def require_int(value: object, field: str) -> int:
@@ -285,11 +285,41 @@ class MealieCategorizer:
         return self._get_paginated(f"{self.mealie_url}/organizers/tags?perPage=1000", timeout=60)
 
     @staticmethod
-    def make_prompt(recipes, category_names, tag_names, tool_names):
+    def _format_recipe_lines(recipes):
+        lines = ""
+        for recipe in recipes:
+            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
+            lines += (
+                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
+            )
+        return lines
+
+    @staticmethod
+    def _single_organizer_prompt(recipes, field, role, names, example, recipe_lines):
+        names_text = "\n".join(f"- {name}" for name in names)
+        return f"""
+You are a food recipe {role}.
+
+Select one or more applicable {field} for each recipe from THIS LIST ONLY:
+{names_text}
+
+Return ONLY valid JSON array like:
+[
+  {{"slug": "recipe-slug", {example}}}
+]
+
+If absolutely nothing matches, use an empty array. No commentary.
+
+Recipes:
+{recipe_lines}""".strip()
+
+    @classmethod
+    def make_prompt(cls, recipes, category_names, tag_names, tool_names):
         categories_text = "\n".join(f"- {name}" for name in category_names)
         tags_text = "\n".join(f"- {name}" for name in tag_names)
         tools_text = "\n".join(f"- {name}" for name in tool_names)
-        prompt = f"""
+        recipe_lines = cls._format_recipe_lines(recipes)
+        return f"""
 You are a food recipe classifier.
 
 For each recipe below:
@@ -314,88 +344,28 @@ Tools:
 {tools_text}
 
 Recipes:
-"""
-        for recipe in recipes:
-            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
-            prompt += (
-                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
-            )
-        return prompt.strip()
+{recipe_lines}""".strip()
 
-    @staticmethod
-    def make_category_prompt(recipes, category_names):
-        categories_text = "\n".join(f"- {name}" for name in category_names)
-        prompt = f"""
-You are a food recipe category selector.
+    @classmethod
+    def make_category_prompt(cls, recipes, category_names):
+        return cls._single_organizer_prompt(
+            recipes, "categories", "category selector", category_names,
+            '"categories": ["Dinner"]', cls._format_recipe_lines(recipes),
+        )
 
-Select one or more applicable categories for each recipe from THIS LIST ONLY:
-{categories_text}
+    @classmethod
+    def make_tag_prompt(cls, recipes, tag_names):
+        return cls._single_organizer_prompt(
+            recipes, "tags", "tagging assistant", tag_names,
+            '"tags": ["Quick", "Weeknight"]', cls._format_recipe_lines(recipes),
+        )
 
-Return ONLY valid JSON array like:
-[
-  {{"slug": "recipe-slug", "categories": ["Dinner"]}}
-]
-
-If absolutely no categories match, use an empty array. No commentary.
-
-Recipes:
-"""
-        for recipe in recipes:
-            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
-            prompt += (
-                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
-            )
-        return prompt.strip()
-
-    @staticmethod
-    def make_tag_prompt(recipes, tag_names):
-        tags_text = "\n".join(f"- {name}" for name in tag_names)
-        prompt = f"""
-You are a food recipe tagging assistant.
-
-Select at least one applicable tag for each recipe from THIS LIST ONLY:
-{tags_text}
-
-Return ONLY valid JSON array like:
-[
-  {{"slug": "recipe-slug", "tags": ["Quick", "Weeknight"]}}
-]
-
-If absolutely no tags match, use an empty array. No commentary.
-
-Recipes:
-"""
-        for recipe in recipes:
-            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
-            prompt += (
-                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
-            )
-        return prompt.strip()
-
-    @staticmethod
-    def make_tool_prompt(recipes, tool_names):
-        tools_text = "\n".join(f"- {name}" for name in tool_names)
-        prompt = f"""
-You are a food recipe kitchen tool selector.
-
-Select at least one applicable tool for each recipe from THIS LIST ONLY:
-{tools_text}
-
-Return ONLY valid JSON array like:
-[
-  {{"slug": "recipe-slug", "tools": ["Dutch Oven", "Immersion Blender"]}}
-]
-
-If absolutely no tools match, use an empty array. No commentary.
-
-Recipes:
-"""
-        for recipe in recipes:
-            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
-            prompt += (
-                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
-            )
-        return prompt.strip()
+    @classmethod
+    def make_tool_prompt(cls, recipes, tool_names):
+        return cls._single_organizer_prompt(
+            recipes, "tools", "kitchen tool selector", tool_names,
+            '"tools": ["Dutch Oven", "Immersion Blender"]', cls._format_recipe_lines(recipes),
+        )
 
     def get_all_tools(self):
         try:
@@ -434,6 +404,12 @@ Recipes:
 
     def filter_tag_candidates(self, tags, recipes):
         usage = self.build_tag_usage(recipes)
+        noisy_phrases = config_value(
+            "categorizer.tag_noisy_phrases",
+            ["how to make", "recipe", "without drippings", "from drippings", "from scratch"],
+        )
+        if isinstance(noisy_phrases, str):
+            noisy_phrases = [p.strip() for p in noisy_phrases.split(",") if p.strip()]
         candidate_names = []
         excluded = []
         for tag in tags:
@@ -443,10 +419,7 @@ Recipes:
             count = usage.get(name, 0)
             too_long = self.tag_max_name_length > 0 and len(name) > self.tag_max_name_length
             too_rare = self.tag_min_usage > 0 and count < self.tag_min_usage
-            noisy_name = any(
-                phrase in name.lower()
-                for phrase in ("how to make", "recipe", "without drippings", "from drippings", "from scratch")
-            )
+            noisy_name = any(phrase in name.lower() for phrase in noisy_phrases)
             if too_long or too_rare or noisy_name:
                 excluded.append((name, count))
                 continue
@@ -474,11 +447,12 @@ Recipes:
             if not (r.get("recipeCategory") or []) or not (r.get("tags") or []) or not (r.get("tools") or r.get("recipeTool") or [])
         ]
 
-    def ensure_tags_for_entries(self, entries, recipes_by_slug, tag_names):
+    def _ensure_field_for_entries(self, entries, recipes_by_slug, field, names, make_prompt_fn, alt_keys=()):
+        """Fill in a missing field (tags or tools) by querying the AI with a focused prompt."""
         missing_slugs = []
         for entry in entries:
             slug = (entry.get("slug") or "").strip()
-            if slug and slug in recipes_by_slug and not entry.get("tags"):
+            if slug and slug in recipes_by_slug and not entry.get(field):
                 missing_slugs.append(slug)
 
         if not missing_slugs:
@@ -491,54 +465,30 @@ Recipes:
                 seen.add(slug)
                 deduped.append(recipes_by_slug[slug])
 
-        tag_results = self.safe_query_with_retry(self.make_tag_prompt(deduped, tag_names))
-        if not isinstance(tag_results, list):
+        results = self.safe_query_with_retry(make_prompt_fn(deduped, names))
+        if not isinstance(results, list):
             return
 
-        tag_map = {}
-        for item in tag_results:
+        result_map = {}
+        for item in results:
             slug = (item.get("slug") or "").strip()
-            tags = item.get("tags") or []
-            if slug and isinstance(tags, list):
-                tag_map[slug] = tags
+            values = item.get(field)
+            for alt in alt_keys:
+                if values is None:
+                    values = item.get(alt)
+            if slug and isinstance(values, list):
+                result_map[slug] = values
 
         for entry in entries:
             slug = (entry.get("slug") or "").strip()
-            if slug in tag_map and not (entry.get("tags") or []):
-                entry["tags"] = tag_map[slug]
+            if slug in result_map and not (entry.get(field) or []):
+                entry[field] = result_map[slug]
+
+    def ensure_tags_for_entries(self, entries, recipes_by_slug, tag_names):
+        self._ensure_field_for_entries(entries, recipes_by_slug, "tags", tag_names, self.make_tag_prompt)
 
     def ensure_tools_for_entries(self, entries, recipes_by_slug, tool_names):
-        missing_slugs = []
-        for entry in entries:
-            slug = (entry.get("slug") or "").strip()
-            if slug and slug in recipes_by_slug and not entry.get("tools"):
-                missing_slugs.append(slug)
-
-        if not missing_slugs:
-            return
-
-        deduped = []
-        seen = set()
-        for slug in missing_slugs:
-            if slug not in seen:
-                seen.add(slug)
-                deduped.append(recipes_by_slug[slug])
-
-        tool_results = self.safe_query_with_retry(self.make_tool_prompt(deduped, tool_names))
-        if not isinstance(tool_results, list):
-            return
-
-        tool_map = {}
-        for item in tool_results:
-            slug = (item.get("slug") or "").strip()
-            tools = item.get("tools") or item.get("tool") or []
-            if slug and isinstance(tools, list):
-                tool_map[slug] = tools
-
-        for entry in entries:
-            slug = (entry.get("slug") or "").strip()
-            if slug in tool_map and not (entry.get("tools") or []):
-                entry["tools"] = tool_map[slug]
+        self._ensure_field_for_entries(entries, recipes_by_slug, "tools", tool_names, self.make_tool_prompt, alt_keys=("tool",))
 
     @staticmethod
     def _existing_tools(recipe):

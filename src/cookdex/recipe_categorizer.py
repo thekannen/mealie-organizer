@@ -54,7 +54,7 @@ def parse_args(forced_provider: str | None = None) -> argparse.Namespace:
     if not forced_provider:
         parser.add_argument(
             "--provider",
-            choices=["ollama", "chatgpt"],
+            choices=["ollama", "chatgpt", "anthropic"],
             help="Override provider from .env/environment for this run.",
         )
     parser.add_argument("--recat", action="store_true", help="Re-categorize all recipes.")
@@ -88,9 +88,9 @@ def derive_target_mode(args: argparse.Namespace) -> str:
 def resolve_provider(cli_provider: str | None = None, forced_provider: str | None = None) -> str:
     provider = forced_provider or cli_provider or env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "ollama")
     provider = require_str(provider, "categorizer.provider").strip().lower()
-    if provider not in {"ollama", "chatgpt"}:
+    if provider not in {"ollama", "chatgpt", "anthropic"}:
         raise ValueError(
-            "Invalid provider. Use 'ollama' or 'chatgpt' via --provider "
+            "Invalid provider. Use 'ollama', 'chatgpt', or 'anthropic' via --provider "
             "or CATEGORIZER_PROVIDER in .env or the environment."
         )
     return provider
@@ -223,7 +223,102 @@ def query_ollama(
     return None
 
 
+def query_anthropic(
+    prompt_text: str,
+    model: str,
+    base_url: str,
+    api_key: str,
+    request_timeout: int,
+    http_retries: int,
+    max_tokens: int,
+) -> str | None:
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "user", "content": prompt_text + "\n\nRespond only with valid JSON."},
+        ],
+        "system": "You are a precise JSON-only assistant.",
+    }
+    url = f"{base_url.rstrip('/')}/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    last_error = None
+
+    for attempt in range(http_retries):
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
+            if response.status_code == 429 or 500 <= response.status_code < 600:
+                retry_after = response.headers.get("Retry-After")
+                wait_for = float(retry_after) if retry_after and retry_after.isdigit() else (1.5 * (2**attempt))
+                wait_for += random.uniform(0, 0.5)
+                print(
+                    f"[warn] Anthropic transient HTTP {response.status_code} "
+                    f"(attempt {attempt + 1}/{http_retries}), sleeping {wait_for:.1f}s"
+                )
+                time.sleep(wait_for)
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+            content = data.get("content", [])
+            if isinstance(content, list) and content:
+                return content[0].get("text", "").strip()
+            return None
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < http_retries - 1:
+                wait_for = (1.5 * (2**attempt)) + random.uniform(0, 0.5)
+                print(
+                    f"[warn] Anthropic request exception (attempt {attempt + 1}/{http_retries}): {exc}. "
+                    f"Sleeping {wait_for:.1f}s"
+                )
+                time.sleep(wait_for)
+            else:
+                break
+        except (ValueError, KeyError, TypeError) as exc:
+            print(f"[error] Anthropic response parse error: {exc}")
+            return None
+
+    print(f"Anthropic request error: {last_error or 'exhausted retries'}")
+    return None
+
+
 def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], str]:
+    if provider == "anthropic":
+        api_key = secret("ANTHROPIC_API_KEY", required=True)
+        base_url = require_str(
+            env_or_config("ANTHROPIC_BASE_URL", "providers.anthropic.base_url", "https://api.anthropic.com/v1"),
+            "providers.anthropic.base_url",
+        )
+        model = require_str(
+            env_or_config("ANTHROPIC_MODEL", "providers.anthropic.model", "claude-haiku-4-5-20251001"),
+            "providers.anthropic.model",
+        )
+        request_timeout = require_int(
+            env_or_config("ANTHROPIC_REQUEST_TIMEOUT", "providers.anthropic.request_timeout", 120, int),
+            "providers.anthropic.request_timeout",
+        )
+        http_retries = max(
+            1,
+            require_int(
+                env_or_config("ANTHROPIC_HTTP_RETRIES", "providers.anthropic.http_retries", 3, int),
+                "providers.anthropic.http_retries",
+            ),
+        )
+        max_tokens = require_int(
+            env_or_config("ANTHROPIC_MAX_TOKENS", "providers.anthropic.max_tokens", 4096, int),
+            "providers.anthropic.max_tokens",
+        )
+
+        def _query_anthropic(prompt_text: str) -> str | None:
+            return query_anthropic(prompt_text, model, base_url, api_key, request_timeout, http_retries, max_tokens)
+
+        return _query_anthropic, f"Anthropic ({model})"
+
     if provider == "chatgpt":
         api_key = secret("OPENAI_API_KEY", required=True)
         base_url = require_str(

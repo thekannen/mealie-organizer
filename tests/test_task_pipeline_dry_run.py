@@ -180,9 +180,14 @@ def test_dry_run_option_defaults_true(task_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_tag_categorize_default_uses_ai() -> None:
+def test_tag_categorize_default_uses_tag_pipeline() -> None:
     execution = _build("tag-categorize")
-    assert "cookdex.recipe_categorizer" in execution.command
+    assert "cookdex.tag_pipeline" in execution.command
+
+
+def test_tag_categorize_method_both_uses_tag_pipeline() -> None:
+    execution = _build("tag-categorize", {"method": "both"})
+    assert "cookdex.tag_pipeline" in execution.command
 
 
 def test_tag_categorize_method_ai_uses_recipe_categorizer() -> None:
@@ -193,6 +198,14 @@ def test_tag_categorize_method_ai_uses_recipe_categorizer() -> None:
 def test_tag_categorize_method_rules_uses_rule_tagger() -> None:
     execution = _build("tag-categorize", {"method": "rules"})
     assert "cookdex.rule_tagger" in execution.command
+    assert "--from-taxonomy" in execution.command
+
+
+def test_tag_categorize_both_provider_flag() -> None:
+    execution = _build("tag-categorize", {"method": "both", "provider": "openai"})
+    assert "--provider" in execution.command
+    idx = execution.command.index("--provider")
+    assert execution.command[idx + 1] == "openai"
 
 
 def test_tag_categorize_ai_provider_flag() -> None:
@@ -238,6 +251,18 @@ def test_tag_categorize_rules_missing_targets_create() -> None:
     execution = _build("tag-categorize", {"method": "rules", "missing_targets": "create"})
     idx = execution.command.index("--missing-targets")
     assert execution.command[idx + 1] == "create"
+
+
+def test_tag_categorize_both_use_db_flag() -> None:
+    execution = _build("tag-categorize", {"method": "both", "use_db": True})
+    assert "--use-db" in execution.command
+
+
+def test_tag_categorize_both_missing_targets_defaults_to_skip() -> None:
+    execution = _build("tag-categorize", {"method": "both"})
+    assert "--missing-targets" in execution.command
+    idx = execution.command.index("--missing-targets")
+    assert execution.command[idx + 1] == "skip"
 
 
 # ---------------------------------------------------------------------------

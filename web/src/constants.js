@@ -147,13 +147,13 @@ export const HELP_FAQ = [
     question: "Can I tag recipes without an AI provider?",
     icon: "tag",
     answer:
-      "Yes. The tag-categorize task (rule-based method) assigns tags and kitchen tools using configurable regex rules — no LLM required. Edit configs/taxonomy/tag_rules.json to define ingredient, text, and instruction patterns. Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to basic text rules.",
+      "Yes. The tag-categorize task derives matching rules automatically from your taxonomy item names — no LLM or config files needed. Select Method = Rules Only, or use Both to let rules handle the obvious matches and AI fill in the rest. Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to text rules.",
   },
   {
     question: "What does 'Use Direct DB' do?",
     icon: "database",
     answer:
-      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for tag-categorize (rule-based method). Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
+      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for tag-categorize. Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
   },
 ];
 
@@ -271,14 +271,14 @@ export const HELP_TASK_GUIDES = [
     title: "Tag and Categorize Recipes",
     icon: "tag",
     group: "Organizers",
-    what: "Assigns categories, tags, and kitchen tools to recipes. AI method uses your configured LLM provider to classify recipes based on their full content. Rule-based method applies regex patterns from tag_rules.json \u2014 fast, free, and fully deterministic with no API cost.",
+    what: "Assigns categories, tags, and kitchen tools to recipes. Both mode runs fast rule-matching first then AI to fill gaps. Rules Only works without any AI provider. AI Only skips rules and sends everything to your LLM.",
     steps: [
-      "Select Method = Rule-Based and run with Dry Run on to see what your current rules match.",
-      "Edit configs/taxonomy/tag_rules.json to add or refine patterns, then dry-run again.",
-      "Enable Use Direct DB (rule-based only) to unlock ingredient and tool-detection matching in addition to text rules.",
-      "Switch to Method = AI for semantic classification and optionally pick AI Provider for this run.",
+      "Start with Method = Both (recommended) and Dry Run on to preview what each layer matches.",
+      "Rules Only is free and instant \u2014 patterns are derived automatically from your taxonomy item names.",
+      "Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to text rules.",
+      "Override AI Provider for this run, or leave blank to use your configured default.",
     ],
-    tip: "Start with rule-based to cover obvious patterns for free, then use AI mode for recipes that fall through.",
+    tip: "Both mode gives the best coverage: rules handle obvious name matches for free, then AI catches everything else.",
   },
   {
     id: "taxonomy-refresh",

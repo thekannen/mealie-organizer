@@ -80,6 +80,14 @@ function toDateTimeLocalValue(value) {
   return localValue.toISOString().slice(0, 16);
 }
 
+function localDatetimeToUTC(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toISOString();
+}
+
 function buildTaskOptionSeed(taskDefinition, existingOptions = {}) {
   const seeded = { ...buildDefaultOptionValues(taskDefinition) };
   for (const option of taskDefinition?.options || []) {
@@ -728,7 +736,7 @@ export default function App() {
     db: { loading: false, ok: null, detail: "" },
     dbDetect: { loading: false, ok: null, detail: "" },
   });
-  const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [] });
+  const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [], anthropic: [] });
 
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
@@ -1605,9 +1613,9 @@ export default function App() {
           task_id: selectedTask,
           kind: scheduleForm.kind,
           seconds: scheduleForm.kind === "interval" ? intervalSeconds : undefined,
-          start_at: scheduleForm.kind === "interval" ? scheduleForm.start_at : undefined,
-          end_at: (scheduleForm.kind === "interval" && scheduleForm.end_at) ? scheduleForm.end_at : undefined,
-          run_at: scheduleForm.kind === "once" ? scheduleForm.run_at : undefined,
+          start_at: scheduleForm.kind === "interval" ? localDatetimeToUTC(scheduleForm.start_at) : undefined,
+          end_at: (scheduleForm.kind === "interval" && scheduleForm.end_at) ? localDatetimeToUTC(scheduleForm.end_at) : undefined,
+          run_at: scheduleForm.kind === "once" ? localDatetimeToUTC(scheduleForm.run_at) : undefined,
           options,
           enabled: Boolean(scheduleForm.enabled),
           run_if_missed: Boolean(scheduleForm.run_if_missed),
@@ -1691,12 +1699,12 @@ export default function App() {
           task_id: scheduleEditForm.task_id,
           kind: scheduleEditForm.kind,
           seconds: scheduleEditForm.kind === "interval" ? intervalSeconds : undefined,
-          start_at: scheduleEditForm.kind === "interval" ? scheduleEditForm.start_at : undefined,
+          start_at: scheduleEditForm.kind === "interval" ? localDatetimeToUTC(scheduleEditForm.start_at) : undefined,
           end_at:
             scheduleEditForm.kind === "interval" && scheduleEditForm.end_at
-              ? scheduleEditForm.end_at
+              ? localDatetimeToUTC(scheduleEditForm.end_at)
               : undefined,
-          run_at: scheduleEditForm.kind === "once" ? scheduleEditForm.run_at : undefined,
+          run_at: scheduleEditForm.kind === "once" ? localDatetimeToUTC(scheduleEditForm.run_at) : undefined,
           options,
           enabled: Boolean(scheduleEditForm.enabled),
           run_if_missed: Boolean(scheduleEditForm.run_if_missed),
@@ -2166,6 +2174,7 @@ export default function App() {
   async function fetchAvailableModels(kind) {
     const body = {
       openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
+      anthropic_api_key: envClear.ANTHROPIC_API_KEY ? "" : draftOverrideValue("ANTHROPIC_API_KEY"),
       ollama_url: draftOverrideValue("OLLAMA_URL"),
     };
     try {
@@ -2192,6 +2201,8 @@ export default function App() {
           mealie_api_key: envClear.MEALIE_API_KEY ? "" : draftOverrideValue("MEALIE_API_KEY"),
           openai_api_key: envClear.OPENAI_API_KEY ? "" : draftOverrideValue("OPENAI_API_KEY"),
           openai_model: draftOverrideValue("OPENAI_MODEL"),
+          anthropic_api_key: envClear.ANTHROPIC_API_KEY ? "" : draftOverrideValue("ANTHROPIC_API_KEY"),
+          anthropic_model: draftOverrideValue("ANTHROPIC_MODEL"),
           ollama_url: draftOverrideValue("OLLAMA_URL"),
           ollama_model: draftOverrideValue("OLLAMA_MODEL"),
         };
@@ -2208,7 +2219,7 @@ export default function App() {
         },
       }));
 
-      if (result.ok && (kind === "openai" || kind === "ollama")) {
+      if (result.ok && (kind === "openai" || kind === "ollama" || kind === "anthropic")) {
         fetchAvailableModels(kind);
       }
     } catch (exc) {
@@ -3247,9 +3258,10 @@ export default function App() {
                   {items.map((item) => {
                     const key = String(item.key);
                     const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-                    const provider = configuredProvider === "ollama" ? "ollama" : "chatgpt";
-                    if (provider === "chatgpt" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
-                    if (provider === "ollama" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
+                    const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
+                    if (provider !== "chatgpt" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
+                    if (provider !== "anthropic" && (key === "ANTHROPIC_MODEL" || key === "ANTHROPIC_API_KEY")) return null;
+                    if (provider !== "ollama" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
                     const hasValue = Boolean(item.has_value);
                     const source = String(item.source || "unset");
                     const draftValue = envDraft[key] ?? "";
@@ -3260,7 +3272,7 @@ export default function App() {
                       }
                     };
 
-                    const modelKind = key === "OPENAI_MODEL" ? "openai" : key === "OLLAMA_MODEL" ? "ollama" : null;
+                    const modelKind = key === "OPENAI_MODEL" ? "openai" : key === "ANTHROPIC_MODEL" ? "anthropic" : key === "OLLAMA_MODEL" ? "ollama" : null;
                     const modelList = modelKind ? availableModels[modelKind] || [] : [];
 
                     let inputElement;
@@ -3268,6 +3280,7 @@ export default function App() {
                       inputElement = (
                         <select value={provider} onChange={(e) => onChangeDraft(e.target.value)}>
                           <option value="chatgpt">ChatGPT (OpenAI)</option>
+                          <option value="anthropic">Anthropic (Claude)</option>
                           <option value="ollama">Ollama (Local)</option>
                         </select>
                       );
@@ -3367,12 +3380,13 @@ export default function App() {
               {[
                 { id: "mealie", label: "Test Mealie", hint: "Check Mealie URL/API key connectivity." },
                 { id: "openai", label: "Test OpenAI", hint: "Validate OpenAI key and selected model.", provider: "chatgpt" },
+                { id: "anthropic", label: "Test Anthropic", hint: "Validate Anthropic key and selected model.", provider: "anthropic" },
                 { id: "ollama", label: "Test Ollama", hint: "Validate Ollama endpoint reachability.", provider: "ollama" },
                 { id: "dbDetect", label: "Auto-detect DB", hint: "SSH into Mealie host to discover DB credentials.", requiresSsh: true },
                 { id: "db", label: "Test DB", hint: "Verify direct database connection.", requiresDb: true },
               ].filter((test) => {
                 const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-                const p = configuredProvider === "ollama" ? "ollama" : "chatgpt";
+                const p = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
                 if (test.provider && p !== test.provider) return false;
                 if (test.requiresSsh) {
                   return Boolean(String(envDraft["MEALIE_DB_SSH_HOST"] || "").trim());

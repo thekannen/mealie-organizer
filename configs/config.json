@@ -5,6 +5,13 @@
       "request_timeout": 120,
       "http_retries": 3
     },
+    "anthropic": {
+      "base_url": "https://api.anthropic.com/v1",
+      "model": "claude-haiku-4-5-20251001",
+      "request_timeout": 120,
+      "http_retries": 3,
+      "max_tokens": 4096
+    },
     "ollama": {
       "request_timeout": 180,
       "http_retries": 3,
@@ -55,6 +62,7 @@
     "query_retry_base_seconds": 1.25,
     "cache_files": {
       "chatgpt": "cache/results_chatgpt.json",
+      "anthropic": "cache/results_anthropic.json",
       "ollama": "cache/results_ollama.json"
     }
   },

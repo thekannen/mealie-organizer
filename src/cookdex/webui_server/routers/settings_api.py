@@ -75,6 +75,28 @@ def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
         return False, _safe_request_error(exc)
 
 
+def _test_anthropic_connection(api_key: str, model: str) -> tuple[bool, str]:
+    if not api_key:
+        return False, "Anthropic API key is required."
+    endpoint = "https://api.anthropic.com/v1/messages"
+    body = {
+        "model": model or "claude-haiku-4-5-20251001",
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.post(endpoint, headers=headers, json=body, timeout=15)
+        response.raise_for_status()
+        return True, "Anthropic API key validated."
+    except requests.RequestException as exc:
+        return False, _safe_request_error(exc)
+
+
 def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
     base_url = _validate_service_url(url.strip().rstrip("/"))
     if not base_url:
@@ -192,6 +214,15 @@ _OPENAI_RECOMMENDED = (
     "gpt-3.5-turbo",
 )
 
+# Anthropic models suitable for recipe categorization, best value first.
+_ANTHROPIC_RECOMMENDED = (
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-5-20250514",
+    "claude-sonnet-4-20250514",
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+)
+
 
 def _list_openai_models(api_key: str) -> list[str]:
     if not api_key:
@@ -238,6 +269,27 @@ def _list_ollama_models(url: str) -> list[str]:
         return []
 
 
+def _list_anthropic_models(api_key: str) -> list[str]:
+    if not api_key:
+        return []
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    try:
+        response = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=12)
+        response.raise_for_status()
+        data = response.json()
+        available = {str(m.get("id", "")) for m in (data.get("data") or []) if isinstance(m, dict)}
+        result = [m for m in _ANTHROPIC_RECOMMENDED if m in available]
+        # Include any available models not in recommended list
+        extras = sorted(mid for mid in available if mid.startswith("claude-") and mid not in result)
+        return result + extras
+    except requests.RequestException:
+        # Fall back to recommended list without validation
+        return list(_ANTHROPIC_RECOMMENDED)
+
+
 @router.post("/settings/models/openai")
 async def list_openai_models(
     payload: ProviderConnectionTestRequest,
@@ -259,6 +311,18 @@ async def list_ollama_models(
     runtime_env = build_runtime_env(services.state, services.cipher)
     ollama_url = resolve_runtime_value(runtime_env, "OLLAMA_URL", payload.ollama_url)
     models = _list_ollama_models(ollama_url)
+    return {"ok": bool(models), "models": models}
+
+
+@router.post("/settings/models/anthropic")
+async def list_anthropic_models(
+    payload: ProviderConnectionTestRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    api_key = resolve_runtime_value(runtime_env, "ANTHROPIC_API_KEY", payload.anthropic_api_key)
+    models = _list_anthropic_models(api_key)
     return {"ok": bool(models), "models": models}
 
 
@@ -301,6 +365,19 @@ async def test_ollama_settings(
     ollama_model = resolve_runtime_value(runtime_env, "OLLAMA_MODEL", payload.ollama_model)
     ok, detail = _test_ollama_connection(ollama_url, ollama_model)
     return {"ok": ok, "detail": detail, "model": ollama_model}
+
+
+@router.post("/settings/test/anthropic")
+async def test_anthropic_settings(
+    payload: ProviderConnectionTestRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    anthropic_api_key = resolve_runtime_value(runtime_env, "ANTHROPIC_API_KEY", payload.anthropic_api_key)
+    anthropic_model = resolve_runtime_value(runtime_env, "ANTHROPIC_MODEL", payload.anthropic_model) or "claude-haiku-4-5-20251001"
+    ok, detail = _test_anthropic_connection(anthropic_api_key, anthropic_model)
+    return {"ok": ok, "detail": detail, "model": anthropic_model}
 
 
 _DB_ENV_KEYS = (

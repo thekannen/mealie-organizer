@@ -7,7 +7,6 @@ from typing import Any, Callable
 import requests
 
 from ..api_client import MealieApiClient
-from ..tag_rules_generation import build_default_tag_rules
 from .config_files import ConfigFilesManager
 
 TAXONOMY_FILE_NAMES: tuple[str, ...] = (
@@ -234,15 +233,6 @@ def _normalize_rules_payload(content: Any) -> dict[str, list[dict[str, Any]]]:
     return payload
 
 
-def _generate_default_rules_from_taxonomy(
-    *,
-    tags: list[dict[str, Any]],
-    categories: list[dict[str, Any]],
-    tools: list[dict[str, Any]],
-) -> dict[str, list[dict[str, Any]]]:
-    return build_default_tag_rules(tags=tags, categories=categories, tools=tools)
-
-
 def _merge_units(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
     merged["aliases"] = _string_list([*(existing.get("aliases") or []), *(incoming.get("aliases") or [])])
@@ -405,10 +395,27 @@ class TaxonomyWorkspaceService:
     def sync_tag_rules_targets(self) -> dict[str, Any]:
         """Reconcile tag_rules targets against current taxonomy files.
 
-        Rules that point to missing tags/categories/tools are removed to prevent
-        re-introducing stale "golden image" terms after users adopt their own
-        taxonomy baseline.
+        Rules are now derived at runtime by the rule tagger, so this method
+        only operates on an existing tag_rules.json if the user has one
+        (e.g. custom overrides).  When the file doesn't exist it returns a
+        no-op result — the runtime deriver handles everything automatically.
         """
+        rules_path = (self.repo_root / TAG_RULES_RELATIVE_PATH).resolve()
+        if not rules_path.exists():
+            return {
+                "file": TAG_RULES_RELATIVE_PATH,
+                "updated": False,
+                "created": False,
+                "removed_total": 0,
+                "generated_total": 0,
+                "canonicalized_total": 0,
+                "kept_total": 0,
+                "removed_by_section": {},
+                "generated_by_section": {},
+                "removed_examples": {},
+                "detail": "No tag_rules.json — rules are derived at runtime from taxonomy.",
+            }
+
         tags = self._read_file_array("tags")
         categories = self._read_file_array("categories")
         tools = self._read_file_array("tools")
@@ -423,25 +430,16 @@ class TaxonomyWorkspaceService:
             "tool": tools_by_key,
         }
 
-        rules_path = (self.repo_root / TAG_RULES_RELATIVE_PATH).resolve()
-        before_exists = rules_path.exists()
         try:
-            existing_payload = json.loads(rules_path.read_text(encoding="utf-8")) if before_exists else _empty_rule_payload()
+            existing_payload = json.loads(rules_path.read_text(encoding="utf-8"))
         except Exception:
             existing_payload = _empty_rule_payload()
 
         normalized = _normalize_rules_payload(existing_payload)
-        generated_defaults = _generate_default_rules_from_taxonomy(
-            tags=tags,
-            categories=categories,
-            tools=tools,
-        )
         synced = _empty_rule_payload()
 
         removed_by_section: dict[str, int] = {}
-        generated_by_section: dict[str, int] = {}
         canonicalized_total = 0
-        generated_total = 0
         removed_examples: dict[str, list[str]] = {}
 
         for section, target_field in RULE_TARGET_FIELDS.items():
@@ -449,7 +447,6 @@ class TaxonomyWorkspaceService:
             removed_count = 0
             removed_names: list[str] = []
             kept: list[dict[str, Any]] = []
-            seen_targets: set[str] = set()
 
             for rule in normalized.get(section, []):
                 target = _normalize_name(rule.get(target_field))
@@ -465,21 +462,6 @@ class TaxonomyWorkspaceService:
                     canonicalized_total += 1
                     rule_copy[target_field] = canonical_target
                 kept.append(rule_copy)
-                seen_targets.add(_name_key(canonical_target))
-
-            generated_count = 0
-            for default_rule in generated_defaults.get(section, []):
-                target = _normalize_name(default_rule.get(target_field))
-                target_key = _name_key(target)
-                if not target_key or target_key in seen_targets:
-                    continue
-                kept.append(dict(default_rule))
-                seen_targets.add(target_key)
-                generated_count += 1
-
-            if generated_count:
-                generated_by_section[section] = generated_count
-                generated_total += generated_count
 
             if removed_count:
                 removed_by_section[section] = removed_count
@@ -487,28 +469,25 @@ class TaxonomyWorkspaceService:
                     removed_examples[section] = sorted(set(removed_names))[:8]
             synced[section] = kept
 
-        changed = synced != normalized or not before_exists
+        changed = synced != normalized
         if changed:
-            rules_path.parent.mkdir(parents=True, exist_ok=True)
             rules_path.write_text(json.dumps(synced, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
         removed_total = sum(removed_by_section.values())
         kept_total = sum(len(synced.get(section, [])) for section in RULE_TARGET_FIELDS)
-        result = {
+        result: dict[str, Any] = {
             "file": TAG_RULES_RELATIVE_PATH,
             "updated": changed,
-            "created": (not before_exists) and changed,
+            "created": False,
             "removed_total": removed_total,
-            "generated_total": generated_total,
+            "generated_total": 0,
             "canonicalized_total": canonicalized_total,
             "kept_total": kept_total,
             "removed_by_section": removed_by_section,
-            "generated_by_section": generated_by_section,
+            "generated_by_section": {},
             "removed_examples": removed_examples,
         }
         changes: list[str] = []
-        if generated_total:
-            changes.append(f"generated {generated_total} default rule(s)")
         if removed_total:
             changes.append(f"removed {removed_total} stale rule(s)")
         if canonicalized_total:
@@ -518,7 +497,7 @@ class TaxonomyWorkspaceService:
             result["detail"] = "Tag rule targets already matched taxonomy."
         else:
             result["detail"] = (
-                "Tag rules aligned to taxonomy."
+                "User rule overrides aligned to taxonomy."
                 if not changes
                 else "; ".join(changes).capitalize() + "."
             )

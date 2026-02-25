@@ -13,8 +13,12 @@ def test_resolve_provider_uses_cli_provider():
     assert resolve_provider(cli_provider="chatgpt") == "chatgpt"
 
 
+def test_resolve_provider_accepts_anthropic():
+    assert resolve_provider(cli_provider="anthropic") == "anthropic"
+
+
 def test_resolve_provider_uses_config_default():
-    assert resolve_provider() in {"ollama", "chatgpt"}
+    assert resolve_provider() in {"ollama", "chatgpt", "anthropic"}
 
 
 def test_resolve_provider_rejects_invalid():

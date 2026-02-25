@@ -105,6 +105,8 @@ class SettingsUpdateRequest(BaseModel):
 class ProviderConnectionTestRequest(BaseModel):
     openai_api_key: str | None = None
     openai_model: str | None = None
+    anthropic_api_key: str | None = None
+    anthropic_model: str | None = None
     ollama_url: str | None = None
     ollama_model: str | None = None
     mealie_url: str | None = None

@@ -30,79 +30,18 @@ Usage
     # Custom rules file
     python -m cookdex.rule_tagger --apply --use-db --config /path/to/rules.json
 
+    # Derive rules from taxonomy files (no rules file needed)
+    python -m cookdex.rule_tagger --apply --from-taxonomy
+
 Config file schema (JSON)
 --------------------------
     {
-      "ingredient_tags": [
-        {
-          "tag": "Chicken",
-          "pattern": "chicken|chicken breast",
-          "exclude_pattern": "chicken broth|chicken stock",
-          "min_matches": 1
-        }
-      ],
-      "text_tags": [
-        {
-          "tag": "Breakfast",
-          "pattern": "breakfast|pancake|waffle|omelet",
-          "match_on": "both"
-        }
-      ],
-      "text_categories": [
-        {
-          "category": "Breakfast",
-          "pattern": "breakfast|pancake|waffle|omelet",
-          "match_on": "name"
-        }
-      ],
-      "ingredient_categories": [
-        {
-          "category": "Seafood",
-          "pattern": "salmon|tuna|shrimp",
-          "min_matches": 1
-        }
-      ],
-      "tool_tags": [
-        {
-          "tool": "Air Fryer",
-          "pattern": "air fryer|air-fryer"
-        }
-      ]
+      "ingredient_tags":      [{"tag": "...",      "pattern": "...", ...}],
+      "text_tags":            [{"tag": "...",      "pattern": "...", ...}],
+      "text_categories":      [{"category": "...", "pattern": "...", ...}],
+      "ingredient_categories":[{"category": "...", "pattern": "...", ...}],
+      "tool_tags":            [{"tool": "...",     "pattern": "..."}]
     }
-
-Rule types
-----------
-ingredient_tags
-    Match against parsed ingredient food names (``ingredient_foods.name``).
-    Requires ``--use-db``.  Use ``min_matches >= 2`` for cuisine
-    fingerprinting (recipe must contain at least N distinct matching foods).
-
-text_tags
-    Match against ``recipes.name`` and/or ``recipes.description``.
-    Optional per-rule ``match_on``: ``both`` (default), ``name``, ``description``.
-    Optional per-rule ``enabled`` flag to disable a rule without deleting it.
-    Works in both API mode and DB mode.
-
-text_categories
-    Same matching as ``text_tags`` but assigns a Mealie **category**
-    (``recipes_to_categories``) instead of a tag.
-    Works in both API mode and DB mode.
-
-ingredient_categories
-    Same as ``ingredient_tags`` but assigns a **category** instead of a tag.
-    Requires ``--use-db``.
-
-tool_tags
-    Match against ``recipe_instructions.text`` and assign a kitchen
-    **tool** (``recipes_to_tools``) rather than a tag.
-    Requires ``--use-db``.
-
-Pattern syntax
---------------
-Patterns are case-insensitive regex.  Use ``\\y`` for word boundaries
-(PostgreSQL syntax) or ``\\b`` (Python/SQLite syntax) — both work in DB
-mode.  In API mode patterns are compiled with Python ``re`` (use ``\\b``
-or omit boundaries for simplicity).
 """
 from __future__ import annotations
 
@@ -110,22 +49,40 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests as _requests
 
-from .config import REPO_ROOT, resolve_mealie_api_key, resolve_mealie_url
+from .config import REPO_ROOT, config_value, resolve_mealie_api_key, resolve_mealie_url
 from .db_client import MealieDBClient, is_db_enabled
+from .tag_rules_generation import build_default_tag_rules
 
 DEFAULT_RULES_FILE = str(REPO_ROOT / "configs" / "taxonomy" / "tag_rules.json")
 _MISSING_TARGET_CHOICES = {"skip", "create"}
 
 
 # ---------------------------------------------------------------------------
-# Config loading
+# Organizer type descriptors — eliminate tag/category code duplication
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _OrgSpec:
+    """Describes one kind of organizer (tag, category, or tool)."""
+    label: str          # for log messages: "tag", "category", "tool"
+    rule_key: str       # key in rule dict: "tag", "category", "tool"
+    api_path: str       # Mealie API list/create endpoint
+    recipe_field: str   # field on recipe JSON object
+
+
+_TAG = _OrgSpec("tag", "tag", "organizers/tags", "tags")
+_CAT = _OrgSpec("category", "category", "organizers/categories", "recipeCategory")
+
+
+# ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
 
 def _load_rules(path: str) -> dict[str, Any]:
     p = Path(path)
@@ -139,14 +96,8 @@ def _load_rules(path: str) -> dict[str, Any]:
 # Tagger
 # ---------------------------------------------------------------------------
 
-
 class RecipeRuleTagger:
-    """Apply rule-based tags, categories, and tool assignments to Mealie recipes.
-
-    Supports two modes:
-      - API mode (default): ``text_tags`` + ``text_categories``, writes via Mealie PATCH API
-      - DB mode (``use_db=True``): all rule types (tags, categories, tools), direct SQL
-    """
+    """Apply rule-based tags, categories, and tool assignments to Mealie recipes."""
 
     def __init__(
         self,
@@ -155,10 +106,12 @@ class RecipeRuleTagger:
         dry_run: bool = True,
         use_db: bool = False,
         missing_targets: str = "skip",
+        _rules: dict[str, Any] | None = None,
     ) -> None:
         self.rules_file = rules_file
         self.dry_run = dry_run
         self.use_db = use_db
+        self._preloaded_rules = _rules
         mode = str(missing_targets or "skip").strip().lower()
         if mode not in _MISSING_TARGET_CHOICES:
             raise ValueError(
@@ -166,42 +119,68 @@ class RecipeRuleTagger:
             )
         self.missing_targets = mode
         self.create_missing_targets = mode == "create"
+        self._missing_target_skips = 0
+
+    @classmethod
+    def from_taxonomy(
+        cls,
+        *,
+        dry_run: bool = True,
+        use_db: bool = False,
+        missing_targets: str = "skip",
+    ) -> "RecipeRuleTagger":
+        """Create a tagger with rules derived at runtime from taxonomy files."""
+        tags_path = REPO_ROOT / str(
+            config_value("taxonomy.tags_file", "configs/taxonomy/tags.json")
+        )
+        cats_path = REPO_ROOT / str(
+            config_value("taxonomy.categories_file", "configs/taxonomy/categories.json")
+        )
+        tools_path = REPO_ROOT / str(
+            config_value("tools.file", "configs/taxonomy/tools.json")
+        )
+
+        def _read_json_list(path: Path) -> list[dict[str, Any]]:
+            if not path.exists():
+                return []
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                return data if isinstance(data, list) else []
+            except (json.JSONDecodeError, OSError):
+                return []
+
+        tags = _read_json_list(tags_path)
+        categories = _read_json_list(cats_path)
+        tools = _read_json_list(tools_path)
+
+        if not tags and not categories and not tools:
+            print(
+                "[warn] No taxonomy files found — rule tagger will have zero rules.\n"
+                "  Run taxonomy-refresh first, or provide a --config file.",
+                flush=True,
+            )
+
+        rules = build_default_tag_rules(tags=tags, categories=categories, tools=tools)
+        return cls(dry_run=dry_run, use_db=use_db, missing_targets=missing_targets, _rules=rules)
+
+    # ------------------------------------------------------------------
+    # Rule helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _rule_enabled(rule: dict[str, Any]) -> bool:
         raw = rule.get("enabled", True)
         if isinstance(raw, bool):
             return raw
-        if isinstance(raw, (int, float)):
-            return bool(raw)
         if isinstance(raw, str):
-            lowered = raw.strip().casefold()
-            if lowered in {"0", "false", "no", "off"}:
-                return False
-            if lowered in {"1", "true", "yes", "on"}:
-                return True
-        return True
+            return raw.strip().casefold() not in {"0", "false", "no", "off"}
+        return bool(raw)
 
     @staticmethod
     def _rule_match_on(rule: dict[str, Any]) -> str:
         raw = str(rule.get("match_on") or "").strip().casefold()
         if raw in {"name", "description", "both"}:
             return raw
-        fields = rule.get("fields")
-        if isinstance(fields, str):
-            lowered = fields.strip().casefold()
-            if lowered in {"name", "description", "both"}:
-                return lowered
-        if isinstance(fields, list):
-            names = {str(item or "").strip().casefold() for item in fields}
-            has_name = "name" in names
-            has_desc = "description" in names
-            if has_name and has_desc:
-                return "both"
-            if has_name:
-                return "name"
-            if has_desc:
-                return "description"
         return "both"
 
     @staticmethod
@@ -213,13 +192,15 @@ class RecipeRuleTagger:
     ) -> bool:
         name = recipe.get("name") or ""
         description = recipe.get("description") or ""
-        in_name = bool(compiled.search(name))
-        in_desc = bool(compiled.search(description))
         if match_on == "name":
-            return in_name
+            return bool(compiled.search(name))
         if match_on == "description":
-            return in_desc
-        return in_name or in_desc
+            return bool(compiled.search(description))
+        return bool(compiled.search(name)) or bool(compiled.search(description))
+
+    @staticmethod
+    def _compile_pattern(pattern: str) -> re.Pattern[str]:
+        return re.compile(pattern.replace(r"\y", r"\b"), re.IGNORECASE)
 
     # ------------------------------------------------------------------
     # Public API
@@ -227,7 +208,10 @@ class RecipeRuleTagger:
 
     def run(self) -> dict[str, Any]:
         """Run all configured rules and return a stats dict."""
-        rules = _load_rules(self.rules_file)
+        if self._preloaded_rules is not None:
+            rules = self._preloaded_rules
+        else:
+            rules = _load_rules(self.rules_file)
 
         if self.use_db:
             return self._run_db(rules)
@@ -238,7 +222,6 @@ class RecipeRuleTagger:
     # ------------------------------------------------------------------
 
     def _run_api(self, rules: dict[str, Any]) -> dict[str, Any]:
-        """API-only path: text_tags + text_categories via Mealie HTTP API."""
         stats: dict[str, Any] = {
             "ingredient_tags": {},
             "text_tags": {},
@@ -250,12 +233,9 @@ class RecipeRuleTagger:
         self._missing_target_skips = 0
 
         skipped: list[str] = []
-        if rules.get("ingredient_tags"):
-            skipped.append("ingredient_tags")
-        if rules.get("ingredient_categories"):
-            skipped.append("ingredient_categories")
-        if rules.get("tool_tags"):
-            skipped.append("tool_tags")
+        for key in ("ingredient_tags", "ingredient_categories", "tool_tags"):
+            if rules.get(key):
+                skipped.append(key)
         if skipped:
             print(
                 f"[info] API mode: skipping {', '.join(skipped)} rules — "
@@ -280,19 +260,17 @@ class RecipeRuleTagger:
         if text_rules or category_rules:
             all_recipes = self._api_get_all_recipes(mealie_url, headers)
             tag_cache: dict[str, Optional[dict]] = {}
-            for rule in text_rules:
-                tag_name = rule.get("tag", "")
-                count = self._api_apply_text_rule(
-                    all_recipes, rule, mealie_url, headers, tag_cache, allow_create=self.create_missing_targets
-                )
-                stats["text_tags"][tag_name] = count
             cat_cache: dict[str, Optional[dict]] = {}
-            for rule in category_rules:
-                cat_name = rule.get("category", "")
-                count = self._api_apply_text_category_rule(
-                    all_recipes, rule, mealie_url, headers, cat_cache, allow_create=self.create_missing_targets
+            for rule in text_rules:
+                name = rule.get("tag", "")
+                stats["text_tags"][name] = self._api_apply_text_rule(
+                    all_recipes, rule, _TAG, mealie_url, headers, tag_cache,
                 )
-                stats["text_categories"][cat_name] = count
+            for rule in category_rules:
+                name = rule.get("category", "")
+                stats["text_categories"][name] = self._api_apply_text_rule(
+                    all_recipes, rule, _CAT, mealie_url, headers, cat_cache,
+                )
 
         total_tags = sum(stats["text_tags"].values())
         total_cats = sum(stats["text_categories"].values())
@@ -316,7 +294,6 @@ class RecipeRuleTagger:
     def _api_get_all_recipes(
         self, mealie_url: str, headers: dict
     ) -> list[dict]:
-        """Fetch all recipe summaries via paginated GET /recipes."""
         recipes: list[dict] = []
         url: Optional[str] = f"{mealie_url}/recipes?perPage=1000"
         while url:
@@ -336,229 +313,96 @@ class RecipeRuleTagger:
                 url = next_link
         return recipes
 
-    def _api_get_or_create_tag(
+    def _api_get_or_create(
         self,
-        tag_name: str,
+        name: str,
+        spec: _OrgSpec,
         mealie_url: str,
         headers: dict,
         cache: dict[str, Optional[dict]],
-        *,
-        allow_create: bool = True,
     ) -> Optional[dict]:
-        """Return existing tag dict (by name) or create it; cached."""
-        key = tag_name.lower()
+        """Return existing organizer (tag/category) by name, or create it; cached."""
+        key = name.lower()
         if key in cache:
             return cache[key]
 
         resp = _requests.get(
-            f"{mealie_url}/organizers/tags?perPage=1000", headers=headers, timeout=30
+            f"{mealie_url}/{spec.api_path}?perPage=1000", headers=headers, timeout=30
         )
         resp.raise_for_status()
         data = resp.json()
-        all_tags = data.get("items", data) if isinstance(data, dict) else data
-        for t in all_tags:
-            cache[t["name"].lower()] = t
+        all_items = data.get("items", data) if isinstance(data, dict) else data
+        for item in all_items:
+            cache[item["name"].lower()] = item
 
         if key in cache:
             return cache[key]
 
-        if not allow_create:
+        if not self.create_missing_targets:
             cache[key] = None
             return None
 
         if self.dry_run:
-            placeholder = {"id": "dry-run-id", "name": tag_name, "slug": "dry-run"}
+            placeholder = {"id": "dry-run-id", "name": name, "slug": "dry-run"}
             cache[key] = placeholder
             return placeholder
 
         resp = _requests.post(
-            f"{mealie_url}/organizers/tags",
-            json={"name": tag_name},
+            f"{mealie_url}/{spec.api_path}",
+            json={"name": name},
             headers=headers,
             timeout=30,
         )
         resp.raise_for_status()
-        tag = resp.json()
-        cache[tag["name"].lower()] = tag
-        return tag
+        created = resp.json()
+        cache[created["name"].lower()] = created
+        return created
 
     def _api_apply_text_rule(
         self,
         all_recipes: list[dict],
         rule: dict[str, Any],
-        mealie_url: str,
-        headers: dict,
-        tag_cache: dict[str, Optional[dict]],
-        *,
-        allow_create: bool = True,
-    ) -> int:
-        """Match text pattern against recipe name/description; add tag via API."""
-        if not self._rule_enabled(rule):
-            return 0
-        tag_name: str = rule["tag"]
-        pattern: str = rule["pattern"]
-        match_on = self._rule_match_on(rule)
-
-        # Translate \y word boundaries to \b for Python regex
-        py_pattern = pattern.replace(r"\y", r"\b")
-        compiled = re.compile(py_pattern, re.IGNORECASE)
-
-        matched = [
-            r
-            for r in all_recipes
-            if self._recipe_matches_text(r, compiled, match_on=match_on)
-        ]
-        count = len(matched)
-        if count:
-            print(
-                f"[info] tag '{tag_name}': {count} recipe(s) matched"
-                f"{' (dry-run)' if self.dry_run else ''}",
-                flush=True,
-            )
-
-        if not matched:
-            return 0
-
-        tag = self._api_get_or_create_tag(
-            tag_name, mealie_url, headers, tag_cache, allow_create=allow_create
-        )
-        if tag is None:
-            self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
-            print(
-                f"[skip] tag '{tag_name}' is not in current Mealie taxonomy "
-                f"(missing_targets={self.missing_targets}).",
-                flush=True,
-            )
-            return 0
-        tag_id = tag["id"]
-
-        if not self.dry_run:
-            for recipe in matched:
-                existing_ids = {t.get("id") for t in (recipe.get("tags") or [])}
-                if tag_id in existing_ids:
-                    continue
-                slug = recipe["slug"]
-                # Fetch full recipe to build the PATCH payload
-                resp = _requests.get(
-                    f"{mealie_url}/recipes/{slug}", headers=headers, timeout=30
-                )
-                if not resp.ok:
-                    print(f"[warn] Could not fetch '{slug}': {resp.status_code}", flush=True)
-                    continue
-                full = resp.json()
-                full["tags"] = (full.get("tags") or []) + [
-                    {"id": tag_id, "name": tag["name"], "slug": tag.get("slug", "")}
-                ]
-                patch = _requests.patch(
-                    f"{mealie_url}/recipes/{slug}",
-                    json=full,
-                    headers=headers,
-                    timeout=30,
-                )
-                if not patch.ok:
-                    print(f"[warn] PATCH failed for '{slug}': {patch.status_code}", flush=True)
-
-        return count
-
-    def _api_get_or_create_category(
-        self,
-        cat_name: str,
+        spec: _OrgSpec,
         mealie_url: str,
         headers: dict,
         cache: dict[str, Optional[dict]],
-        *,
-        allow_create: bool = True,
-    ) -> Optional[dict]:
-        """Return existing category dict (by name) or create it; cached."""
-        key = cat_name.lower()
-        if key in cache:
-            return cache[key]
-
-        resp = _requests.get(
-            f"{mealie_url}/organizers/categories?perPage=1000", headers=headers, timeout=30
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        all_cats = data.get("items", data) if isinstance(data, dict) else data
-        for c in all_cats:
-            cache[c["name"].lower()] = c
-
-        if key in cache:
-            return cache[key]
-
-        if not allow_create:
-            cache[key] = None
-            return None
-
-        if self.dry_run:
-            placeholder = {"id": "dry-run-id", "name": cat_name, "slug": "dry-run"}
-            cache[key] = placeholder
-            return placeholder
-
-        resp = _requests.post(
-            f"{mealie_url}/organizers/categories",
-            json={"name": cat_name},
-            headers=headers,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        cat = resp.json()
-        cache[cat["name"].lower()] = cat
-        return cat
-
-    def _api_apply_text_category_rule(
-        self,
-        all_recipes: list[dict],
-        rule: dict[str, Any],
-        mealie_url: str,
-        headers: dict,
-        cat_cache: dict[str, Optional[dict]],
-        *,
-        allow_create: bool = True,
     ) -> int:
-        """Match text pattern against recipe name/description; add category via API."""
+        """Match text pattern against recipe name/description; add tag or category via API."""
         if not self._rule_enabled(rule):
             return 0
-        cat_name: str = rule["category"]
-        pattern: str = rule["pattern"]
+        target_name: str = rule[spec.rule_key]
+        compiled = self._compile_pattern(rule["pattern"])
         match_on = self._rule_match_on(rule)
 
-        py_pattern = pattern.replace(r"\y", r"\b")
-        compiled = re.compile(py_pattern, re.IGNORECASE)
-
         matched = [
-            r
-            for r in all_recipes
+            r for r in all_recipes
             if self._recipe_matches_text(r, compiled, match_on=match_on)
         ]
-        count = len(matched)
-        if count:
-            print(
-                f"[info] category '{cat_name}': {count} recipe(s) matched"
-                f"{' (dry-run)' if self.dry_run else ''}",
-                flush=True,
-            )
-
         if not matched:
             return 0
 
-        cat = self._api_get_or_create_category(
-            cat_name, mealie_url, headers, cat_cache, allow_create=allow_create
+        count = len(matched)
+        print(
+            f"[info] {spec.label} '{target_name}': {count} recipe(s) matched"
+            f"{' (dry-run)' if self.dry_run else ''}",
+            flush=True,
         )
-        if cat is None:
-            self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
+
+        org = self._api_get_or_create(target_name, spec, mealie_url, headers, cache)
+        if org is None:
+            self._missing_target_skips += 1
             print(
-                f"[skip] category '{cat_name}' is not in current Mealie taxonomy "
+                f"[skip] {spec.label} '{target_name}' is not in current Mealie taxonomy "
                 f"(missing_targets={self.missing_targets}).",
                 flush=True,
             )
             return 0
-        cat_id = cat["id"]
+        org_id = org["id"]
 
         if not self.dry_run:
             for recipe in matched:
-                existing_ids = {c.get("id") for c in (recipe.get("recipeCategory") or [])}
-                if cat_id in existing_ids:
+                existing_ids = {item.get("id") for item in (recipe.get(spec.recipe_field) or [])}
+                if org_id in existing_ids:
                     continue
                 slug = recipe["slug"]
                 resp = _requests.get(
@@ -568,8 +412,8 @@ class RecipeRuleTagger:
                     print(f"[warn] Could not fetch '{slug}': {resp.status_code}", flush=True)
                     continue
                 full = resp.json()
-                full["recipeCategory"] = (full.get("recipeCategory") or []) + [
-                    {"id": cat_id, "name": cat["name"], "slug": cat.get("slug", "")}
+                full[spec.recipe_field] = (full.get(spec.recipe_field) or []) + [
+                    {"id": org_id, "name": org["name"], "slug": org.get("slug", "")}
                 ]
                 patch = _requests.patch(
                     f"{mealie_url}/recipes/{slug}",
@@ -587,7 +431,6 @@ class RecipeRuleTagger:
     # ------------------------------------------------------------------
 
     def _run_db(self, rules: dict[str, Any]) -> dict[str, Any]:
-        """DB-accelerated path: all rule types (tags, categories, tools) via direct SQL."""
         if not is_db_enabled():
             print(
                 "[error] --use-db requires direct DB access.\n"
@@ -620,37 +463,28 @@ class RecipeRuleTagger:
             )
 
             for rule in rules.get("ingredient_tags", []):
-                tag = rule.get("tag", "")
-                stats["ingredient_tags"][tag] = self._db_apply_ingredient_rule(
-                    db, group_id, rule
+                name = rule.get("tag", "")
+                stats["ingredient_tags"][name] = self._db_apply_ingredient_rule(
+                    db, group_id, rule, _TAG,
                 )
-
             for rule in rules.get("text_tags", []):
-                tag = rule.get("tag", "")
-                stats["text_tags"][tag] = self._db_apply_text_rule(db, group_id, rule)
-
+                name = rule.get("tag", "")
+                stats["text_tags"][name] = self._db_apply_text_rule(db, group_id, rule, _TAG)
             for rule in rules.get("text_categories", []):
-                cat = rule.get("category", "")
-                stats["text_categories"][cat] = self._db_apply_text_category_rule(
-                    db, group_id, rule
-                )
-
+                name = rule.get("category", "")
+                stats["text_categories"][name] = self._db_apply_text_rule(db, group_id, rule, _CAT)
             for rule in rules.get("ingredient_categories", []):
-                cat = rule.get("category", "")
-                stats["ingredient_categories"][cat] = self._db_apply_ingredient_category_rule(
-                    db, group_id, rule
+                name = rule.get("category", "")
+                stats["ingredient_categories"][name] = self._db_apply_ingredient_rule(
+                    db, group_id, rule, _CAT,
                 )
-
             for rule in rules.get("tool_tags", []):
-                tool = rule.get("tool", "")
-                stats["tool_tags"][tool] = self._db_apply_tool_rule(db, group_id, rule)
+                name = rule.get("tool", "")
+                stats["tool_tags"][name] = self._db_apply_tool_rule(db, group_id, rule)
 
-        total = (
-            sum(stats["ingredient_tags"].values())
-            + sum(stats["text_tags"].values())
-            + sum(stats["text_categories"].values())
-            + sum(stats["ingredient_categories"].values())
-            + sum(stats["tool_tags"].values())
+        total = sum(
+            sum(stats[key].values())
+            for key in ("ingredient_tags", "text_tags", "text_categories", "ingredient_categories", "tool_tags")
         )
         action = "Would apply" if self.dry_run else "Applied"
         print(
@@ -668,102 +502,100 @@ class RecipeRuleTagger:
             print("[dry-run] No changes written.", flush=True)
         return stats
 
-    def _db_resolve_tag_id(self, db: MealieDBClient, group_id: str, tag_name: str) -> Optional[str]:
-        if self.create_missing_targets:
-            return db.ensure_tag(tag_name, group_id, dry_run=self.dry_run)
-        tag_id = db.lookup_tag_id(tag_name, group_id)
-        if tag_id:
-            return tag_id
-        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
-        print(
-            f"[skip] tag '{tag_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
-            flush=True,
-        )
-        return None
+    # --- DB resolvers (tag / category / tool) ---
 
-    def _db_resolve_tool_id(self, db: MealieDBClient, group_id: str, tool_name: str) -> Optional[str]:
-        if self.create_missing_targets:
-            return db.ensure_tool(tool_name, group_id, dry_run=self.dry_run)
-        tool_id = db.lookup_tool_id(tool_name, group_id)
-        if tool_id:
-            return tool_id
-        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
-        print(
-            f"[skip] tool '{tool_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
-            flush=True,
-        )
-        return None
-
-    def _db_resolve_category_id(self, db: MealieDBClient, group_id: str, cat_name: str) -> Optional[str]:
-        if self.create_missing_targets:
-            return db.ensure_category(cat_name, group_id, dry_run=self.dry_run)
-        cat_id = db.lookup_category_id(cat_name, group_id)
-        if cat_id:
-            return cat_id
-        self._missing_target_skips = int(getattr(self, "_missing_target_skips", 0)) + 1
-        print(
-            f"[skip] category '{cat_name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
-            flush=True,
-        )
-        return None
-
-    def _db_apply_ingredient_rule(
+    def _db_resolve_id(
         self,
         db: MealieDBClient,
         group_id: str,
-        rule: dict[str, Any],
-    ) -> int:
-        tag_name: str = rule["tag"]
-        pattern: str = rule["pattern"]
-        exclude: str = rule.get("exclude_pattern", "")
-        min_matches: int = int(rule.get("min_matches", 1))
-        tag_id = self._db_resolve_tag_id(db, group_id, tag_name)
-        if not tag_id:
-            return 0
-
-        recipe_ids = db.find_recipe_ids_by_ingredient(
-            group_id,
-            pattern,
-            exclude_pattern=exclude,
-            min_matches=min_matches,
+        name: str,
+        lookup: Callable[[str, str], Optional[str]],
+        ensure: Callable[..., Optional[str]],
+        label: str,
+    ) -> Optional[str]:
+        if self.create_missing_targets:
+            return ensure(name, group_id, dry_run=self.dry_run)
+        found = lookup(name, group_id)
+        if found:
+            return found
+        self._missing_target_skips += 1
+        print(
+            f"[skip] {label} '{name}' is not in current taxonomy (missing_targets={self.missing_targets}).",
+            flush=True,
         )
-        count = len(recipe_ids)
-        if count:
-            print(
-                f"[ingredient] '{tag_name}': {count} recipe(s) matched"
-                f"{' (dry-run)' if self.dry_run else ''}",
-                flush=True,
-            )
-        for recipe_id in recipe_ids:
-            db.link_tag(recipe_id, tag_id, dry_run=self.dry_run)
-        return count
+        return None
+
+    def _db_resolve_tag_id(self, db: MealieDBClient, group_id: str, name: str) -> Optional[str]:
+        return self._db_resolve_id(db, group_id, name, db.lookup_tag_id, db.ensure_tag, "tag")
+
+    def _db_resolve_category_id(self, db: MealieDBClient, group_id: str, name: str) -> Optional[str]:
+        return self._db_resolve_id(db, group_id, name, db.lookup_category_id, db.ensure_category, "category")
+
+    def _db_resolve_tool_id(self, db: MealieDBClient, group_id: str, name: str) -> Optional[str]:
+        return self._db_resolve_id(db, group_id, name, db.lookup_tool_id, db.ensure_tool, "tool")
+
+    # --- DB rule application ---
 
     def _db_apply_text_rule(
         self,
         db: MealieDBClient,
         group_id: str,
         rule: dict[str, Any],
+        spec: _OrgSpec,
     ) -> int:
         if not self._rule_enabled(rule):
             return 0
-        tag_name: str = rule["tag"]
-        pattern: str = rule["pattern"]
+        name: str = rule[spec.rule_key]
         match_on = self._rule_match_on(rule)
-        tag_id = self._db_resolve_tag_id(db, group_id, tag_name)
-        if not tag_id:
+        resolve = self._db_resolve_tag_id if spec is _TAG else self._db_resolve_category_id
+        link = db.link_tag if spec is _TAG else db.link_category
+
+        org_id = resolve(db, group_id, name)
+        if not org_id:
             return 0
 
-        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern, match_on=match_on)
-        count = len(recipe_ids)
-        if count:
+        recipe_ids = db.find_recipe_ids_by_text(group_id, rule["pattern"], match_on=match_on)
+        if recipe_ids:
             print(
-                f"[text] '{tag_name}': {count} recipe(s) matched"
+                f"[text] '{name}': {len(recipe_ids)} recipe(s) matched"
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
         for recipe_id in recipe_ids:
-            db.link_tag(recipe_id, tag_id, dry_run=self.dry_run)
-        return count
+            link(recipe_id, org_id, dry_run=self.dry_run)
+        return len(recipe_ids)
+
+    def _db_apply_ingredient_rule(
+        self,
+        db: MealieDBClient,
+        group_id: str,
+        rule: dict[str, Any],
+        spec: _OrgSpec,
+    ) -> int:
+        name: str = rule[spec.rule_key]
+        pattern: str = rule["pattern"]
+        exclude: str = rule.get("exclude_pattern", "")
+        min_matches: int = int(rule.get("min_matches", 1))
+        resolve = self._db_resolve_tag_id if spec is _TAG else self._db_resolve_category_id
+        link = db.link_tag if spec is _TAG else db.link_category
+
+        org_id = resolve(db, group_id, name)
+        if not org_id:
+            return 0
+
+        recipe_ids = db.find_recipe_ids_by_ingredient(
+            group_id, pattern, exclude_pattern=exclude, min_matches=min_matches,
+        )
+        if recipe_ids:
+            label = "ingredient" if spec is _TAG else "ingredient-category"
+            print(
+                f"[{label}] '{name}': {len(recipe_ids)} recipe(s) matched"
+                f"{' (dry-run)' if self.dry_run else ''}",
+                flush=True,
+            )
+        for recipe_id in recipe_ids:
+            link(recipe_id, org_id, dry_run=self.dry_run)
+        return len(recipe_ids)
 
     def _db_apply_tool_rule(
         self,
@@ -772,93 +604,33 @@ class RecipeRuleTagger:
         rule: dict[str, Any],
     ) -> int:
         tool_name: str = rule["tool"]
-        pattern: str = rule["pattern"]
         tool_id = self._db_resolve_tool_id(db, group_id, tool_name)
         if not tool_id:
             return 0
 
-        recipe_ids = db.find_recipe_ids_by_instruction(group_id, pattern)
-        count = len(recipe_ids)
-        if count:
+        recipe_ids = db.find_recipe_ids_by_instruction(group_id, rule["pattern"])
+        if recipe_ids:
             print(
-                f"[tool] '{tool_name}': {count} recipe(s) matched"
+                f"[tool] '{tool_name}': {len(recipe_ids)} recipe(s) matched"
                 f"{' (dry-run)' if self.dry_run else ''}",
                 flush=True,
             )
         for recipe_id in recipe_ids:
             db.link_tool(recipe_id, tool_id, dry_run=self.dry_run)
-        return count
-
-    def _db_apply_text_category_rule(
-        self,
-        db: MealieDBClient,
-        group_id: str,
-        rule: dict[str, Any],
-    ) -> int:
-        if not self._rule_enabled(rule):
-            return 0
-        cat_name: str = rule["category"]
-        pattern: str = rule["pattern"]
-        match_on = self._rule_match_on(rule)
-        cat_id = self._db_resolve_category_id(db, group_id, cat_name)
-        if not cat_id:
-            return 0
-
-        recipe_ids = db.find_recipe_ids_by_text(group_id, pattern, match_on=match_on)
-        count = len(recipe_ids)
-        if count:
-            print(
-                f"[category] '{cat_name}': {count} recipe(s) matched"
-                f"{' (dry-run)' if self.dry_run else ''}",
-                flush=True,
-            )
-        for recipe_id in recipe_ids:
-            db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
-        return count
-
-    def _db_apply_ingredient_category_rule(
-        self,
-        db: MealieDBClient,
-        group_id: str,
-        rule: dict[str, Any],
-    ) -> int:
-        cat_name: str = rule["category"]
-        pattern: str = rule["pattern"]
-        exclude: str = rule.get("exclude_pattern", "")
-        min_matches: int = int(rule.get("min_matches", 1))
-        cat_id = self._db_resolve_category_id(db, group_id, cat_name)
-        if not cat_id:
-            return 0
-
-        recipe_ids = db.find_recipe_ids_by_ingredient(
-            group_id,
-            pattern,
-            exclude_pattern=exclude,
-            min_matches=min_matches,
-        )
-        count = len(recipe_ids)
-        if count:
-            print(
-                f"[ingredient-category] '{cat_name}': {count} recipe(s) matched"
-                f"{' (dry-run)' if self.dry_run else ''}",
-                flush=True,
-            )
-        for recipe_id in recipe_ids:
-            db.link_category(recipe_id, cat_id, dry_run=self.dry_run)
-        return count
+        return len(recipe_ids)
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Rule-based recipe tagger — assigns tags/tools via regex rules, no LLM required.\n"
             "API mode (default): runs text_tags rules via Mealie HTTP API.\n"
-            "--use-db: adds ingredient and tool matching via direct DB queries."
+            "--use-db: adds ingredient and tool matching via direct DB queries.\n"
+            "--from-taxonomy: derive rules at runtime from taxonomy config files."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -884,6 +656,15 @@ def main() -> None:
         help=f"Tag rules JSON config file (default: {DEFAULT_RULES_FILE}).",
     )
     parser.add_argument(
+        "--from-taxonomy",
+        action="store_true",
+        default=False,
+        help=(
+            "Derive rules at runtime from taxonomy config files (tags.json, "
+            "categories.json, tools.json) instead of loading tag_rules.json."
+        ),
+    )
+    parser.add_argument(
         "--missing-targets",
         choices=sorted(_MISSING_TARGET_CHOICES),
         default="skip",
@@ -894,12 +675,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    tagger = RecipeRuleTagger(
-        rules_file=args.config,
-        dry_run=not args.apply,
-        use_db=args.use_db,
-        missing_targets=args.missing_targets,
-    )
+    if args.from_taxonomy:
+        tagger = RecipeRuleTagger.from_taxonomy(
+            dry_run=not args.apply,
+            use_db=args.use_db,
+            missing_targets=args.missing_targets,
+        )
+    else:
+        tagger = RecipeRuleTagger(
+            rules_file=args.config,
+            dry_run=not args.apply,
+            use_db=args.use_db,
+            missing_targets=args.missing_targets,
+        )
     tagger.run()
 
 

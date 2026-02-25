@@ -112,16 +112,28 @@ _JUNK_REASON_CHOICES: list[dict[str, str]] = [
 def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file", "missing_targets"})
     env, dangerous = _common_env(options)
-    method = _str_option(options, "method", "ai") or "ai"
+    method = _str_option(options, "method", "both") or "both"
 
-    if method == "rules":
+    if method == "both":
+        cmd = _py_module("cookdex.tag_pipeline")
+        provider = _str_option(options, "provider", "")
+        use_db = _bool_option(options, "use_db", False)
+        missing_targets = (_str_option(options, "missing_targets", "skip") or "skip").strip().lower()
+        if missing_targets not in {"skip", "create"}:
+            raise ValueError("Option 'missing_targets' must be 'skip' or 'create'.")
+        if provider:
+            cmd.extend(["--provider", provider])
+        if use_db:
+            cmd.append("--use-db")
+        cmd.extend(["--missing-targets", missing_targets])
+    elif method == "rules":
+        cmd = _py_module("cookdex.rule_tagger", "--from-taxonomy")
         dry_run = _bool_option(options, "dry_run", True)
         use_db = _bool_option(options, "use_db", False)
         config_file = _str_option(options, "config_file", "")
         missing_targets = (_str_option(options, "missing_targets", "skip") or "skip").strip().lower()
         if missing_targets not in {"skip", "create"}:
             raise ValueError("Option 'missing_targets' must be 'skip' or 'create'.")
-        cmd = _py_module("cookdex.rule_tagger")
         if not dry_run:
             cmd.append("--apply")
         if use_db:
@@ -783,18 +795,19 @@ class TaskRegistry:
                 task_id="tag-categorize",
                 title="Tag & Categorize Recipes",
                 group="Organizers",
-                description="Assign categories, tags, and tools to recipes. Use AI for rich semantic classification, or rule-based for fast, deterministic results with no API cost.",
+                description="Assign categories, tags, and tools to recipes. Both runs rules first (free, fast) then AI to fill gaps. Rules Only needs no AI provider. AI Only skips the rules layer.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(
                         "method",
                         "Method",
                         "string",
-                        default="ai",
-                        help_text="AI uses your configured provider to classify recipes. Rule-Based applies regex patterns from your tag_rules.json config.",
+                        default="both",
+                        help_text="Both runs rules first then AI. Rules Only works without any AI provider. AI Only skips name-matching rules.",
                         choices=[
-                            {"value": "ai", "label": "AI"},
-                            {"value": "rules", "label": "Rule-Based"},
+                            {"value": "both", "label": "Both (recommended)"},
+                            {"value": "rules", "label": "Rules Only"},
+                            {"value": "ai", "label": "AI Only"},
                         ],
                     ),
                     OptionSpec(

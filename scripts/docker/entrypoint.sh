@@ -16,7 +16,7 @@ if [ "$(id -u)" = "0" ]; then
     if [ ! -s /app/configs/config.json ] && [ -f /app/configs.defaults/config.json ]; then
       cp /app/configs.defaults/config.json /app/configs/config.json || true
     fi
-    for file in categories.json tags.json cookbooks.json labels.json tools.json units_aliases.json tag_rules.json; do
+    for file in categories.json tags.json cookbooks.json labels.json tools.json units_aliases.json; do
       if [ ! -s "/app/configs/taxonomy/$file" ] && [ -f "/app/configs.defaults/taxonomy/$file" ]; then
         cp "/app/configs.defaults/taxonomy/$file" "/app/configs/taxonomy/$file" || true
       fi

@@ -101,7 +101,6 @@ def test_taxonomy_workspace_initialize_from_mealie_replace(tmp_path: Path) -> No
     assert payload["mode"] == "replace"
     assert payload["rule_sync"]["updated"] is True
     assert payload["rule_sync"]["removed_total"] >= 1
-    assert payload["rule_sync"]["generated_total"] >= 1
     categories = manager.read_file("categories")["content"]
     assert categories == [{"name": "Dinner"}, {"name": "Lunch"}]
     tools = manager.read_file("tools")["content"]
@@ -137,7 +136,6 @@ def test_taxonomy_workspace_import_starter_pack_merge(tmp_path: Path) -> None:
     assert payload["mode"] == "merge"
     assert payload["rule_sync"]["updated"] is True
     assert payload["rule_sync"]["removed_total"] >= 1
-    assert payload["rule_sync"]["generated_total"] >= 1
 
     categories = manager.read_file("categories")["content"]
     assert {"name": "Existing Category"} in categories
@@ -207,7 +205,8 @@ def test_taxonomy_workspace_endpoints(tmp_path: Path, monkeypatch) -> None:
         assert "rule_sync" in starter.json()
 
 
-def test_tag_rules_generated_when_missing(tmp_path: Path) -> None:
+def test_tag_rules_noop_when_missing(tmp_path: Path) -> None:
+    """When tag_rules.json doesn't exist, sync returns no-op — rules are derived at runtime."""
     config_root = tmp_path / "repo"
     _seed_config_root(config_root)
     rules_path = config_root / "configs" / "taxonomy" / "tag_rules.json"
@@ -217,9 +216,7 @@ def test_tag_rules_generated_when_missing(tmp_path: Path) -> None:
     workspace = TaxonomyWorkspaceService(repo_root=config_root, config_files=manager)
     result = workspace.sync_tag_rules_targets()
 
-    assert result["updated"] is True
-    assert result["generated_total"] >= 3
-    payload = json.loads(rules_path.read_text(encoding="utf-8"))
-    assert len(payload.get("text_tags", [])) >= 1
-    assert len(payload.get("text_categories", [])) >= 1
-    assert len(payload.get("tool_tags", [])) >= 1
+    assert result["updated"] is False
+    assert result["created"] is False
+    assert result["generated_total"] == 0
+    assert not rules_path.exists()

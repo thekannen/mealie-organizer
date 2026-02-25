@@ -37,7 +37,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         group="AI",
         default="chatgpt",
         secret=False,
-        description="Default AI provider for categorization tasks: chatgpt or ollama.",
+        description="Default AI provider for categorization tasks: chatgpt, ollama, or anthropic.",
     ),
     EnvVarSpec(
         key="OPENAI_MODEL",
@@ -54,6 +54,22 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         default="",
         secret=True,
         description="OpenAI API key used for chatgpt provider requests.",
+    ),
+    EnvVarSpec(
+        key="ANTHROPIC_API_KEY",
+        label="Anthropic API Key",
+        group="AI",
+        default="",
+        secret=True,
+        description="Anthropic API key used for anthropic provider requests.",
+    ),
+    EnvVarSpec(
+        key="ANTHROPIC_MODEL",
+        label="Anthropic Model",
+        group="AI",
+        default="claude-haiku-4-5-20251001",
+        secret=False,
+        description="Anthropic model used when provider is anthropic.",
     ),
     EnvVarSpec(
         key="OLLAMA_URL",
