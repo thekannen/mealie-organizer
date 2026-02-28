@@ -1102,6 +1102,7 @@ tbody tr:hover {
   overflow: hidden;
   font-size: 0.75rem;
   background: #1f1b19;
+  flex-shrink: 0;
 }
 
 .log-summary-head {
@@ -1795,6 +1796,18 @@ details[open] > summary .log-progress-chevron {
   align-content: start;
 }
 
+.cookbook-workspace-head {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.cookbook-workspace-head h4 {
+  margin: 0;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .cookbook-list-head {
   display: grid;
   gap: 0.35rem;
@@ -1810,21 +1823,78 @@ details[open] > summary .log-progress-chevron {
   overflow: auto;
 }
 
+.cookbook-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.32rem;
+  align-items: stretch;
+}
+
+.cookbook-list-row.active {
+  border-radius: 8px;
+}
+
 .cookbook-list-item {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
-  padding: 0.38rem 0.48rem;
-  display: flex;
-  justify-content: space-between;
-  gap: 0.45rem;
+  padding: 0.42rem 0.5rem;
+  display: grid;
+  gap: 0.22rem;
   text-align: left;
 }
 
 .cookbook-list-item.active {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.cookbook-list-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-weight: 700;
+}
+
+.cookbook-list-subtitle {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
+.cookbook-list-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+.cookbook-list-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.cookbook-drag-handle {
+  width: 1.8rem;
+  min-width: 1.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: grab;
+}
+
+.cookbook-drag-handle.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cookbook-drag-handle .ui-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke-width: 2.1;
 }
 
 .cookbook-editor-panel {
@@ -1835,10 +1905,26 @@ details[open] > summary .log-progress-chevron {
   gap: 0.6rem;
 }
 
+.cookbook-editor-head {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.cookbook-editor-head h4 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
 .cookbook-editor-grid {
   display: grid;
   gap: 0.5rem;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.cookbook-public-toggle {
+  align-self: end;
 }
 
 .cookbook-rules {
@@ -2642,6 +2728,68 @@ button.danger {
   gap: 0.65rem;
 }
 
+.workspace-cookbook-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 0.56rem;
+  display: grid;
+  gap: 0.56rem;
+}
+
+.workspace-cookbook-add-card {
+  border-color: color-mix(in oklab, var(--accent) 38%, var(--line));
+  background: color-mix(in oklab, var(--surface-soft) 80%, var(--accent) 20%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+.cookbook-search-field {
+  min-width: 260px;
+  max-width: 340px;
+}
+
+.cookbook-entry-tools {
+  align-items: end;
+  gap: 0.45rem;
+}
+
+.cookbook-entry-head h4 {
+  margin: 0;
+}
+
+.cookbook-entry-item.drag-over {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+.cookbook-entry-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cookbook-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.cookbook-collapse-btn .ui-icon {
+  transition: transform 0.14s ease;
+}
+
+.cookbook-collapse-btn.expanded .ui-icon {
+  transform: rotate(90deg);
+}
+
+.cookbook-entry-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .structured-toolbar {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3377,6 +3525,12 @@ button.danger {
 
   .search-box {
     min-width: 0;
+    width: 100%;
+  }
+
+  .cookbook-search-field {
+    min-width: 0;
+    max-width: none;
     width: 100%;
   }
 

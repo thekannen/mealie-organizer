@@ -56,7 +56,9 @@ class MealieCookbookManager:
         )
 
     def get_cookbooks(self) -> list[dict]:
-        response = self.session.get(f"{self.base_url}/households/cookbooks", timeout=self.timeout)
+        response = self.session.get(
+            f"{self.base_url}/households/cookbooks", params={"perPage": -1}, timeout=self.timeout
+        )
         response.raise_for_status()
         data = response.json()
         if isinstance(data, dict):
@@ -259,14 +261,29 @@ class MealieCookbookManager:
             or (existing.get("queryFilterString") or "") != desired.get("queryFilterString")
         )
 
+    @staticmethod
+    def _filters_need_name_resolution(desired: list[dict]) -> bool:
+        """Check if any cookbook filter uses .name references that need ID resolution."""
+        name_pattern = re.compile(
+            r"\b(?:recipe_category|recipeCategory|tags|tools)\.name\b", re.IGNORECASE
+        )
+        for item in desired:
+            qfs = str(item.get("queryFilterString", ""))
+            if name_pattern.search(qfs):
+                return True
+        return False
+
     def sync_cookbooks(self, desired: list[dict], replace: bool = False) -> tuple[int, int, int, int, int]:
         category_ids_by_name: dict[str, str] = {}
         tag_ids_by_name: dict[str, str] = {}
         tool_ids_by_name: dict[str, str] = {}
-        try:
-            category_ids_by_name, tag_ids_by_name, tool_ids_by_name = self.build_name_id_maps()
-        except Exception as exc:
-            print(f"[warn] Could not build organizer id maps for cookbook filters: {exc}")
+        if self._filters_need_name_resolution(desired):
+            try:
+                category_ids_by_name, tag_ids_by_name, tool_ids_by_name = self.build_name_id_maps()
+            except Exception as exc:
+                print(f"[warn] Could not build organizer id maps for cookbook filters: {exc}")
+        else:
+            print("[skip] All filters use ID references; skipping name-to-ID map build.", flush=True)
 
         prepared_desired = [
             self.prepare_cookbook_payload(item, category_ids_by_name, tag_ids_by_name, tool_ids_by_name)
@@ -417,6 +434,15 @@ def main() -> None:
         print(f"[start] Syncing {len(items)} cookbook(s) from {file_path.relative_to(REPO_ROOT)}")
         created, updated, deleted, skipped, failed = manager.sync_cookbooks(items, replace=args.replace)
         print(f"[done] cookbooks created={created} updated={updated} deleted={deleted} skipped={skipped} failed={failed}")
+        summary = {
+            "Cookbooks in Config": len(items),
+            "Created": created,
+            "Updated": updated,
+            "Deleted": deleted,
+            "Skipped": skipped,
+            "Failed": failed,
+        }
+        print(f"[summary] {json.dumps(summary)}", flush=True)
 
 
 if __name__ == "__main__":

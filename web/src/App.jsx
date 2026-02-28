@@ -251,8 +251,9 @@ function groupLogEvents(events) {
 
 function getSummaryEntries(data) {
   if (!data || typeof data !== "object") return [];
-  return Object.entries(data).filter(([, value]) => (
-    value !== null
+  return Object.entries(data).filter(([key, value]) => (
+    key !== "__title__"
+    && value !== null
     && value !== undefined
     && typeof value !== "object"
   ));
@@ -425,7 +426,8 @@ function renderGroupedLogEvents(grouped, { isLive = false, keyPrefix = "evt", ex
     }
     if (evt.type === "summary") {
       if (!evt.data) return <pre key={eventKey} className="log-verbose">{evt.raw}</pre>;
-      return renderSummaryTable(evt.data, { title: "Run Summary", iconName: "check-circle", keyPrefix: `${eventKey}-summary` });
+      const summaryTitle = (evt.data && evt.data.__title__) || "Run Summary";
+      return renderSummaryTable(evt.data, { title: summaryTitle, iconName: "check-circle", keyPrefix: `${eventKey}-summary` });
     }
     if (evt.type === "progress-batch") {
       const okItems = evt.items.filter((e) => e.type === "ok");

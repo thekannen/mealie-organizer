@@ -136,6 +136,11 @@ class UnitsCleanupManager:
     def run(self) -> dict[str, Any]:
         canonical_display, alias_to_canonical, unit_metadata = self.load_aliases()
         units = self.client.list_units(per_page=1000)
+        print(
+            f"[start] Scanning {len(units)} units against "
+            f"{len(alias_to_canonical)} alias entries ...",
+            flush=True,
+        )
 
         units_by_norm: dict[str, list[dict[str, Any]]] = {}
         for unit in units:
@@ -255,14 +260,16 @@ class UnitsCleanupManager:
         applied = 0
         failed = 0
         skipped_checkpoint = 0
+        total_actions = len(actions)
 
-        for action in actions:
+        for idx, action in enumerate(actions, 1):
             if action.source_id in checkpoint:
                 skipped_checkpoint += 1
                 continue
             if executable and applied >= self.max_actions:
                 break
 
+            reason_label = "alias" if action.reason == "alias_map" else "duplicate"
             entry = {
                 "source_id": action.source_id,
                 "source_name": action.source_name,
@@ -278,12 +285,27 @@ class UnitsCleanupManager:
                     merged_source_ids.add(action.source_id)
                     self.save_checkpoint(merged_source_ids)
                     entry["status"] = "merged"
+                    print(
+                        f"[ok] {applied}/{total_actions} merged '{action.source_name}'"
+                        f" -> '{action.target_name}' ({reason_label})",
+                        flush=True,
+                    )
                 except Exception as exc:
                     failed += 1
                     entry["status"] = "failed"
                     entry["error"] = str(exc)
+                    print(
+                        f"[error] merge '{action.source_name}'"
+                        f" -> '{action.target_name}': {exc}",
+                        flush=True,
+                    )
             else:
                 entry["status"] = "planned"
+                print(
+                    f"[plan] {idx}/{total_actions} would merge '{action.source_name}'"
+                    f" -> '{action.target_name}' ({reason_label})",
+                    flush=True,
+                )
             attempted.append(entry)
 
         report = {
@@ -310,11 +332,12 @@ class UnitsCleanupManager:
         self.report_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
         s = report["summary"]
         print(
-            f"[done] {s['merge_candidates_total']} merge candidate(s) — "
+            f"[done] {s['merge_candidates_total']} merge candidate(s) -- "
             f"{s['actions_applied']} applied ({s['mode']} mode)",
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Units Cleanup",
             "Units Total": s["units_total"],
             "Alias Entries": s["alias_entries"],
             "Merge Candidates": s["merge_candidates_total"],

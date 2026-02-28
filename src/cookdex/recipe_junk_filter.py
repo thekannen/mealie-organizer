@@ -57,6 +57,9 @@ _HIGH_RISK_KEYWORDS = frozenset({
     "night cream", "face mask", "skin care", "beauty", "diy",
     "detox water", "lose weight", "taste test", "clear winner",
     "foods to try", "things to eat", "we tried",
+    "we tasted", "we tested", "we ranked", "we compared",
+    "just launched", "just released",
+    "is sabotaging", "start with these",
 })
 
 _UTILITY_SLUGS = frozenset({
@@ -79,8 +82,10 @@ def _classify(name: str, slug: str, instructions_text: str) -> tuple[str | None,
     name_lower = name.lower()
     slug_lower = slug.lower()
 
-    # 1. How-to
-    if _HOW_TO_RE.search(name_lower) or _HOW_TO_RE.search(slug_lower.replace("-", " ")):
+    # 1. How-to — match on name only; slug may retain the prefix after name
+    #    normalization (e.g. slug "how-to-make-lemon-tea" for recipe "Lemon Tea"),
+    #    which causes false positives on legitimate recipes.
+    if _HOW_TO_RE.search(name_lower):
         return "how_to", "How-to article (not a recipe)"
 
     # 2. Listicle
@@ -185,7 +190,7 @@ class RecipeJunkFilter:
             by_reason[a.reason_code] = by_reason.get(a.reason_code, 0) + 1
 
         print(
-            f"[start] {total} recipes scanned → {len(actions)} junk recipes detected",
+            f"[start] {total} recipes scanned -> {len(actions)} junk recipes detected",
             flush=True,
         )
         for code, count in sorted(by_reason.items()):

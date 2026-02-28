@@ -188,7 +188,7 @@ class YieldNormalizer:
                         "new_servings": action.new_servings,
                     })
                     print(
-                        f"[ok] {action.slug}: {action.action} → '{action.new_yield}' (servings={action.new_servings})",
+                        f"[ok] {action.slug}: {action.action} -> '{action.new_yield}' (servings={action.new_servings})",
                         flush=True,
                     )
                 else:
@@ -262,7 +262,7 @@ class YieldNormalizer:
         set_text = sum(1 for a in actions if a.action == "set_text")
         set_servings = sum(1 for a in actions if a.action == "set_servings")
         print(
-            f"[start] {total} recipes scanned → {len(actions)} yield gaps "
+            f"[start] {total} recipes scanned -> {len(actions)} yield gaps "
             f"({set_text} need text, {set_servings} need numeric)",
             flush=True,
         )
@@ -293,7 +293,7 @@ class YieldNormalizer:
                     "new_servings": action.new_servings,
                 })
                 print(
-                    f"[plan] {action.slug}: {action.action} → '{action.new_yield}' (servings={action.new_servings})",
+                    f"[plan] {action.slug}: {action.action} -> '{action.new_yield}' (servings={action.new_servings})",
                     flush=True,
                 )
 

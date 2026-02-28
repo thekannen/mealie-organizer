@@ -39,6 +39,8 @@ reports/
 *.log
 .playwright-mcp/
 qa-*.png
+data/
+state.db
 
 # Editor and OS files
 .vscode/

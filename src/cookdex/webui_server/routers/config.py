@@ -6,6 +6,7 @@ from typing import Any
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...api_client import MealieApiClient
 from ..deps import Services, build_runtime_env, require_services, require_session, resolve_runtime_value
 from ..schemas import (
     ConfigWriteRequest,
@@ -17,6 +18,23 @@ from ..schemas import (
 from ..taxonomy_workspace import TaxonomyWorkspaceDraftService, TaxonomyWorkspaceService, WorkspaceVersionConflictError
 
 router = APIRouter(tags=["config"])
+
+
+def _lookup_rows(items: Any) -> list[dict[str, str]]:
+    if not isinstance(items, list):
+        return []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        item_id = str(raw.get("id") or "").strip()
+        name = str(raw.get("name") or "").strip()
+        if not item_id or not name or item_id in seen:
+            continue
+        seen.add(item_id)
+        out.append({"id": item_id, "name": name})
+    return out
 
 
 @router.get("/config/files")
@@ -117,6 +135,45 @@ async def import_starter_pack(
         raise HTTPException(status_code=422, detail=str(exc))
     except requests.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to download starter pack: {exc}")
+
+
+@router.get("/config/workspace/lookups")
+async def get_workspace_lookups(
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    runtime_env = build_runtime_env(services.state, services.cipher)
+    mealie_url = resolve_runtime_value(runtime_env, "MEALIE_URL")
+    mealie_api_key = resolve_runtime_value(runtime_env, "MEALIE_API_KEY")
+    if not mealie_url or not mealie_api_key:
+        return {
+            "ok": False,
+            "reason": "Set Mealie URL and API key in Settings to resolve organizer names.",
+            "categories": [],
+            "tags": [],
+            "tools": [],
+        }
+
+    try:
+        client = MealieApiClient(base_url=mealie_url, api_key=mealie_api_key)
+        categories = _lookup_rows(client.get_organizer_items("categories"))
+        tags = _lookup_rows(client.get_organizer_items("tags"))
+        tools = _lookup_rows(client.list_tools())
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "reason": f"Unable to fetch organizer lookups: {type(exc).__name__}",
+            "categories": [],
+            "tags": [],
+            "tools": [],
+        }
+
+    return {
+        "ok": True,
+        "categories": categories,
+        "tags": tags,
+        "tools": tools,
+    }
 
 
 @router.get("/config/workspace/draft")

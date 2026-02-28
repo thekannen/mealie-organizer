@@ -728,10 +728,34 @@ function parseFilterValueList(raw) {
 }
 
 export const FILTER_FIELDS = [
-  { key: "categories", label: "Categories", pattern: /^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.name\s+/i, attr: "recipeCategory.name" },
-  { key: "tags", label: "Tags", pattern: /^\s*tags\.name\s+/i, attr: "tags.name" },
-  { key: "tools", label: "Tools", pattern: /^\s*tools\.name\s+/i, attr: "tools.name" },
-  { key: "foods", label: "Foods", pattern: /^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.name\s+/i, attr: "recipeIngredient.food.name" },
+  {
+    key: "categories",
+    label: "Categories",
+    pattern: /^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.(name|id)\s+/i,
+    attrName: "recipeCategory.name",
+    attrId: "recipeCategory.id",
+  },
+  {
+    key: "tags",
+    label: "Tags",
+    pattern: /^\s*tags\.(name|id)\s+/i,
+    attrName: "tags.name",
+    attrId: "tags.id",
+  },
+  {
+    key: "tools",
+    label: "Tools",
+    pattern: /^\s*tools\.(name|id)\s+/i,
+    attrName: "tools.name",
+    attrId: "tools.id",
+  },
+  {
+    key: "foods",
+    label: "Foods",
+    pattern: /^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.(name|id)\s+/i,
+    attrName: "recipeIngredient.food.name",
+    attrId: "recipeIngredient.food.id",
+  },
 ];
 
 export const FILTER_OPERATORS = [
@@ -755,13 +779,16 @@ export function parseQueryFilter(queryFilterString) {
   const clauses = raw.split(/\s+AND\s+/i);
   for (const clause of clauses) {
     for (const { key, pattern } of FILTER_FIELDS) {
-      if (!pattern.test(clause)) continue;
+      const fieldMatch = clause.match(pattern);
+      if (!fieldMatch) continue;
       const opMatch = clause.match(/\b(NOT\s+IN|CONTAINS\s+ALL|IN)\s*\[([^\]]*)\]/i);
       if (opMatch) {
+        const identifier = String(fieldMatch[1] || "").trim().toLowerCase() === "id" ? "id" : "name";
         rows.push({
           field: key,
           operator: normalizeOperator(opMatch[1]),
           values: parseFilterValueList(opMatch[2]),
+          identifier,
         });
       }
       break;
@@ -777,8 +804,11 @@ export function buildQueryFilter(filterRows) {
     if (!row.values || row.values.length === 0) continue;
     const fieldDef = FILTER_FIELDS.find((f) => f.key === row.field);
     if (!fieldDef) continue;
+    const identifier = String(row.identifier || "").trim().toLowerCase() === "id" ? "id" : "name";
+    const attr = identifier === "id" ? fieldDef.attrId : fieldDef.attrName;
+    if (!attr) continue;
     const list = row.values.map((v) => `"${v}"`).join(", ");
-    clauses.push(`${fieldDef.attr} ${row.operator || "IN"} [${list}]`);
+    clauses.push(`${attr} ${row.operator || "IN"} [${list}]`);
   }
   return clauses.join(" AND ");
 }

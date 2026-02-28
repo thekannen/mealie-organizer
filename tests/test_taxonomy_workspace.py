@@ -341,3 +341,105 @@ def test_taxonomy_workspace_draft_validate_publish_endpoints(tmp_path: Path, mon
 
     draft_path = config_root / "configs" / ".drafts" / "taxonomy-workspace.json"
     assert draft_path.exists()
+
+
+def test_workspace_validate_accepts_mealie_id_style_cookbook_filters(tmp_path: Path, monkeypatch) -> None:
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+
+        draft_get = client.get("/cookdex/api/v1/config/workspace/draft")
+        assert draft_get.status_code == 200, draft_get.text
+        version = draft_get.json()["version"]
+
+        update = client.put(
+            "/cookdex/api/v1/config/workspace/draft",
+            json={
+                "version": version,
+                "draft": {
+                    "cookbooks": [
+                        {
+                            "name": "Mealie Style Filters",
+                            "description": "",
+                            "queryFilterString": (
+                                'recipe_category.id IN ["bef4a72f-4fe3-4e33-83b9-408476b8a20c"] '
+                                'AND tags.id CONTAINS ALL ["ec112baa-2db8-448f-9b86-a286c77cba22"] '
+                                'AND tools.id IN ["0f6f0b6f-8b7d-4d16-9f64-9e3ca6d64a88"]'
+                            ),
+                            "public": False,
+                            "position": 1,
+                        }
+                    ]
+                },
+            },
+            headers=_CSRF,
+        )
+        assert update.status_code == 200, update.text
+        updated_version = update.json()["version"]
+
+        validate = client.post(
+            "/cookdex/api/v1/config/workspace/validate",
+            json={"version": updated_version},
+            headers=_CSRF,
+        )
+        assert validate.status_code == 200, validate.text
+        payload = validate.json()
+        assert payload["can_publish"] is True
+        assert all(err.get("code") != "cookbook_invalid_field" for err in payload.get("errors", []))
+
+
+def test_workspace_lookup_endpoint_returns_id_name_maps(tmp_path: Path, monkeypatch) -> None:
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    class _LookupClient:
+        def get_organizer_items(self, endpoint: str, *, per_page: int = 1000):
+            if endpoint == "categories":
+                return [{"id": "cat-1", "name": "Dinner"}]
+            if endpoint == "tags":
+                return [{"id": "tag-1", "name": "Quick"}]
+            return []
+
+        def list_tools(self, *, per_page: int = 1000):
+            return [{"id": "tool-1", "name": "Air Fryer"}]
+
+    config_router = importlib.import_module("cookdex.webui_server.routers.config")
+    monkeypatch.setattr(config_router, "MealieApiClient", lambda base_url, api_key: _LookupClient())
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+        response = client.get("/cookdex/api/v1/config/workspace/lookups")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["ok"] is True
+        assert payload["categories"] == [{"id": "cat-1", "name": "Dinner"}]
+        assert payload["tags"] == [{"id": "tag-1", "name": "Quick"}]
+        assert payload["tools"] == [{"id": "tool-1", "name": "Air Fryer"}]

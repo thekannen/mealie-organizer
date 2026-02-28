@@ -1,5 +1,11 @@
 [
   {
+    "name": "T.",
+    "fraction": true,
+    "useAbbreviation": false,
+    "aliases": []
+  },
+  {
     "name": "oz pkgs",
     "fraction": true,
     "useAbbreviation": false,
@@ -273,7 +279,7 @@
     "fraction": true,
     "useAbbreviation": false,
     "aliases": [
-      "{'name': 'T'}",
+      "T",
       "tbsp"
     ],
     "pluralName": "tablespoons",

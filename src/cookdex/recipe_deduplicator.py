@@ -142,7 +142,7 @@ class RecipeDeduplicator:
         groups = _group_duplicates(recipes)
         total_dupes = sum(len(g.duplicates) for g in groups)
         print(
-            f"[start] {total} recipes scanned → {len(groups)} duplicate groups, "
+            f"[start] {total} recipes scanned -> {len(groups)} duplicate groups, "
             f"{total_dupes} recipes to remove",
             flush=True,
         )

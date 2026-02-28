@@ -465,6 +465,12 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     cmd = _py_module("cookdex.data_maintenance", "--stages", stages)
     if not dry_run:
         cmd.append("--apply-cleanups")
+    reason = _str_option(options, "reason", "")
+    if reason and run_junk:
+        cmd.extend(["--junk-reason", reason])
+    force_all = _bool_option(options, "force_all", False)
+    if force_all and run_names:
+        cmd.append("--names-force-all")
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
@@ -517,7 +523,7 @@ class TaskRegistry:
                 task_id="data-maintenance",
                 title="Data Maintenance Pipeline",
                 group="Data Pipeline",
-                description="Run all maintenance stages in order: Dedup → Junk Filter → Name Normalize → Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit. Select specific stages to run a subset.",
+                description="Run all maintenance stages in order: Dedup > Junk Filter > Name Normalize > Ingredient Parse > Foods Cleanup > Units Cleanup > Labels Sync > Tools Sync > Taxonomy Refresh > Categorize > Cookbook Sync > Yield Normalize > Quality Audit > Taxonomy Audit. Select specific stages to run a subset.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(

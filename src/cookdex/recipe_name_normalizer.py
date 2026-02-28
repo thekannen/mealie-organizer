@@ -211,7 +211,7 @@ class RecipeNameNormalizer:
                 if ok:
                     applied += 1
                     action_log.append({"status": "ok", "slug": action.slug, "old_name": action.old_name, "new_name": action.new_name})
-                    print(f"[ok] {idx}/{total} {action.slug}: '{action.old_name}' → '{action.new_name}'", flush=True)
+                    print(f"[ok] {idx}/{total} {action.slug}: '{action.old_name}' -> '{action.new_name}'", flush=True)
                 else:
                     failed += 1
                     action_log.append({"status": "error", "slug": action.slug, "error": err})
@@ -234,7 +234,7 @@ class RecipeNameNormalizer:
 
         mode_label = "all recipes" if self.force_all else "lowercase names only"
         print(
-            f"[start] {total} recipes scanned ({mode_label}) → {len(actions)} names to normalize",
+            f"[start] {total} recipes scanned ({mode_label}) -> {len(actions)} names to normalize",
             flush=True,
         )
 
@@ -253,7 +253,7 @@ class RecipeNameNormalizer:
                     "old_name": action.old_name,
                     "new_name": action.new_name,
                 })
-                print(f"[plan] {action.slug}: '{action.old_name}' → '{action.new_name}'", flush=True)
+                print(f"[plan] {action.slug}: '{action.old_name}' -> '{action.new_name}'", flush=True)
 
         report: dict[str, Any] = {
             "summary": {

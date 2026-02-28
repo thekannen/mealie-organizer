@@ -40,12 +40,12 @@ RULE_TARGET_FIELDS: dict[str, str] = {
 WORKSPACE_DRAFT_RELATIVE_PATH = "configs/.drafts/taxonomy-workspace.json"
 WORKSPACE_RESOURCE_NAMES: tuple[str, ...] = TAXONOMY_FILE_NAMES
 WORKSPACE_CLAUSE_FIELD_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("categories", re.compile(r"^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.name\s+", re.IGNORECASE), "recipeCategory.name"),
-    ("tags", re.compile(r"^\s*tags\.name\s+", re.IGNORECASE), "tags.name"),
-    ("tools", re.compile(r"^\s*tools\.name\s+", re.IGNORECASE), "tools.name"),
+    ("categories", re.compile(r"^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.(name|id)\s+", re.IGNORECASE), "recipeCategory.name"),
+    ("tags", re.compile(r"^\s*tags\.(name|id)\s+", re.IGNORECASE), "tags.name"),
+    ("tools", re.compile(r"^\s*tools\.(name|id)\s+", re.IGNORECASE), "tools.name"),
     (
         "foods",
-        re.compile(r"^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.name\s+", re.IGNORECASE),
+        re.compile(r"^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.(name|id)\s+", re.IGNORECASE),
         "recipeIngredient.food.name",
     ),
 )
@@ -1011,12 +1011,14 @@ class TaxonomyWorkspaceDraftService:
             for clause_index, clause in enumerate(clauses):
                 clause_path = f"{path_root}.queryFilterString[{clause_index}]"
                 field_key: str | None = None
+                field_identifier = "name"
                 field_match: re.Match[str] | None = None
                 for candidate_key, pattern, _attr in WORKSPACE_CLAUSE_FIELD_PATTERNS:
                     match = pattern.match(clause)
                     if match:
                         field_key = candidate_key
                         field_match = match
+                        field_identifier = _normalize_name(match.group(1)).lower() or "name"
                         break
 
                 if field_key is None or field_match is None:
@@ -1072,6 +1074,11 @@ class TaxonomyWorkspaceDraftService:
                     continue
 
                 if field_key not in allowed_by_field:
+                    continue
+
+                if field_identifier != "name":
+                    # ID-based cookbook rules are valid in Mealie and should not
+                    # be checked against local name lists.
                     continue
 
                 allowed = allowed_by_field[field_key]

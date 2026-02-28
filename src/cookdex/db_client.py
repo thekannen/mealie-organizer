@@ -123,7 +123,7 @@ class DBWrapper:
         ssh_user = _env("MEALIE_DB_SSH_USER", "root")
         ssh_key = _env("MEALIE_DB_SSH_KEY") or os.path.expanduser("~/.ssh/cookdex_mealie")
         ssh_key = os.path.expanduser(ssh_key)
-        print(f"[db] Opening SSH tunnel → {ssh_user}@{ssh_host} → {pg_host}:{pg_port}", flush=True)
+        print(f"[db] Opening SSH tunnel -> {ssh_user}@{ssh_host} -> {pg_host}:{pg_port}", flush=True)
         print(f"[db] SSH key: {ssh_key} (exists={os.path.isfile(ssh_key)})", flush=True)
 
         tunnel = SSHTunnelForwarder(

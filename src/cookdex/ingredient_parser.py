@@ -543,6 +543,16 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     if not 0 < config.confidence_threshold <= 1:
         raise ValueError("confidence threshold must be between 0 and 1")
 
+    print(
+        f"[start] Ingredient Parser -- "
+        f"strategies={','.join(config.parser_strategies)} "
+        f"confidence={config.confidence_threshold:.0%} "
+        f"dry_run={config.dry_run}"
+        + (f" max_recipes={config.max_recipes}" if config.max_recipes else "")
+        + (f" force_parser={config.force_parser}" if config.force_parser else ""),
+        flush=True,
+    )
+
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     all_recipes = client.get_recipes(per_page=config.page_size)
@@ -737,27 +747,30 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                 time.sleep(config.delay_seconds)
         finally:
             now = time.monotonic()
+            quarter = max(1, summary.total_candidates // 4)
             should_emit = (
                 idx == summary.total_candidates
-                or idx % 100 == 0
-                or (now - last_progress_ts) >= 20
+                or (idx % quarter == 0 and idx != summary.total_candidates)
             )
             if should_emit:
+                pct = round(100 * idx / summary.total_candidates)
                 print(
-                    "[progress] "
-                    + json.dumps(
-                        {
-                            "Processed": idx,
-                            "Candidates": summary.total_candidates,
-                            "Parsed": summary.parsed_successfully,
-                            "Needs Review": len(reviews),
-                            "Skipped (empty)": summary.skipped_empty,
-                            "Skipped (parsed)": summary.skipped_already_parsed,
-                        }
-                    ),
+                    f"[info] {idx}/{summary.total_candidates} scanned ({pct}%) "
+                    f"-- {summary.parsed_successfully} parsed, "
+                    f"{len(reviews)} review, "
+                    f"{summary.skipped_already_parsed} skipped",
                     flush=True,
                 )
                 last_progress_ts = now
+
+    # Emit a final [ok] to push the progress bar to 100% if it didn't
+    # land there naturally (e.g. when the last candidates were all skipped).
+    if summary.total_candidates > 0 and summary.parsed_successfully > 0:
+        last_ok_idx = summary.total_candidates
+        print(
+            f"[ok] {last_ok_idx}/{summary.total_candidates} scan-complete duration=0.00s",
+            flush=True,
+        )
 
     if successes:
         success_path = config.output_dir / config.success_log_filename
@@ -792,6 +805,7 @@ def main() -> int:
         flush=True,
     )
     print("[summary] " + json.dumps({
+        "__title__": "Ingredient Parser",
         "Candidates": summary.total_candidates,
         "Parsed": summary.parsed_successfully,
         "Needs Review": summary.requires_review,

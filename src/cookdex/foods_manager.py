@@ -199,8 +199,18 @@ class FoodsCleanupManager:
 
     def run(self) -> dict[str, Any]:
         foods = self.client.list_foods(per_page=1000)
-        recipes = self.client.get_recipes(per_page=1000)
-        usage = self.build_food_usage(recipes)
+        print(f"[start] Scanning {len(foods)} foods for duplicates ...", flush=True)
+
+        dup_groups = self.build_duplicate_groups(foods)
+        num_groups = len(dup_groups)
+
+        # Only fetch recipes for usage counts when duplicates actually exist.
+        if dup_groups:
+            recipes = self.client.get_recipes(per_page=1000)
+            usage = self.build_food_usage(recipes)
+        else:
+            usage = {}
+
         plan = self.build_merge_plan(foods, usage)
         fuzzy_candidates = self.build_fuzzy_candidates(foods)
 
@@ -210,9 +220,10 @@ class FoodsCleanupManager:
         skipped_checkpoint = 0
         applied_source_ids = set(checkpoint)
         attempted: list[dict[str, Any]] = []
+        total_plan = len(plan)
 
         executable = self.apply and not self.dry_run
-        for action in plan:
+        for idx, action in enumerate(plan, 1):
             if action.source_id in checkpoint:
                 skipped_checkpoint += 1
                 continue
@@ -238,19 +249,34 @@ class FoodsCleanupManager:
                     applied_source_ids.add(action.source_id)
                     entry["status"] = "merged"
                     self.save_checkpoint(applied_source_ids)
+                    print(
+                        f"[ok] {applied}/{total_plan} merged '{action.source_name}'"
+                        f" -> '{action.target_name}'",
+                        flush=True,
+                    )
                 except Exception as exc:
                     failed += 1
                     entry["status"] = "failed"
                     entry["error"] = str(exc)
+                    print(
+                        f"[error] merge '{action.source_name}'"
+                        f" -> '{action.target_name}': {exc}",
+                        flush=True,
+                    )
             else:
                 entry["status"] = "planned"
+                print(
+                    f"[plan] {idx}/{total_plan} would merge '{action.source_name}'"
+                    f" -> '{action.target_name}'",
+                    flush=True,
+                )
             attempted.append(entry)
 
         report = {
             "summary": {
                 "foods_total": len(foods),
-                "duplicate_groups": len(self.build_duplicate_groups(foods)),
-                "merge_candidates_total": len(plan),
+                "duplicate_groups": num_groups,
+                "merge_candidates_total": total_plan,
                 "actions_attempted": len(attempted),
                 "actions_applied": applied,
                 "actions_failed": failed,
@@ -268,10 +294,11 @@ class FoodsCleanupManager:
         s = report["summary"]
         print(
             f"[done] {s['merge_candidates_total']} merge candidate(s) across "
-            f"{s['duplicate_groups']} group(s) — {s['actions_applied']} applied ({s['mode']} mode)",
+            f"{s['duplicate_groups']} group(s) -- {s['actions_applied']} applied ({s['mode']} mode)",
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Foods Cleanup",
             "Foods Total": s["foods_total"],
             "Duplicate Groups": s["duplicate_groups"],
             "Merge Candidates": s["merge_candidates_total"],
