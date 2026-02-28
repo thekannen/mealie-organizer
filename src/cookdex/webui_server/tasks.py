@@ -177,6 +177,9 @@ def _build_taxonomy_refresh(options: dict[str, Any]) -> TaskExecution:
         if sync_tools:
             stages.append("tools")
         cmd = _py_module("cookdex.data_maintenance", "--stages", ",".join(stages))
+        mode = _str_option(options, "mode", "merge") or "merge"
+        if mode != "merge":
+            cmd.extend(["--taxonomy-mode", mode])
         if cleanup_apply:
             cmd.append("--apply-cleanups")
         return TaskExecution(cmd, env, dangerous_requested=(dangerous or cleanup_apply))

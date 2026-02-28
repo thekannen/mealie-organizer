@@ -156,6 +156,15 @@ class LabelsSyncManager:
             f"[done] labels created={created} deleted={deleted} skipped={skipped} failed={failed}",
             flush=True,
         )
+        summary = {
+            "Labels in Config": len(desired),
+            "Labels in Mealie": len(existing),
+            "Created": created,
+            "Deleted": deleted,
+            "Skipped": skipped,
+            "Failed": failed,
+        }
+        print(f"[summary] {json.dumps(summary)}", flush=True)
         return report
 
 

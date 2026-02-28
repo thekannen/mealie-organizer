@@ -333,6 +333,16 @@ class ToolsSyncManager:
             f"merged={merged} failed={failed}",
             flush=True,
         )
+        summary = {
+            "Tools in Config": len(desired),
+            "Tools in Mealie": len(existing),
+            "Created": created,
+            "Skipped": skipped,
+            "Merge Candidates": len(merge_candidates),
+            "Merged": merged,
+            "Failed": failed,
+        }
+        print(f"[summary] {json.dumps(summary)}", flush=True)
         return report
 
 

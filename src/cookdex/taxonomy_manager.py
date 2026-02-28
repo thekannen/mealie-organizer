@@ -157,33 +157,43 @@ class MealieTaxonomyManager:
                 print(f"[error] Failed: {name} -> {response.status_code} {response.text}")
 
         print(f"[done] endpoint={endpoint} created={created} skipped={skipped} failed={failed}")
+        return {"endpoint": endpoint, "created": created, "skipped": skipped, "failed": failed}
 
     def cleanup_tags(self, apply=False, max_length=24, min_usage=1, delete_noisy=False, only_unused=False):
-        recipes = self.get_recipes()
-        tags = self.get_items("tags")
+        if only_unused:
+            # Fast path: Mealie's /empty endpoint returns tags with 0 recipes
+            # in a single lightweight query instead of scanning all recipes.
+            empty_tags = self._get_paginated(f"{self.base_url}/organizers/tags/empty")
+            candidates = [
+                {"id": tag["id"], "name": tag.get("name", ""), "usage": 0}
+                for tag in empty_tags
+                if tag.get("id") and tag.get("name")
+            ]
+            candidates.sort(key=lambda t: t["name"])
+        else:
+            # Full scan needed for usage-based, length-based, and noisy filters
+            recipes = self.get_recipes()
+            tags = self.get_items("tags")
 
-        usage = {(tag.get("name") or ""): 0 for tag in tags if tag.get("name")}
-        tag_by_name = {(tag.get("name") or ""): tag for tag in tags if tag.get("name")}
+            usage = {(tag.get("name") or ""): 0 for tag in tags if tag.get("name")}
+            tag_by_name = {(tag.get("name") or ""): tag for tag in tags if tag.get("name")}
 
-        for recipe in recipes:
-            for tag in recipe.get("tags") or []:
-                name = tag.get("name")
-                if name in usage:
-                    usage[name] += 1
+            for recipe in recipes:
+                for tag in recipe.get("tags") or []:
+                    name = tag.get("name")
+                    if name in usage:
+                        usage[name] += 1
 
-        candidates = []
-        for name, count in sorted(usage.items(), key=lambda item: (item[1], item[0])):
-            if only_unused and count != 0:
-                continue
+            candidates = []
+            for name, count in sorted(usage.items(), key=lambda item: (item[1], item[0])):
+                is_low_usage = count < min_usage
+                is_long = len(name) >= max_length
+                is_noisy = delete_noisy and self.noisy_tag(name)
 
-            is_low_usage = count < min_usage
-            is_long = len(name) >= max_length
-            is_noisy = delete_noisy and self.noisy_tag(name)
-
-            if is_low_usage or is_long or is_noisy:
-                tag = tag_by_name.get(name)
-                if tag and tag.get("id"):
-                    candidates.append({"id": tag["id"], "name": name, "usage": count})
+                if is_low_usage or is_long or is_noisy:
+                    tag = tag_by_name.get(name)
+                    if tag and tag.get("id"):
+                        candidates.append({"id": tag["id"], "name": name, "usage": count})
 
         effective_apply = apply and not self.dry_run
         mode = "APPLY" if effective_apply else "DRY-RUN"
@@ -405,12 +415,13 @@ def main():
 
         categories_file, categories = load_json_items(args.categories_file)
         print(f"[start] Import categories from {categories_file.relative_to(REPO_ROOT)}")
-        manager.import_items("categories", categories, replace=replace_categories)
+        cat_result = manager.import_items("categories", categories, replace=replace_categories)
 
+        tag_result = {"endpoint": "tags", "created": 0, "skipped": 0, "failed": 0}
         if args.tags_file:
             tags_file, tags = load_json_items(args.tags_file)
             print(f"[start] Import tags from {tags_file.relative_to(REPO_ROOT)}")
-            manager.import_items("tags", tags, replace=replace_tags)
+            tag_result = manager.import_items("tags", tags, replace=replace_tags)
         else:
             print("[warn] No --tags-file provided; skipping tag import.")
 
@@ -424,6 +435,17 @@ def main():
             )
 
         print("[done] Refresh complete.")
+        summary = {
+            "Mode": args.mode,
+            "Categories": len(categories),
+            "Categories Created": cat_result["created"],
+            "Categories Skipped": cat_result["skipped"],
+            "Tags": tag_result["skipped"] + tag_result["created"] + tag_result["failed"],
+            "Tags Created": tag_result["created"],
+            "Tags Skipped": tag_result["skipped"],
+            "Failed": cat_result["failed"] + tag_result["failed"],
+        }
+        print(f"[summary] {json.dumps(summary)}", flush=True)
 
 
 if __name__ == "__main__":
