@@ -30,6 +30,7 @@ import {
 } from "./utils.jsx";
 import Icon from "./components/Icon";
 import CoverageRing from "./components/CoverageRing";
+import RecipeWorkspacePage from "./pages/recipe-workspace/RecipeWorkspacePage";
 
 // ─── Structured log parser ────────────────────────────────────────────────────
 const DATA_MAINTENANCE_STAGE_LABELS = {
@@ -724,6 +725,7 @@ export default function App() {
   const [taxonomyBootstrapMode, setTaxonomyBootstrapMode] = useState("replace");
   const [starterPackMode, setStarterPackMode] = useState("merge");
   const [taxonomyActionLoading, setTaxonomyActionLoading] = useState("");
+  const [taxonomySetupFiles, setTaxonomySetupFiles] = useState([...TAXONOMY_FILE_NAMES]);
 
   const [envSpecs, setEnvSpecs] = useState({});
   const [envDraft, setEnvDraft] = useState({});
@@ -762,6 +764,7 @@ export default function App() {
   const [lastLoadedAt, setLastLoadedAt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set(["Data Pipeline", "Actions", "Organizers", "Audits"]));
+  const [taskHandoff, setTaskHandoff] = useState(null);
 
   const selectedTaskDef = useMemo(
     () => tasks.find((item) => item.task_id === selectedTask) || null,
@@ -1024,6 +1027,14 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("cookdex_page", activePage);
   }, [activePage]);
+
+  useEffect(() => {
+    if (activePage !== "tasks" || !taskHandoff?.task_id) {
+      return;
+    }
+    setSelectedTask(taskHandoff.task_id);
+    setTaskHandoff(null);
+  }, [activePage, taskHandoff]);
 
   useEffect(() => {
     window.localStorage.setItem("cookdex_sidebar", sidebarCollapsed ? "collapsed" : "expanded");
@@ -1360,9 +1371,9 @@ export default function App() {
       const prev = prevRunsRef.current;
       const qualityJustFinished = nextRuns.some((run) => {
         if (run.task_id !== "health-check") return false;
-        if (run.status !== "completed") return false;
+        if (run.status !== "succeeded") return false;
         const old = prev.find((r) => r.run_id === run.run_id);
-        return !old || old.status !== "completed";
+        return !old || old.status !== "succeeded";
       });
       prevRunsRef.current = nextRuns;
       setRuns(nextRuns);
@@ -2018,13 +2029,17 @@ export default function App() {
     }
   }
 
-  async function initializeFromMealieBaseline() {
+  async function initializeFromMealieBaseline(includeFiles = taxonomySetupFiles) {
     try {
       clearBanners();
+      if (!Array.isArray(includeFiles) || includeFiles.length === 0) {
+        setError("Select at least one taxonomy file.");
+        return;
+      }
       setTaxonomyActionLoading("mealie");
       const payload = await api("/config/taxonomy/initialize-from-mealie", {
         method: "POST",
-        body: { mode: taxonomyBootstrapMode },
+        body: { mode: taxonomyBootstrapMode, files: includeFiles },
       });
       await loadData();
       const changedCount = Object.keys(payload?.changes || {}).length;
@@ -2039,14 +2054,19 @@ export default function App() {
     }
   }
 
-  async function importStarterPack() {
+  async function importStarterPack(includeFiles = taxonomySetupFiles) {
     try {
       clearBanners();
+      if (!Array.isArray(includeFiles) || includeFiles.length === 0) {
+        setError("Select at least one taxonomy file.");
+        return;
+      }
       setTaxonomyActionLoading("starter-pack");
       const payload = await api("/config/taxonomy/import-starter-pack", {
         method: "POST",
         body: {
           mode: starterPackMode,
+          files: includeFiles,
         },
       });
       await loadData();
@@ -3419,6 +3439,71 @@ export default function App() {
           </article>
 
           <article className="card">
+            <h3><Icon name="book-open" /> Taxonomy Setup</h3>
+            <p className="muted">Initialize or seed managed taxonomy files. Use this once, then continue authoring in Recipe Organization.</p>
+
+            <label className="field">
+              <span>Files</span>
+              <div className="taxonomy-setup-files">
+                {TAXONOMY_FILE_NAMES.map((name) => (
+                  <label key={`setup-${name}`} className="field-inline">
+                    <input
+                      type="checkbox"
+                      checked={taxonomySetupFiles.includes(name)}
+                      onChange={(event) => {
+                        setTaxonomySetupFiles((prev) => {
+                          if (event.target.checked) {
+                            return [...new Set([...prev, name])];
+                          }
+                          return prev.filter((item) => item !== name);
+                        });
+                      }}
+                    />
+                    <span>{CONFIG_LABELS[name]}</span>
+                  </label>
+                ))}
+              </div>
+            </label>
+
+            <label className="field">
+              <span>Initialize from Mealie</span>
+              <select value={taxonomyBootstrapMode} onChange={(event) => setTaxonomyBootstrapMode(event.target.value)}>
+                <option value="replace">Replace managed files with current Mealie</option>
+                <option value="merge">Merge current Mealie into managed files</option>
+              </select>
+            </label>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => initializeFromMealieBaseline(taxonomySetupFiles)}
+              disabled={taxonomyActionLoading === "mealie"}
+            >
+              <Icon name="download" />
+              {taxonomyActionLoading === "mealie" ? "Initializing..." : "Initialize from Mealie"}
+            </button>
+
+            <label className="field">
+              <span>Starter Pack Import Mode</span>
+              <select value={starterPackMode} onChange={(event) => setStarterPackMode(event.target.value)}>
+                <option value="merge">Merge starter pack into managed files</option>
+                <option value="replace">Replace managed files with starter pack</option>
+              </select>
+            </label>
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => importStarterPack(taxonomySetupFiles)}
+              disabled={taxonomyActionLoading === "starter-pack"}
+            >
+              <Icon name="upload" />
+              {taxonomyActionLoading === "starter-pack" ? "Importing..." : "Import Starter Pack"}
+            </button>
+            <p className="muted tiny">
+              Recommended for existing libraries: initialize from Mealie first, then import starter pack in merge mode.
+            </p>
+          </article>
+
+          <article className="card">
             <h3><Icon name="info" /> About AI Integration</h3>
             <p className="muted">AI is optional. The following tasks use the configured provider when enabled:</p>
             <ul className="ai-task-list">
@@ -3439,6 +3524,17 @@ export default function App() {
   }
 
   function renderRecipeOrganizationPage() {
+    return (
+      <RecipeWorkspacePage
+        onNotice={showNotice}
+        onError={handleError}
+        onOpenTasks={(taskId) => {
+          setTaskHandoff({ task_id: taskId });
+          setActivePage("tasks");
+        }}
+      />
+    );
+
     const activeContentCount =
       activeConfigMode === "cookbook-cards"
         ? activeCookbookItems.length

@@ -7,8 +7,14 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import Services, build_runtime_env, require_services, require_session, resolve_runtime_value
-from ..schemas import ConfigWriteRequest, StarterPackImportRequest, TaxonomySyncRequest
-from ..taxonomy_workspace import TaxonomyWorkspaceService
+from ..schemas import (
+    ConfigWriteRequest,
+    StarterPackImportRequest,
+    TaxonomySyncRequest,
+    TaxonomyWorkspaceDraftUpdateRequest,
+    TaxonomyWorkspaceVersionRequest,
+)
+from ..taxonomy_workspace import TaxonomyWorkspaceDraftService, TaxonomyWorkspaceService, WorkspaceVersionConflictError
 
 router = APIRouter(tags=["config"])
 
@@ -111,3 +117,73 @@ async def import_starter_pack(
         raise HTTPException(status_code=422, detail=str(exc))
     except requests.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to download starter pack: {exc}")
+
+
+@router.get("/config/workspace/draft")
+async def get_workspace_draft(
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    workspace = TaxonomyWorkspaceDraftService(repo_root=services.settings.config_root, config_files=services.config_files)
+    return workspace.get_draft()
+
+
+@router.put("/config/workspace/draft")
+async def put_workspace_draft(
+    payload: TaxonomyWorkspaceDraftUpdateRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    workspace = TaxonomyWorkspaceDraftService(repo_root=services.settings.config_root, config_files=services.config_files)
+    try:
+        return workspace.update_draft(
+            expected_version=payload.version,
+            draft_patch=payload.draft.model_dump(exclude_none=True),
+            replace=payload.replace,
+        )
+    except WorkspaceVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workspace draft version conflict. expected={exc.expected} actual={exc.actual}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/config/workspace/validate")
+async def validate_workspace_draft(
+    payload: TaxonomyWorkspaceVersionRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    workspace = TaxonomyWorkspaceDraftService(repo_root=services.settings.config_root, config_files=services.config_files)
+    try:
+        return workspace.validate_draft(expected_version=payload.version)
+    except WorkspaceVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workspace draft version conflict. expected={exc.expected} actual={exc.actual}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/config/workspace/publish")
+async def publish_workspace_draft(
+    payload: TaxonomyWorkspaceVersionRequest,
+    session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    workspace = TaxonomyWorkspaceDraftService(repo_root=services.settings.config_root, config_files=services.config_files)
+    try:
+        return workspace.publish_draft(
+            expected_version=payload.version,
+            published_by=str(session.get("username") or ""),
+        )
+    except WorkspaceVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workspace draft version conflict. expected={exc.expected} actual={exc.actual}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

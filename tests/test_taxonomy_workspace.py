@@ -220,3 +220,124 @@ def test_tag_rules_noop_when_missing(tmp_path: Path) -> None:
     assert result["created"] is False
     assert result["generated_total"] == 0
     assert not rules_path.exists()
+
+
+def test_taxonomy_workspace_draft_validate_publish_endpoints(tmp_path: Path, monkeypatch) -> None:
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+
+        draft_get = client.get("/cookdex/api/v1/config/workspace/draft")
+        assert draft_get.status_code == 200, draft_get.text
+        snapshot = draft_get.json()
+        version = snapshot["version"]
+        assert snapshot["draft"]["categories"][0]["name"] == "Existing Category"
+
+        update = client.put(
+            "/cookdex/api/v1/config/workspace/draft",
+            json={
+                "version": version,
+                "draft": {
+                    "categories": [{"name": "Weeknight"}, {"name": "Weekend"}],
+                    "cookbooks": [
+                        {
+                            "name": "Broken Filters",
+                            "description": "",
+                            "queryFilterString": "unknown.field IN [\"x\"]",
+                            "public": False,
+                            "position": 1,
+                        }
+                    ],
+                },
+            },
+            headers=_CSRF,
+        )
+        assert update.status_code == 200, update.text
+        updated_snapshot = update.json()
+        updated_version = updated_snapshot["version"]
+        assert updated_version != version
+
+        stale_update = client.put(
+            "/cookdex/api/v1/config/workspace/draft",
+            json={"version": version, "draft": {"tags": [{"name": "stale"}]}},
+            headers=_CSRF,
+        )
+        assert stale_update.status_code == 409, stale_update.text
+
+        validate_bad = client.post(
+            "/cookdex/api/v1/config/workspace/validate",
+            json={"version": updated_version},
+            headers=_CSRF,
+        )
+        assert validate_bad.status_code == 200, validate_bad.text
+        bad_payload = validate_bad.json()
+        assert bad_payload["can_publish"] is False
+        assert bad_payload["summary"]["blocking_errors"] >= 1
+
+        blocked_publish = client.post(
+            "/cookdex/api/v1/config/workspace/publish",
+            json={"version": updated_version},
+            headers=_CSRF,
+        )
+        assert blocked_publish.status_code == 422, blocked_publish.text
+
+        fix_update = client.put(
+            "/cookdex/api/v1/config/workspace/draft",
+            json={
+                "version": updated_version,
+                "draft": {
+                    "cookbooks": [
+                        {
+                            "name": "Weeknight",
+                            "description": "",
+                            "queryFilterString": "tags.name IN [\"Existing Tag\"]",
+                            "public": False,
+                            "position": 1,
+                        }
+                    ]
+                },
+            },
+            headers=_CSRF,
+        )
+        assert fix_update.status_code == 200, fix_update.text
+        fixed_version = fix_update.json()["version"]
+
+        validate_good = client.post(
+            "/cookdex/api/v1/config/workspace/validate",
+            json={"version": fixed_version},
+            headers=_CSRF,
+        )
+        assert validate_good.status_code == 200, validate_good.text
+        assert validate_good.json()["can_publish"] is True
+
+        publish = client.post(
+            "/cookdex/api/v1/config/workspace/publish",
+            json={"version": fixed_version},
+            headers=_CSRF,
+        )
+        assert publish.status_code == 200, publish.text
+        publish_payload = publish.json()
+        assert "taxonomy-refresh" in [item["task_id"] for item in publish_payload["next_tasks"]]
+        assert publish_payload["files"]["categories"]["changed"] is True
+        assert publish_payload["files"]["cookbooks"]["changed"] is True
+
+        categories = client.get("/cookdex/api/v1/config/files/categories")
+        assert categories.status_code == 200
+        assert categories.json()["content"] == [{"name": "Weeknight"}, {"name": "Weekend"}]
+
+    draft_path = config_root / "configs" / ".drafts" / "taxonomy-workspace.json"
+    assert draft_path.exists()

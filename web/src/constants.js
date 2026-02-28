@@ -23,7 +23,7 @@ export const PAGE_META = {
   },
   "recipe-organization": {
     title: "Recipe Organization",
-    subtitle: "Define your managed taxonomy baseline, then sync it to Mealie with tasks.",
+    subtitle: "Draft, validate, and publish taxonomy changes before syncing in Tasks.",
   },
   users: {
     title: "Users and Access",
