@@ -1,7 +1,7 @@
 {
   "name": "cookdex-web",
   "private": true,
-  "version": "2026.2.148",
+  "version": "2026.2.150",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,5 +17,8 @@
   "devDependencies": {
     "playwright": "^1.53.0",
     "vite": "^7.3.1"
+  },
+  "overrides": {
+    "rollup": ">=4.59.0"
   }
 }

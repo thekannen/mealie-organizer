@@ -469,33 +469,31 @@ _MEALIE_FILE_ENV_MAP: dict[str, str] = {
 _MEALIE_RAW_DB_KEYS = set(_MEALIE_ENV_MAP) | set(_MEALIE_FILE_ENV_MAP) | {"POSTGRES_URL_OVERRIDE"}
 
 
-_RE_SSH_HOST = re.compile(r"^[A-Za-z0-9._:%-]+$")
-_RE_SSH_USER = re.compile(r"^[A-Za-z0-9._-]+$")
-_RE_DOCKER_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
-
-
 def _validated_ssh_host(value: str) -> str:
     """Validate an SSH hostname/IP to prevent argument injection."""
     clean = str(value or "").strip()
-    if not clean or not _RE_SSH_HOST.match(clean):
+    m = re.fullmatch(r"[A-Za-z0-9._:%-]+", clean) if clean else None
+    if not m:
         raise ValueError("Invalid SSH host.")
-    return clean
+    return m.group()
 
 
 def _validated_ssh_user(value: str) -> str:
     """Validate an SSH username to prevent argument injection."""
     clean = str(value or "").strip()
-    if not clean or not _RE_SSH_USER.match(clean):
+    m = re.fullmatch(r"[A-Za-z0-9._-]+", clean) if clean else None
+    if not m:
         raise ValueError("Invalid SSH user.")
-    return clean
+    return m.group()
 
 
 def _validated_container_name(value: str) -> str:
     """Validate a Docker container name to prevent command injection."""
     clean = str(value or "").strip()
-    if not clean or not _RE_DOCKER_NAME.match(clean):
+    m = re.fullmatch(r"[A-Za-z0-9._/-]+", clean) if clean else None
+    if not m:
         raise ValueError("Invalid container name.")
-    return clean
+    return m.group()
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
@@ -514,20 +512,34 @@ def _validated_ssh_key_path(raw_path: str) -> str:
 
     # Extract just the filename; ignore any directory components the
     # caller may have supplied so the result is always inside ~/.ssh/.
-    filename = os.path.basename(os.path.expanduser(candidate))
-    if not filename or filename.startswith("."):
+    target_name = os.path.basename(os.path.expanduser(candidate))
+    if not target_name or target_name.startswith("."):
         raise ValueError("Invalid SSH key filename.")
 
-    resolved = os.path.realpath(os.path.join(ssh_dir, filename))
-
-    # Belt-and-suspenders: ensure the resolved path is under ~/.ssh/.
-    if not resolved.startswith(ssh_dir + os.sep) and resolved != ssh_dir:
-        raise ValueError("SSH key path escapes ~/.ssh/.")
-
-    if not os.path.isfile(resolved):
+    # Verify the file exists by enumerating ~/.ssh/ entries rather than
+    # passing user-derived data to filesystem APIs (prevents path-injection
+    # taint flow).
+    try:
+        dir_entries = os.listdir(ssh_dir)
+    except OSError:
         raise FileNotFoundError("SSH key not found.")
 
-    return resolved
+    # Match against the directory listing (untainted source) and build the
+    # return path from the listing entry, breaking the taint chain.
+    matched = next((e for e in dir_entries if e == target_name), None)
+    if matched is None:
+        raise FileNotFoundError("SSH key not found.")
+
+    safe_path = os.path.realpath(os.path.join(ssh_dir, matched))
+
+    # Belt-and-suspenders: ensure the resolved path is under ~/.ssh/.
+    if not safe_path.startswith(ssh_dir + os.sep) and safe_path != ssh_dir:
+        raise ValueError("SSH key path escapes ~/.ssh/.")
+
+    if not os.path.isfile(safe_path):
+        raise FileNotFoundError("SSH key not found.")
+
+    return safe_path
 
 
 def _ssh_exec(
