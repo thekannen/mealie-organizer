@@ -110,6 +110,22 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
       .map((_, index) => index)
       .filter((index) => !query || JSON.stringify(resourceItems[index] || {}).toLowerCase().includes(query));
   }, [resourceItems, search]);
+  const taxonomyNameStats = useMemo(() => {
+    const names = new Map();
+    const duplicateNames = new Set();
+    let missingNameCount = 0;
+    for (const item of resourceItems) {
+      const normalized = String(item?.name || "").trim().toLowerCase();
+      if (!normalized) {
+        missingNameCount += 1;
+        continue;
+      }
+      const seen = names.get(normalized) || 0;
+      names.set(normalized, seen + 1);
+      if (seen >= 1) duplicateNames.add(normalized);
+    }
+    return { missingNameCount, duplicateNames };
+  }, [resourceItems]);
 
   const cookbooks = useMemo(() => Array.isArray(draft.cookbooks) ? draft.cookbooks : [], [draft.cookbooks]);
   const filteredCookbookIndexes = useMemo(() => {
@@ -235,6 +251,36 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
 
   const validationCurrent = Boolean(validation && snapshot && validation.version === snapshot.version);
   const canPublish = Boolean(validationCurrent && validation.can_publish && !hasUnsavedChanges);
+  const validationState = useMemo(() => {
+    if (hasUnsavedChanges) {
+      return {
+        tone: "warning",
+        label: "Save draft changes before validation.",
+      };
+    }
+    if (!validation) {
+      return {
+        tone: "neutral",
+        label: "No validation has been run for this draft version.",
+      };
+    }
+    if (!validationCurrent) {
+      return {
+        tone: "warning",
+        label: "Validation results are stale. Re-run validation for the latest draft.",
+      };
+    }
+    if (validation.can_publish) {
+      return {
+        tone: "success",
+        label: "Draft passed validation and is ready to publish.",
+      };
+    }
+    return {
+      tone: "danger",
+      label: "Blocking errors detected. Fix them before publish.",
+    };
+  }, [hasUnsavedChanges, validation, validationCurrent]);
 
   const resourceRows = useMemo(() => {
     return ALL_RESOURCES.map((name) => ({
@@ -310,7 +356,7 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
 
         {tab === "taxonomy" ? (
           <div className="workspace-tab-content">
-            <div className="taxonomy-header">
+            <div className="taxonomy-header workspace-sticky-top">
               <div className="taxonomy-resource-tabs">
                 {TAXONOMY_RESOURCES.map((name) => (
                   <button
@@ -354,12 +400,31 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
               </div>
             </div>
 
+            <div className="taxonomy-summary-bar">
+              <span className="status-pill">{RESOURCE_LABELS[resource]}</span>
+              <span className="tiny muted">
+                Rows {resourceItems.length} - Showing {filteredResourceIndexes.length}
+              </span>
+              <span className="tiny muted">Selected {selectedRows.size}</span>
+              {taxonomyNameStats.missingNameCount > 0 ? (
+                <span className="status-pill danger">
+                  Missing names {taxonomyNameStats.missingNameCount}
+                </span>
+              ) : null}
+              {taxonomyNameStats.duplicateNames.size > 0 ? (
+                <span className="status-pill warning">
+                  Duplicate names {taxonomyNameStats.duplicateNames.size}
+                </span>
+              ) : null}
+            </div>
+
             <div className="workspace-table-wrap">
               <table className="workspace-table">
                 <thead>
                   <tr>
                     <th />
                     <th />
+                    <th>#</th>
                     <th>Name</th>
                     {resource === "labels" ? <th>Color</th> : null}
                     {resource === "tools" ? <th>On Hand</th> : null}
@@ -371,9 +436,14 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                 <tbody>
                   {filteredResourceIndexes.map((index) => {
                     const item = resourceItems[index] || {};
+                    const normalizedName = String(item.name || "").trim().toLowerCase();
+                    const rowMissingName = !normalizedName;
+                    const rowDuplicateName = Boolean(normalizedName && taxonomyNameStats.duplicateNames.has(normalizedName));
+                    const rowInvalid = rowMissingName || rowDuplicateName;
                     return (
                       <tr
                         key={`${resource}-${index}`}
+                        className={rowInvalid ? "workspace-row invalid" : "workspace-row"}
                         draggable
                         onDragStart={() => setDragIndex(index)}
                         onDragOver={(event) => event.preventDefault()}
@@ -400,16 +470,21 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                           />
                         </td>
                         <td className="drag-handle">::</td>
+                        <td className="workspace-row-index">{index + 1}</td>
                         <td>
-                          <input
-                            value={String(item.name || "")}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              updateDraft((next) => {
-                                next[resource][index] = { ...(next[resource][index] || {}), name: value };
-                              });
-                            }}
-                          />
+                          <div className="workspace-name-cell">
+                            <input
+                              value={String(item.name || "")}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                updateDraft((next) => {
+                                  next[resource][index] = { ...(next[resource][index] || {}), name: value };
+                                });
+                              }}
+                            />
+                            {rowMissingName ? <span className="tiny danger-text">Name is required.</span> : null}
+                            {!rowMissingName && rowDuplicateName ? <span className="tiny danger-text">Duplicate name.</span> : null}
+                          </div>
                         </td>
                         {resource === "labels" ? (
                           <td>
@@ -491,6 +566,15 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                       </tr>
                     );
                   })}
+                  {!filteredResourceIndexes.length ? (
+                    <tr>
+                      <td colSpan={resource === "units_aliases" ? 7 : resource === "labels" || resource === "tools" ? 6 : 5}>
+                        <p className="muted tiny workspace-empty-row">
+                          No rows match this filter. Clear search or add a new row.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
@@ -722,6 +806,24 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
         {tab === "validate" ? (
           <div className="workspace-tab-content">
             <p className="muted">Validation is required before publish.</p>
+            <article className={`workspace-validation-state ${validationState.tone}`}>
+              <h4>Validation Status</h4>
+              <p className="tiny">{validationState.label}</p>
+              <ul className="workspace-checklist">
+                <li className={!hasUnsavedChanges ? "ok" : "pending"}>
+                  <Icon name={!hasUnsavedChanges ? "check-circle" : "x-circle"} />
+                  <span>Draft saved</span>
+                </li>
+                <li className={validationCurrent ? "ok" : "pending"}>
+                  <Icon name={validationCurrent ? "check-circle" : "x-circle"} />
+                  <span>Validation run on current version</span>
+                </li>
+                <li className={validationCurrent && validation?.can_publish ? "ok" : "pending"}>
+                  <Icon name={validationCurrent && validation?.can_publish ? "check-circle" : "x-circle"} />
+                  <span>No blocking errors</span>
+                </li>
+              </ul>
+            </article>
             {hasUnsavedChanges ? (
               <p className="banner warning"><span>Save draft changes before validation.</span></p>
             ) : null}
@@ -759,7 +861,16 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                   </article>
                 ) : null}
               </div>
-            ) : null}
+            ) : (
+              <article className="validation-panel">
+                <h4>What validation checks</h4>
+                <ul>
+                  <li>Schema and type checks across all draft resources.</li>
+                  <li>Duplicate and normalization checks for taxonomy values.</li>
+                  <li>Cookbook rule integrity and query filter checks.</li>
+                </ul>
+              </article>
+            )}
           </div>
         ) : null}
 

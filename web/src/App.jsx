@@ -739,6 +739,8 @@ export default function App() {
     dbDetect: { loading: false, ok: null, detail: "" },
   });
   const [availableModels, setAvailableModels] = useState({ openai: [], ollama: [], anthropic: [] });
+  const settingsGroupRefs = useRef({});
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState(new Set());
 
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
@@ -789,6 +791,22 @@ export default function App() {
       if (next.has(name)) { next.delete(name); } else { next.add(name); }
       return next;
     });
+  }
+
+  function toggleSettingsGroup(name) {
+    setCollapsedSettingsGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  function scrollToSettingsGroup(name) {
+    const target = settingsGroupRefs.current[name];
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   const TASK_ICONS = {
@@ -850,6 +868,18 @@ export default function App() {
       (a, b) => (GROUP_ORDER[a[0]] ?? 99) - (GROUP_ORDER[b[0]] ?? 99)
     );
   }, [envList]);
+
+  useEffect(() => {
+    setCollapsedSettingsGroups((prev) => {
+      if (prev.size > 0 || visibleEnvGroups.length === 0) return prev;
+      const defaults = new Set(
+        visibleEnvGroups
+          .map(([group]) => group)
+          .filter((group) => group !== "Connection")
+      );
+      return defaults;
+    });
+  }, [visibleEnvGroups]);
 
   const runStats = useMemo(() => {
     const stats = { queued: 0, running: 0, succeeded: 0, failed: 0, canceled: 0 };
@@ -3256,6 +3286,15 @@ export default function App() {
   const GROUP_ICONS = { Connection: "link", AI: "wand", "Direct DB": "database" };
 
   function renderSettingsPage() {
+    const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
+    const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
+    const visibleGroupCount = visibleEnvGroups.length;
+    const expandedGroupCount = visibleEnvGroups.reduce(
+      (sum, [group]) => sum + (collapsedSettingsGroups.has(group) ? 0 : 1),
+      0
+    );
+    const visibleSettingCount = visibleEnvGroups.reduce((sum, [, items]) => sum + items.length, 0);
+
     return (
       <section className="page-grid settings-grid">
         <article className="card">
@@ -3270,15 +3309,60 @@ export default function App() {
             </button>
           </div>
 
-          <div className="settings-groups">
+          <div className="settings-overview">
+            <div className="settings-overview-stat">
+              <span className="tiny muted">Visible settings</span>
+              <strong>{visibleSettingCount}</strong>
+            </div>
+            <div className="settings-overview-stat">
+              <span className="tiny muted">Groups</span>
+              <strong>{visibleGroupCount}</strong>
+            </div>
+            <div className="settings-overview-stat">
+              <span className="tiny muted">Expanded</span>
+              <strong>{expandedGroupCount}</strong>
+            </div>
+          </div>
+
+          <div className="settings-jump-nav" role="navigation" aria-label="Jump to settings section">
             {visibleEnvGroups.map(([group, items]) => (
-              <section key={group} className="settings-group">
-                <h4><Icon name={GROUP_ICONS[group] || "settings"} /> {group}</h4>
-                <div className="settings-rows">
+              <button
+                key={`jump-${group}`}
+                type="button"
+                className="chip-btn"
+                onClick={() => scrollToSettingsGroup(group)}
+              >
+                <span>{group}</span>
+                <span className="chip-count">{items.length}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="settings-groups">
+            {visibleEnvGroups.map(([group, items]) => {
+              const isCollapsed = collapsedSettingsGroups.has(group);
+              return (
+                <section
+                  key={group}
+                  className={`settings-group ${isCollapsed ? "collapsed" : ""}`}
+                  ref={(node) => {
+                    if (node) settingsGroupRefs.current[group] = node;
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="settings-group-toggle"
+                    onClick={() => toggleSettingsGroup(group)}
+                    aria-expanded={!isCollapsed}
+                  >
+                    <h4><Icon name={GROUP_ICONS[group] || "settings"} /> {group}</h4>
+                    <span className="tiny muted">{items.length} setting{items.length === 1 ? "" : "s"}</span>
+                    <Icon name="chevron" />
+                  </button>
+                  {!isCollapsed ? (
+                    <div className="settings-rows">
                   {items.map((item) => {
                     const key = String(item.key);
-                    const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-                    const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
                     if (provider !== "chatgpt" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
                     if (provider !== "anthropic" && (key === "ANTHROPIC_MODEL" || key === "ANTHROPIC_API_KEY")) return null;
                     if (provider !== "ollama" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
@@ -3379,10 +3463,12 @@ export default function App() {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
-              </section>
-            ))}
+                      })}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
           </div>
 
           <button className="primary" onClick={saveEnvironment}>
@@ -3405,9 +3491,7 @@ export default function App() {
                 { id: "dbDetect", label: "Auto-detect DB", hint: "SSH into Mealie host to discover DB credentials.", requiresSsh: true },
                 { id: "db", label: "Test DB", hint: "Verify direct database connection.", requiresDb: true },
               ].filter((test) => {
-                const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-                const p = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
-                if (test.provider && p !== test.provider) return false;
+                if (test.provider && provider !== test.provider) return false;
                 if (test.requiresSsh) {
                   return Boolean(String(envDraft["MEALIE_DB_SSH_HOST"] || "").trim());
                 }
