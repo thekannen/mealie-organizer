@@ -45,15 +45,15 @@ const REQUIRED_MARKERS = [
   "recipe:pill-tags",
   "recipe:pill-tools",
   "recipe:pill-units",
-  "recipe:save-file",
-  "recipe:discard",
-  "recipe:import-json",
+  "recipe:save-draft",
+  "recipe:discard-resource",
+  "recipe:open-advanced-json",
   "users:generate-password",
   "users:create-user",
   "users:reset-password",
   "users:remove-user",
   "help:faq-open",
-  "help:docs-open",
+  "help:task-guides-open",
   "about:version-visible",
   "about:links-visible",
   "api:queue-all-tasks",
@@ -712,14 +712,14 @@ async function main() {
       }
     }
 
-    // "Run Quality Audit →" CTA — shown in empty-state medallion when no recipes have been processed
+    // "Run Quality Audit ->" CTA - shown in empty-state medallion when no recipes have been processed
     const qualityAuditBtn = page.getByRole("button", { name: /run quality audit/i }).first();
     if (await qualityAuditBtn.isVisible().catch(() => false)) {
       await qualityAuditBtn.click();
       rememberButtonClick("overview", "Run Quality Audit");
       markControl("overview", "overview:run-quality-audit");
       await page.waitForTimeout(400);
-      await expectVisible(page.locator(".task-picker").first(), "'Run Quality Audit →' did not navigate to Tasks page.");
+      await expectVisible(page.locator(".task-picker").first(), "'Run Quality Audit ->' did not navigate to Tasks page.");
       markInteraction("overview", "quality-audit-nav", "tasks-page-reached");
       await clickNav("Overview");
       await page.waitForTimeout(250);
@@ -1254,7 +1254,7 @@ async function main() {
       await ensureNoErrorBanner("Settings reload after clear failed");
     }
 
-    // Connection tests — visibility depends on selected provider
+    // Connection tests - visibility depends on selected provider
     await runConnectionButton("Test Mealie", "Check Mealie URL/API key connectivity.", "settings:test-mealie");
 
     const currentProvider = await providerSelect.inputValue().catch(() => "chatgpt");
@@ -1305,7 +1305,7 @@ async function main() {
     const mealieInputAfterReload = page.locator('.settings-row:has-text("Mealie Server URL") input').first();
     const mealieValueAfterReload = normalizeText(await mealieInputAfterReload.inputValue().catch(() => ""));
     if (!mealieValueAfterReload) {
-      throw new Error("Mealie URL was empty after Apply + Reload — settings may not have persisted.");
+      throw new Error("Mealie URL was empty after Apply + Reload - settings may not have persisted.");
     }
 
     // Banner close: if any banner appeared during apply/reload, verify the close button works
@@ -1334,7 +1334,6 @@ async function main() {
       "Recipe Organization header missing."
     );
 
-    // Switch to the Taxonomy tab (page defaults to "plan" tab)
     const taxonomyTab = page.locator(".recipe-workspace-tabs .pill-btn").filter({ hasText: /taxonomy/i }).first();
     await expectVisible(taxonomyTab, "Taxonomy tab pill missing.");
     await taxonomyTab.click();
@@ -1359,44 +1358,48 @@ async function main() {
       await pill.click();
       await page.waitForTimeout(200);
       markControl("recipe", matched.marker);
-      if (matched.configName === "units_aliases") {
-          // Structured units editor shows NAME/ALIASES fields — raw JSON fallback would show a textarea
-          await expectVisible(
-            page.locator(".structured-editor").first(),
-            "Units taxonomy rendered as raw JSON instead of structured editor."
-          );
-          // Verify it's the real structured editor (not advanced JSON edit mode)
-          const advancedMode = page.getByText(/advanced mode.*requires full json/i).first();
-          if (await advancedMode.isVisible().catch(() => false)) {
-            throw new Error("Units taxonomy unexpectedly fell back to advanced JSON editor mode.");
-          }
-          // Confirm an aliases/plural field is present (distinguishes structured from raw)
-          const aliasesField = page.locator(".structured-editor label").filter({ hasText: /aliases/i }).first();
-          if (await aliasesField.isVisible().catch(() => false)) {
-            markInteraction("recipe", "units-aliases-field", "structured-editor-confirmed");
+
+      const currentRows = page.locator(".workspace-table tbody tr.workspace-row");
+      if ((await currentRows.count()) === 0) {
+        const addRowBtn = page.getByRole("button", { name: /add row/i }).first();
+        if (await addRowBtn.isVisible().catch(() => false)) {
+          await addRowBtn.click();
+          await page.waitForTimeout(120);
+          const seededInput = page.locator(".workspace-table tbody tr.workspace-row .workspace-name-cell input").first();
+          if (await seededInput.isVisible().catch(() => false)) {
+            await seededInput.fill(`QA ${matched.key} ${Date.now().toString().slice(-4)}`);
+            await page.waitForTimeout(100);
           }
         }
+      }
+
+      if (matched.configName === "units_aliases") {
+        await expectVisible(page.locator(".workspace-table").first(), "Units taxonomy table was not visible.");
+        const aliasesHeader = page.locator(".workspace-table thead th").filter({ hasText: /aliases/i }).first();
+        await expectVisible(aliasesHeader, "Units taxonomy aliases column was not visible.");
+        markInteraction("recipe", "units-aliases-column", "workspace-table-confirmed");
+      }
 
       if (matched.configName === "labels") {
-          // Color picker in the Add Label form
-          const colorPickerInput = page.locator('.color-field input[type="color"]').first();
-          if (await colorPickerInput.isVisible().catch(() => false)) {
-            await colorPickerInput.fill("#ff6b6b");
-            markControl("recipe", "recipe:label-color-picker");
-            rememberButtonClick("recipe", "Color picker");
-            await page.waitForTimeout(150);
-            const hexInput = page.locator('.color-field input.color-hex').first();
-            if (await hexInput.isVisible().catch(() => false)) {
-              await hexInput.fill("#959595");
-              markInteraction("recipe", "label-color-hex-input", "present");
-              await page.waitForTimeout(100);
-            }
+        const colorPickerInput = page.locator('.workspace-table .color-field input[type="color"]').first();
+        if (await colorPickerInput.isVisible().catch(() => false)) {
+          await colorPickerInput.fill("#ff6b6b");
+          markControl("recipe", "recipe:label-color-picker");
+          rememberButtonClick("recipe", "Color picker");
+          await page.waitForTimeout(150);
+          const hexInput = page.locator(".workspace-table .color-field input").nth(1);
+          if (await hexInput.isVisible().catch(() => false)) {
+            await hexInput.fill("#959595");
+            markInteraction("recipe", "label-color-hex-input", "present");
+            await page.waitForTimeout(100);
           }
         }
+      }
 
       if (matched.configName === "tools") {
-          // "On Hand" checkbox in the Add Tool form
-          const onHandCheckbox = page.locator('label.field-inline input[type="checkbox"]').first();
+        const firstRow = page.locator(".workspace-table tbody tr.workspace-row").first();
+        if (await firstRow.isVisible().catch(() => false)) {
+          const onHandCheckbox = firstRow.locator('td input[type="checkbox"]').nth(1);
           if (await onHandCheckbox.isVisible().catch(() => false)) {
             const wasChecked = await onHandCheckbox.isChecked();
             await onHandCheckbox.click();
@@ -1409,31 +1412,54 @@ async function main() {
             }
           }
         }
-
-      // Up/Down reorder buttons — present on any pill that has list items
-      const upBtn = page.locator('.line-actions button', { hasText: "Up" }).first();
-      const downBtn = page.locator('.line-actions button', { hasText: "Down" }).first();
-      if (await upBtn.isVisible().catch(() => false)) {
-        markControl("recipe", "recipe:reorder-up");
-        if (!(await upBtn.isDisabled())) {
-          await upBtn.click();
-          await page.waitForTimeout(150);
-        } else {
-          markInteraction("recipe", "reorder-up", "first-item-disabled");
-        }
-      }
-      if (await downBtn.isVisible().catch(() => false)) {
-        markControl("recipe", "recipe:reorder-down");
-        if (!(await downBtn.isDisabled())) {
-          await downBtn.click();
-          await page.waitForTimeout(150);
-        } else {
-          markInteraction("recipe", "reorder-down", "last-item-disabled");
-        }
       }
     }
 
-    // Switch to Cookbooks top-level tab and verify
+    const categoriesPill = page.locator(".taxonomy-resource-tabs .pill-btn").filter({ hasText: /categories/i }).first();
+    await categoriesPill.click();
+    await page.waitForTimeout(200);
+    const categoryRows = page.locator(".workspace-table tbody tr.workspace-row");
+    if ((await categoryRows.count()) === 0) {
+      const addRowBtn = page.getByRole("button", { name: /add row/i }).first();
+      await expectVisible(addRowBtn, "Add Row button missing on taxonomy tab.");
+      await addRowBtn.click();
+      await page.waitForTimeout(120);
+    }
+    const firstNameInput = page.locator(".workspace-table tbody tr.workspace-row .workspace-name-cell input").first();
+    let originalName = "";
+    if (await firstNameInput.isVisible().catch(() => false)) {
+      originalName = await firstNameInput.inputValue().catch(() => "");
+      const draftName = `${(originalName || "QA Category").slice(0, 48)} QA`;
+      await firstNameInput.fill(draftName);
+      await page.waitForTimeout(120);
+    }
+
+    await clickButtonByRole("recipe", /^save draft$/i, "recipe:save-draft");
+    await ensureNoErrorBanner("Recipe draft save failed");
+
+    if (await firstNameInput.isVisible().catch(() => false)) {
+      await firstNameInput.fill(originalName);
+      await page.waitForTimeout(120);
+    }
+    const discardButton = page.getByRole("button", { name: /discard resource changes/i }).first();
+    await expectVisible(discardButton, "Discard Resource Changes button missing.");
+    if (await discardButton.isDisabled()) {
+      const fallbackName = `${(originalName || "QA Category").slice(0, 40)} Draft`;
+      await firstNameInput.fill(fallbackName);
+      await page.waitForTimeout(120);
+    }
+    await discardButton.click();
+    markControl("recipe", "recipe:discard-resource");
+    await ensureNoErrorBanner("Recipe resource discard failed");
+
+    await clickButtonByRole("recipe", /open advanced json/i, "recipe:open-advanced-json");
+    await expectVisible(page.locator(".workspace-json-drawer textarea").first(), "Advanced JSON drawer did not open.");
+    const closeDrawerButton = page.locator(".workspace-json-drawer .drawer-head button").first();
+    if (await closeDrawerButton.isVisible().catch(() => false)) {
+      await closeDrawerButton.click();
+      await page.waitForTimeout(180);
+    }
+
     const cookbooksTab = page.locator(".recipe-workspace-tabs .pill-btn").filter({ hasText: /cookbooks/i }).first();
     if (await cookbooksTab.isVisible().catch(() => false)) {
       await cookbooksTab.click();
@@ -1441,63 +1467,24 @@ async function main() {
       markControl("recipe", "recipe:pill-cookbooks");
     }
 
-    // Switch back to taxonomy tab for remaining interactions
-    await taxonomyTab.click();
-    await page.waitForTimeout(300);
-
-    // Verify the file browse input is present in the import drop zone
-    const fileInput = page.locator('.drop-zone input[type="file"]').first();
-    if ((await fileInput.count()) > 0) {
-      markInteraction("recipe", "file-browse-input", "present-in-dom");
+    const expandButton = page.locator(".cookbook-collapse-btn").filter({ hasText: /expand/i }).first();
+    if (await expandButton.isVisible().catch(() => false)) {
+      await expandButton.click();
+      await page.waitForTimeout(180);
+      markInteraction("recipe", "cookbook-expand", "first-entry");
+    }
+    const addFilterButton = page.locator(".workspace-cookbook-card .filter-add-btn").nth(1);
+    if (await addFilterButton.isVisible().catch(() => false)) {
+      await addFilterButton.click();
+      markInteraction("recipe", "cookbook-add-filter", "existing-entry");
+      await page.waitForTimeout(150);
     } else {
-      report.warnings.push("File browse input not found in drop zone on Recipe Organization page.");
+      report.warnings.push("Could not verify '+ Add Filter' on an existing cookbook entry.");
     }
-
-    const editorInput = page.locator(".pill-input-row input").first();
-    if (await editorInput.isVisible().catch(() => false)) {
-      const draftValue = `qa-temp-${Date.now().toString().slice(-6)}`;
-      await editorInput.fill(draftValue);
-      await clickButtonByRole("recipe", "Add");
-      const lastRow = page.locator(".pill-lines .pill-line").last();
-      if (await lastRow.isVisible().catch(() => false)) {
-        const removeButton = lastRow.getByRole("button", { name: /^remove$/i }).first();
-        await removeButton.click();
-        rememberButtonClick("recipe", "Remove");
-      }
-    }
-
-    const activePillText = normalizeText(await page.locator(".taxonomy-resource-tabs .pill-btn.active").first().innerText().catch(() => ""));
-    const activeMarker = markerByPillName.find((item) => activePillText.toLowerCase().includes(item.key));
-    const activeConfigName = activeMarker?.configName || "categories";
-    await snapshotConfigFile(activeConfigName);
-    await clickButtonByRole("recipe", "Save File", "recipe:save-file");
-    touchedConfigNames.add(activeConfigName);
-    await ensureNoErrorBanner("Recipe save failed");
-    await clickButtonByRole("recipe", "Discard", "recipe:discard");
-    await ensureNoErrorBanner("Recipe discard failed");
-
-    const importSelect = page.locator('label:has-text("Target File") select').first();
-    await expectVisible(importSelect, "Taxonomy import target selector missing.");
-    await importSelect.selectOption("categories");
-
-    await snapshotConfigFile("categories");
-    const categoriesConfig = await apiRequest("GET", "/config/files/categories", null, [200]);
-    const categoriesContent = categoriesConfig.payload?.content;
-    if (!Array.isArray(categoriesContent)) {
-      throw new Error("Categories config content did not load as an array.");
-    }
-
-    const importTextarea = page.locator(".drop-zone textarea").first();
-    await expectVisible(importTextarea, "Taxonomy import JSON textarea missing.");
-    await importTextarea.fill(`${JSON.stringify(categoriesContent, null, 2)}\n`);
-    await clickButtonByRole("recipe", "Import JSON", "recipe:import-json");
-    touchedConfigNames.add("categories");
-    await ensureNoErrorBanner("Recipe JSON import failed");
 
     await registerVisibleButtons("recipe");
     await screenshot("recipe-organization");
   });
-
   await check("users-page-comprehensive", async () => {
     await clickNav("Users");
     await expectVisible(page.getByRole("heading", { name: /users and access/i }).first(), "Users page header missing.");
@@ -1654,32 +1641,32 @@ async function main() {
     markControl("help", "help:faq-open");
 
     const docsCard = page.locator("article.card", {
-      has: page.getByRole("heading", { name: /reference guides/i }).first(),
+      has: page.getByRole("heading", { name: /task guides/i }).first(),
     });
+    await expectVisible(docsCard, "Task Guides card was not visible on Help page.");
     const docs = docsCard.locator(".accordion");
     const docsCount = await docs.count();
     if (docsCount === 0) {
-      report.warnings.push("No embedded markdown docs were visible on Help page.");
-    } else {
-      let foundRichDoc = false;
-      for (let index = 0; index < docsCount; index += 1) {
-        const doc = docs.nth(index);
-        await doc.locator("summary").first().click();
-        await page.waitForTimeout(180);
-        const content = normalizeText(await doc.locator(".doc-preview").first().innerText().catch(() => ""));
-        if (content.length >= 20) {
-          if (/(^|\n)\s*#{1,6}\s+\S/.test(content) || content.includes("```")) {
-            throw new Error("Embedded help docs still appear as raw markdown text.");
-          }
-          foundRichDoc = true;
-          break;
-        }
-      }
-      if (!foundRichDoc) {
-        throw new Error("Embedded documentation content appears empty.");
-      }
-      markControl("help", "help:docs-open");
+      throw new Error("No task guide accordions were visible on Help page.");
     }
+    let foundRichDoc = false;
+    for (let index = 0; index < docsCount; index += 1) {
+      const doc = docs.nth(index);
+      await doc.locator("summary").first().click();
+      await page.waitForTimeout(180);
+      const content = normalizeText(await doc.locator(".doc-preview").first().innerText().catch(() => ""));
+      if (content.length >= 20) {
+        if (/(^|\n)\s*#{1,6}\s+\S/.test(content) || content.includes("```")) {
+          throw new Error("Embedded task guide content still appears as raw markdown text.");
+        }
+        foundRichDoc = true;
+        break;
+      }
+    }
+    if (!foundRichDoc) {
+      throw new Error("Embedded task guide content appears empty.");
+    }
+    markControl("help", "help:task-guides-open");
 
     // Troubleshooting accordions (separate section from FAQ, closed by default)
     const troubleshootCard = page
@@ -1967,3 +1954,4 @@ main().catch((error) => {
   process.stderr.write(`${String(error?.message || error)}\n`);
   process.exitCode = 1;
 });
+
