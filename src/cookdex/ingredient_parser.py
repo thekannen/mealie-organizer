@@ -127,8 +127,11 @@ def _parse_parser_strategies(raw: str, force_parser: str | None) -> tuple[str, .
 
 def parser_run_config() -> ParserRunConfig:
     force_parser = _str_or_none(env_or_config("FORCE_PARSER", "parser.force_parser", None))
+    raw_strategies = env_or_config("PARSER_STRATEGIES", "parser.strategies", ",".join(DEFAULT_PARSER_STRATEGIES))
+    if isinstance(raw_strategies, list):
+        raw_strategies = ",".join(str(item).strip() for item in raw_strategies if str(item).strip())
     parser_strategies = _parse_parser_strategies(
-        str(env_or_config("PARSER_STRATEGIES", "parser.strategies", ",".join(DEFAULT_PARSER_STRATEGIES))),
+        str(raw_strategies),
         force_parser,
     )
 
@@ -702,7 +705,6 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                 continue
 
             if config.dry_run:
-                print(f"[plan] {slug}: parser={parser_used} ingredients={len(normalized)}", flush=True)
                 _set_scan_cache(
                     scan_cache,
                     slug=slug,
@@ -740,7 +742,7 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
             successes.append(recipe_name)
             summary.parsed_successfully += 1
             print(
-                f"[ok] {idx}/{summary.total_candidates} {slug} parser={parser_used} duration={time.monotonic() - started:.2f}s",
+                f"[ok] {idx}/{summary.total_candidates} {slug} parser={parser_used} ingredients={len(normalized)} duration={time.monotonic() - started:.2f}s",
                 flush=True,
             )
             if config.delay_seconds > 0:

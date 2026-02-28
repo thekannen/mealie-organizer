@@ -20,7 +20,9 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import time
 from typing import Any
 
 from slugify import slugify
@@ -45,11 +47,12 @@ def _safe_print(text: str) -> None:
         print(text.encode("ascii", errors="replace").decode(), flush=True)
 
 
-def scan_mismatches(client: MealieApiClient) -> list[dict[str, Any]]:
-    """Fetch all recipes and return those whose slug doesn't match their name."""
-    _safe_print("[scan] Fetching all recipes ...")
+def scan_mismatches(client: MealieApiClient) -> tuple[int, list[dict[str, Any]]]:
+    """Fetch all recipes and return (total_count, mismatches)."""
+    _safe_print("[info] Fetching all recipes from Mealie...")
     recipes = client.get_recipes()
-    _safe_print(f"[scan] Checking {len(recipes)} recipes for slug mismatches ...")
+    total = len(recipes)
+    _safe_print(f"[info] Scanning {total} recipes for slug mismatches...")
 
     mismatches: list[dict[str, Any]] = []
     for r in recipes:
@@ -68,48 +71,67 @@ def scan_mismatches(client: MealieApiClient) -> list[dict[str, Any]]:
                 "expected_slug": expected_slug,
             })
 
-    return mismatches
+    return total, mismatches
 
 
-def print_sql(mismatches: list[dict[str, Any]]) -> None:
-    """Print SQL UPDATE statements to fix mismatched slugs."""
-    if not mismatches:
-        _safe_print("[ok] No slug mismatches found.")
-        return
+def apply_db_fixes(mismatches: list[dict[str, Any]]) -> tuple[int, int, int]:
+    """Apply slug fixes directly via DB connection, emitting progress.
 
-    _safe_print(f"\n-- {len(mismatches)} recipes have slug mismatches.")
-    _safe_print("-- Run these SQL statements against your Mealie database:\n")
-    _safe_print("BEGIN;")
-    for m in mismatches:
-        safe_id = m["id"].replace("'", "''")
-        safe_slug = m["expected_slug"].replace("'", "''")
-        _safe_print(f"UPDATE recipes SET slug = '{safe_slug}' WHERE id = '{safe_id}';")
-    _safe_print("COMMIT;")
-    _safe_print(f"\n-- Total: {len(mismatches)} updates")
-
-
-def apply_db_fixes(mismatches: list[dict[str, Any]]) -> tuple[int, int]:
-    """Apply slug fixes directly via DB connection."""
+    Returns (applied, skipped, failed).  Uses SAVEPOINTs so one failure
+    does not abort the entire transaction.
+    """
     from .db_client import MealieDBClient
 
     applied = 0
+    skipped = 0
     failed = 0
+    total = len(mismatches)
 
     with MealieDBClient() as db:
         p = db._db.placeholder
-        for m in mismatches:
+        is_pg = db._db._type == "postgres"
+
+        # Build a set of existing slugs so we can skip collisions upfront.
+        db._db.execute("SELECT slug FROM recipes")
+        existing_slugs = {row[0] for row in db._db.fetchall()}
+
+        for idx, m in enumerate(mismatches, 1):
+            expected = m["expected_slug"]
+            # Skip if the target slug already belongs to a different recipe.
+            if expected in existing_slugs and expected != m["db_slug"]:
+                skipped += 1
+                _safe_print(
+                    f"[skip] {idx}/{total} {expected} "
+                    f"already exists (collision with another recipe)"
+                )
+                continue
+
+            t0 = time.monotonic()
             try:
+                if is_pg:
+                    db._db.execute("SAVEPOINT slug_fix")
                 db._db.execute(
                     f"UPDATE recipes SET slug = {p} WHERE id = {p}",
-                    (m["expected_slug"], m["id"]),
+                    (expected, m["id"]),
                 )
+                if is_pg:
+                    db._db.execute("RELEASE SAVEPOINT slug_fix")
+                # Update the lookup set so subsequent iterations see the change.
+                existing_slugs.discard(m["db_slug"])
+                existing_slugs.add(expected)
                 applied += 1
-                _safe_print(f"[fix] {m['db_slug']} -> {m['expected_slug']}")
+                elapsed = time.monotonic() - t0
+                _safe_print(
+                    f"[ok] {idx}/{total} {expected} "
+                    f"was={m['db_slug']} duration={elapsed:.2f}s"
+                )
             except Exception as exc:
+                if is_pg:
+                    db._db.execute("ROLLBACK TO SAVEPOINT slug_fix")
                 failed += 1
                 _safe_print(f"[error] {m['db_slug']}: {exc}")
 
-    return applied, failed
+    return applied, skipped, failed
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -126,34 +148,79 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    dry_run = not args.apply
+
+    _safe_print(
+        f"[start] Slug Repair -- dry_run={dry_run}"
+        + (f" use_db={args.use_db}" if args.use_db else "")
+    )
+
     mealie_url = resolve_mealie_url()
     api_key = resolve_mealie_api_key()
     if not mealie_url or not api_key:
-        print("[error] MEALIE_URL and MEALIE_API_KEY must be set.", file=sys.stderr, flush=True)
+        _safe_print("[error] MEALIE_URL and MEALIE_API_KEY must be set.")
         sys.exit(1)
 
     client = MealieApiClient(mealie_url, api_key, timeout_seconds=60, retries=3, backoff_seconds=0.4)
-    mismatches = scan_mismatches(client)
+    total_recipes, mismatches = scan_mismatches(client)
 
     if not mismatches:
-        _safe_print("[ok] No slug mismatches found. All recipes are clean.")
+        _safe_print("[ok] 1/1 all-clean duration=0.00s")
+        _safe_print("[summary] " + json.dumps({
+            "__title__": "Slug Repair",
+            "Recipes Scanned": total_recipes,
+            "Mismatches": 0,
+        }))
         return
 
-    _safe_print(f"\n[result] Found {len(mismatches)} slug mismatches:")
-    for m in mismatches:
-        _safe_print(f"  {m['db_slug']} -> {m['expected_slug']}  ({m['name']})")
+    _safe_print(f"[info] Found {len(mismatches)} slug mismatches out of {total_recipes} recipes")
 
     if args.apply and args.use_db:
-        _safe_print(f"\n[fix] Applying {len(mismatches)} slug fixes via direct DB ...")
-        applied, failed = apply_db_fixes(mismatches)
-        _safe_print(f"\n[done] Applied: {applied}, Failed: {failed}")
+        _safe_print(f"[info] Applying {len(mismatches)} fixes via direct database...")
+        try:
+            applied, skipped, failed = apply_db_fixes(mismatches)
+        except Exception as exc:
+            _safe_print(f"[error] Database connection failed: {exc}")
+            _safe_print("[summary] " + json.dumps({
+                "__title__": "Slug Repair",
+                "Recipes Scanned": total_recipes,
+                "Mismatches": len(mismatches),
+                "Status": "Database connection failed",
+            }))
+            sys.exit(1)
+        summary: dict[str, Any] = {
+            "__title__": "Slug Repair",
+            "Recipes Scanned": total_recipes,
+            "Mismatches": len(mismatches),
+            "Applied": applied,
+        }
+        if skipped:
+            summary["Skipped (collision)"] = skipped
+        if failed:
+            summary["Failed"] = failed
+        _safe_print("[summary] " + json.dumps(summary))
     elif args.apply and not args.use_db:
-        _safe_print("\n[error] --apply requires --use-db (Mealie's API rejects PATCH on these recipes).")
-        _safe_print("  Configure MEALIE_DB_TYPE and connection vars in .env, then re-run.")
-        _safe_print("  Or copy the SQL below and run it manually:\n")
-        print_sql(mismatches)
+        _safe_print("[error] --apply requires --use-db (Mealie's API cannot update these recipes).")
+        _safe_print("[info] Enable 'Use Direct DB' in advanced options, or run SQL manually.")
+        _safe_print("[summary] " + json.dumps({
+            "__title__": "Slug Repair",
+            "Recipes Scanned": total_recipes,
+            "Mismatches": len(mismatches),
+            "Status": "Cannot apply — use-db not enabled",
+        }))
     else:
-        print_sql(mismatches)
+        # Dry run: report each mismatch as an [ok] event for progress tracking
+        for idx, m in enumerate(mismatches, 1):
+            _safe_print(
+                f"[ok] {idx}/{len(mismatches)} {m['expected_slug']} "
+                f"was={m['db_slug']} duration=0.00s"
+            )
+        _safe_print("[summary] " + json.dumps({
+            "__title__": "Slug Repair",
+            "Recipes Scanned": total_recipes,
+            "Mismatches": len(mismatches),
+            "Mode": "Scan only (dry run)",
+        }))
 
 
 if __name__ == "__main__":
