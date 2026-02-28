@@ -23,6 +23,7 @@ const RESOURCE_LABELS = {
   cookbooks: "Cookbooks",
 };
 const TAB_ORDER = ["plan", "taxonomy", "cookbooks"];
+const MAX_DIFF_ITEMS_PER_GROUP = 12;
 
 function ensureDraftShape(rawDraft) {
   const source = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
@@ -104,6 +105,111 @@ function formatTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString();
+}
+
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) return value.map((item) => sortKeysDeep(item));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      out[key] = sortKeysDeep(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function canonicalDiffValue(value) {
+  return JSON.stringify(sortKeysDeep(value));
+}
+
+function diffIdentity(value, index) {
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    if (text) return `text:${text}`;
+  }
+  if (value && typeof value === "object") {
+    const id = String(value.id || "").trim().toLowerCase();
+    if (id) return `id:${id}`;
+    const name = String(value.name || "").trim().toLowerCase();
+    if (name) return `name:${name}`;
+  }
+  return `index:${index}`;
+}
+
+function formatDiffLabel(value, fallbackIndex = 0) {
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text || `Entry ${fallbackIndex + 1}`;
+  }
+  if (value && typeof value === "object") {
+    const name = String(value.name || "").trim();
+    if (name) {
+      const position = Number.parseInt(String(value.position ?? "").trim(), 10);
+      if (Number.isFinite(position) && position > 0) {
+        return `${name} (position ${position})`;
+      }
+      return name;
+    }
+    const id = String(value.id || "").trim();
+    if (id) return id;
+  }
+  return `Entry ${fallbackIndex + 1}`;
+}
+
+function previewDiffValue(value) {
+  if (typeof value === "string") return value;
+  const json = JSON.stringify(sortKeysDeep(value));
+  if (json.length <= 180) return json;
+  return `${json.slice(0, 177)}...`;
+}
+
+function buildResourceDiff(draftItems, managedItems) {
+  const before = Array.isArray(managedItems) ? managedItems : [];
+  const after = Array.isArray(draftItems) ? draftItems : [];
+  const beforeBuckets = new Map();
+
+  for (const [index, item] of before.entries()) {
+    const key = diffIdentity(item, index);
+    const rows = beforeBuckets.get(key) || [];
+    rows.push({ index, item, canonical: canonicalDiffValue(item) });
+    beforeBuckets.set(key, rows);
+  }
+
+  const added = [];
+  const updated = [];
+  for (const [index, item] of after.entries()) {
+    const key = diffIdentity(item, index);
+    const matched = beforeBuckets.get(key);
+    const canonical = canonicalDiffValue(item);
+    if (matched && matched.length) {
+      const previous = matched.shift();
+      if (previous.canonical !== canonical) {
+        updated.push({
+          before: previous.item,
+          beforeIndex: previous.index,
+          after: item,
+          afterIndex: index,
+        });
+      }
+      continue;
+    }
+    added.push({ after: item, afterIndex: index });
+  }
+
+  const removed = [];
+  for (const rows of beforeBuckets.values()) {
+    for (const item of rows) {
+      removed.push({ before: item.item, beforeIndex: item.index });
+    }
+  }
+
+  return {
+    added,
+    updated,
+    removed,
+    total: added.length + updated.length + removed.length,
+  };
 }
 
 export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) {
@@ -444,6 +550,26 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
       unsaved: dirtyResources.includes(name),
     }));
   }, [dirtyResources, serverDraft, snapshot]);
+  const diffRows = useMemo(() => {
+    return ALL_RESOURCES.map((name) => {
+      const managedItems = Array.isArray(snapshot?.managed?.[name]) ? snapshot.managed[name] : [];
+      const draftItems = Array.isArray(draft?.[name]) ? draft[name] : [];
+      const diff = buildResourceDiff(draftItems, managedItems);
+      return {
+        name,
+        label: RESOURCE_LABELS[name],
+        ...diff,
+      };
+    });
+  }, [draft, snapshot]);
+  const changedDiffRows = useMemo(
+    () => diffRows.filter((row) => row.total > 0),
+    [diffRows]
+  );
+  const totalDiffCount = useMemo(
+    () => changedDiffRows.reduce((sum, row) => sum + row.total, 0),
+    [changedDiffRows]
+  );
 
   const updateCookbookEntry = (index, key, value) => {
     updateDraft((next) => {
@@ -1432,6 +1558,103 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
               </li>
             ))}
           </ul>
+          <article className="workspace-diff-card">
+            <div className="card-head split">
+              <h4><Icon name="list" /> Review Draft vs Managed</h4>
+              <span className={`status-pill ${totalDiffCount > 0 ? "warning" : "neutral"}`}>
+                {totalDiffCount} change{totalDiffCount === 1 ? "" : "s"}
+              </span>
+            </div>
+            <p className="muted tiny">
+              Compare your current draft (including unsaved local edits) against the managed files that publish will replace.
+            </p>
+            {changedDiffRows.length ? (
+              <div className="workspace-diff-resource-list">
+                {changedDiffRows.map((row) => (
+                  <details
+                    key={`diff-${row.name}`}
+                    className="workspace-diff-resource"
+                    open={row.name === resource || row.name === "cookbooks"}
+                  >
+                    <summary>
+                      <span className="workspace-diff-resource-title">{row.label}</span>
+                      <span className="workspace-diff-resource-counts tiny muted">
+                        +{row.added.length} ~{row.updated.length} -{row.removed.length}
+                      </span>
+                    </summary>
+                    <div className="workspace-diff-groups">
+                      {row.added.length > 0 ? (
+                        <section className="workspace-diff-group">
+                          <h5>Added ({row.added.length})</h5>
+                          <ul className="workspace-diff-items">
+                            {row.added.slice(0, MAX_DIFF_ITEMS_PER_GROUP).map((entry, index) => (
+                              <li key={`add-${row.name}-${index}`} className="workspace-diff-item">
+                                <div className="workspace-diff-item-head">
+                                  <span className="workspace-diff-kind add">ADD</span>
+                                  <strong>{formatDiffLabel(entry.after, entry.afterIndex)}</strong>
+                                </div>
+                                <code className="workspace-diff-json">{previewDiffValue(entry.after)}</code>
+                              </li>
+                            ))}
+                          </ul>
+                          {row.added.length > MAX_DIFF_ITEMS_PER_GROUP ? (
+                            <p className="workspace-diff-more">
+                              +{row.added.length - MAX_DIFF_ITEMS_PER_GROUP} additional added item(s) not shown.
+                            </p>
+                          ) : null}
+                        </section>
+                      ) : null}
+                      {row.updated.length > 0 ? (
+                        <section className="workspace-diff-group">
+                          <h5>Updated ({row.updated.length})</h5>
+                          <ul className="workspace-diff-items">
+                            {row.updated.slice(0, MAX_DIFF_ITEMS_PER_GROUP).map((entry, index) => (
+                              <li key={`update-${row.name}-${index}`} className="workspace-diff-item">
+                                <div className="workspace-diff-item-head">
+                                  <span className="workspace-diff-kind update">UPDATE</span>
+                                  <strong>{formatDiffLabel(entry.after, entry.afterIndex)}</strong>
+                                </div>
+                                <code className="workspace-diff-json">before: {previewDiffValue(entry.before)}</code>
+                                <code className="workspace-diff-json">after: {previewDiffValue(entry.after)}</code>
+                              </li>
+                            ))}
+                          </ul>
+                          {row.updated.length > MAX_DIFF_ITEMS_PER_GROUP ? (
+                            <p className="workspace-diff-more">
+                              +{row.updated.length - MAX_DIFF_ITEMS_PER_GROUP} additional updated item(s) not shown.
+                            </p>
+                          ) : null}
+                        </section>
+                      ) : null}
+                      {row.removed.length > 0 ? (
+                        <section className="workspace-diff-group">
+                          <h5>Removed ({row.removed.length})</h5>
+                          <ul className="workspace-diff-items">
+                            {row.removed.slice(0, MAX_DIFF_ITEMS_PER_GROUP).map((entry, index) => (
+                              <li key={`remove-${row.name}-${index}`} className="workspace-diff-item">
+                                <div className="workspace-diff-item-head">
+                                  <span className="workspace-diff-kind remove">REMOVE</span>
+                                  <strong>{formatDiffLabel(entry.before, entry.beforeIndex)}</strong>
+                                </div>
+                                <code className="workspace-diff-json">{previewDiffValue(entry.before)}</code>
+                              </li>
+                            ))}
+                          </ul>
+                          {row.removed.length > MAX_DIFF_ITEMS_PER_GROUP ? (
+                            <p className="workspace-diff-more">
+                              +{row.removed.length - MAX_DIFF_ITEMS_PER_GROUP} additional removed item(s) not shown.
+                            </p>
+                          ) : null}
+                        </section>
+                      ) : null}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : (
+              <p className="muted tiny">No draft differences detected against managed files.</p>
+            )}
+          </article>
           {!validationCurrent ? (
             <p className="banner warning"><span>Run validation on the current draft version before publish.</span></p>
           ) : null}
