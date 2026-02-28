@@ -114,6 +114,7 @@ def query_chatgpt(
     payload = {
         "model": model,
         "temperature": 0,
+        "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": "You are a precise JSON-only assistant."},
             {"role": "user", "content": prompt_text + "\n\nRespond only with valid JSON."},

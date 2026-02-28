@@ -280,6 +280,7 @@ class RecipeRuleTagger:
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Rule Tagger",
             "Total Assignments": total_tags + total_cats,
             "Tag Rules": len(stats["text_tags"]),
             "Category Rules": len(stats["text_categories"]),
@@ -488,17 +489,17 @@ class RecipeRuleTagger:
             sum(stats[key].values())
             for key in ("ingredient_tags", "text_tags", "text_categories", "ingredient_categories", "tool_tags")
         )
-        action = "Would apply" if self.dry_run else "Applied"
-        print(
-            f"[summary] {action} {total} tag/category/tool assignments  "
-            f"({len(stats['ingredient_tags'])} ingredient-tag, "
-            f"{len(stats['text_tags'])} text-tag, "
-            f"{len(stats['text_categories'])} text-category, "
-            f"{len(stats['ingredient_categories'])} ingredient-category, "
-            f"{len(stats['tool_tags'])} tool rules, "
-            f"{self._missing_target_skips} missing-target skip(s))",
-            flush=True,
-        )
+        print("[summary] " + json.dumps({
+            "__title__": "Rule Tagger",
+            "Total Assignments": total,
+            "Ingredient Tag Rules": len(stats["ingredient_tags"]),
+            "Text Tag Rules": len(stats["text_tags"]),
+            "Text Category Rules": len(stats["text_categories"]),
+            "Ingredient Category Rules": len(stats["ingredient_categories"]),
+            "Tool Rules": len(stats["tool_tags"]),
+            "Missing Target Rules Skipped": self._missing_target_skips,
+            "Dry Run": self.dry_run,
+        }), flush=True)
         stats["missing_target_skips"] = self._missing_target_skips
         if self.dry_run:
             print("[dry-run] No changes written.", flush=True)

@@ -394,7 +394,7 @@ class MealieCategorizer:
         rate = done / elapsed
         remaining = (max(total - done, 0) / rate) if rate else float("inf")
         eta = f"{(remaining / 60):.1f} min" if rate else "inf min"
-        return f"[progress] {done}/{total} ({rate:.2f}/s) ETA: {eta}"
+        return f"[info] {done}/{total} ({rate:.2f}/s) ETA: {eta}"
 
     def eta_reporter(self):
         last_done = -1
@@ -416,27 +416,30 @@ class MealieCategorizer:
         elapsed = max(time.time() - start_time, 1e-9)
         rate = done / elapsed if elapsed else 0.0
         stats = self.stats_snapshot()
-        self.log("[summary] Run Metrics")
-        self.log(
-            "[summary] "
-            f"recipes={done}/{total} updated={stats['recipes_updated']} planned={stats['recipes_planned']} "
-            f"unchanged={stats['recipes_no_change']} cached_skipped={stats['cached_skipped']} "
-            f"unclassified={stats['per_recipe_no_classification']}"
-        )
-        self.log(
-            "[summary] "
-            f"retries={stats['query_retry_warnings']} exhausted_queries={stats['query_failures']} "
-            f"batch_parse_failures={stats['batch_parse_failures']} fallback_batches={stats['fallback_batches']} "
-            f"per_recipe_fallbacks={stats['per_recipe_fallback_attempts']}"
-        )
-        self.log(
-            "[summary] "
-            f"categories_added={stats['categories_added']} tags_added={stats['tags_added']} tools_added={stats['tools_added']} "
-            f"update_failures={stats['update_failures']} "
-            f"unknown_slugs={stats['unknown_slug_count']} model_missing_entries={stats['model_missing_entry_count']} "
-            f"excluded_tag_candidates={stats['excluded_tag_candidates']}"
-        )
-        self.log(f"[summary] duration={(elapsed / 60):.1f} min avg_rate={rate:.2f}/s")
+        summary = {
+            "__title__": "AI Categorizer",
+            "Recipes Processed": f"{done}/{total}",
+            "Updated": stats["recipes_updated"],
+            "Planned": stats["recipes_planned"],
+            "Unchanged": stats["recipes_no_change"],
+            "Cached Skipped": stats["cached_skipped"],
+            "Unclassified": stats["per_recipe_no_classification"],
+            "Categories Added": stats["categories_added"],
+            "Tags Added": stats["tags_added"],
+            "Tools Added": stats["tools_added"],
+            "Update Failures": stats["update_failures"],
+            "Retries": stats["query_retry_warnings"],
+            "Exhausted Queries": stats["query_failures"],
+            "Batch Parse Failures": stats["batch_parse_failures"],
+            "Fallback Batches": stats["fallback_batches"],
+            "Per-Recipe Fallbacks": stats["per_recipe_fallback_attempts"],
+            "Unknown Slugs": stats["unknown_slug_count"],
+            "Model Missing Entries": stats["model_missing_entry_count"],
+            "Excluded Tag Candidates": stats["excluded_tag_candidates"],
+            "Duration": f"{(elapsed / 60):.1f} min",
+            "Avg Rate": f"{rate:.2f}/s",
+        }
+        self.log("[summary] " + json.dumps(summary))
 
     def get_all_recipes(self):
         return self._get_paginated(f"{self.mealie_url}/recipes?perPage=1000", timeout=60)
@@ -739,8 +742,10 @@ Recipes:
         if tools_changed:
             summary_bits.append(f"tools={', '.join(tools_added or [t.get('name') for t in updated_tools])}")
 
+        detail = "; ".join(summary_bits)
+
         if self.dry_run:
-            self.log(f"[plan] {recipe_slug} -> {'; '.join(summary_bits)}")
+            self.log(f"[plan] {recipe_slug}: {detail}")
             self.increment_stat("recipes_planned")
             self.increment_stat("categories_added", len(cats_added))
             self.increment_stat("tags_added", len(tags_added))
@@ -765,7 +770,8 @@ Recipes:
             self.increment_stat("update_failures")
             return False
 
-        self.log(f"[recipe] {recipe_slug} -> {'; '.join(summary_bits)}")
+        done, total, _ = self.progress_snapshot()
+        self.log(f"[ok] {done}/{total} {recipe_slug} {detail}")
         self.increment_stat("recipes_updated")
         self.increment_stat("categories_added", len(cats_added))
         self.increment_stat("tags_added", len(tags_added))
@@ -1004,9 +1010,9 @@ Recipes:
                 "missing-either": "Categorize/Tag/Tool Missing Categories Or Tags Or Tools",
             }.get(self.target_mode, "Categorize/Tag/Tool Missing Categories Or Tags Or Tools")
         )
-        self.log(f"[start] Mode: {mode}")
-        self.log(f"[start] Provider: {self.provider_name}")
-        self.log(f"[start] Dry-run mode: {'ON' if self.dry_run else 'OFF'}")
+        self.log(f"[start] AI Categorizer — {mode}")
+        self.log(f"[info] Provider: {self.provider_name}")
+        self.log(f"[info] Dry-run: {'ON' if self.dry_run else 'OFF'}")
 
         all_recipes = self.get_all_recipes()
         categories = self.get_all_categories()
@@ -1024,7 +1030,7 @@ Recipes:
             self.log("[warn] Tag candidate filtering removed everything; using full tag list.")
 
         targets = self.select_targets(all_recipes)
-        self.log(f"Found {len(targets)} recipes to process.")
+        self.log(f"[info] {len(targets)} recipes to process.")
 
         self.set_progress_total(len(targets))
         if not targets:

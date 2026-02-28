@@ -142,7 +142,7 @@ def test_update_recipe_metadata_dry_run_does_not_patch(monkeypatch, tmp_path, ca
     out = capsys.readouterr().out
 
     assert updated is True
-    assert "[plan] test-recipe ->" in out
+    assert "[plan] test-recipe:" in out
 
 
 def test_process_batch_dry_run_does_not_skip_cached_recipe(monkeypatch, tmp_path):
@@ -396,3 +396,122 @@ def test_update_recipe_metadata_cache_write_permission_error_does_not_crash(monk
     assert updated is True
     assert categorizer.cache_enabled is False
     assert "Cache disabled: cannot write" in out
+
+
+# ---------------------------------------------------------------------------
+# Output protocol tests
+# ---------------------------------------------------------------------------
+
+
+def test_plan_line_uses_colon_separator(monkeypatch, tmp_path, capsys):
+    """[plan] lines must use ':' separator for frontend parser compatibility."""
+    monkeypatch.setattr("cookdex.categorizer_core.requests.patch", lambda *a, **k: None)
+
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=True,
+    )
+
+    recipe = {"slug": "my-recipe", "recipeCategory": [], "tags": [], "tools": []}
+    categorizer.update_recipe_metadata(
+        recipe,
+        ["Dinner"],
+        [],
+        [],
+        {"dinner": {"id": "1", "name": "Dinner", "slug": "dinner", "groupId": None}},
+        {},
+        {},
+    )
+    out = capsys.readouterr().out
+    assert "[plan] my-recipe: cats=Dinner" in out
+    assert "->" not in out
+
+
+def test_ok_line_has_idx_total(monkeypatch, tmp_path, capsys):
+    """[ok] lines must have idx/total format for frontend progress bar."""
+    class _PatchResponse:
+        status_code = 200
+        text = ""
+
+    monkeypatch.setattr("cookdex.categorizer_core.requests.patch", lambda *a, **k: _PatchResponse())
+
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=False,
+    )
+    categorizer.set_progress_total(10)
+    categorizer.advance_progress(3)
+
+    recipe = {"slug": "ok-recipe", "recipeCategory": [], "tags": [], "tools": []}
+    categorizer.update_recipe_metadata(
+        recipe,
+        ["Dinner"],
+        [],
+        [],
+        {"dinner": {"id": "1", "name": "Dinner", "slug": "dinner", "groupId": None}},
+        {},
+        {},
+    )
+    out = capsys.readouterr().out
+    assert "[ok] 3/10 ok-recipe" in out
+
+
+def test_summary_is_json_with_title(tmp_path, capsys):
+    """print_summary must emit single-line JSON with __title__."""
+    import json as _json
+
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=True,
+    )
+    categorizer.set_progress_total(100)
+    categorizer.advance_progress(100)
+    categorizer.print_summary()
+    out = capsys.readouterr().out
+
+    assert out.startswith("[summary] ")
+    json_str = out.strip().removeprefix("[summary] ")
+    data = _json.loads(json_str)
+    assert data["__title__"] == "AI Categorizer"
+    assert "Recipes Processed" in data
+    assert "Categories Added" in data
+
+
+def test_parse_json_response_unwraps_json_object_mode():
+    """ChatGPT json_object mode wraps arrays in an object — must unwrap."""
+    raw = '{"results": [{"slug":"a","categories":["Dinner"]},{"slug":"b","tags":["Quick"]}]}'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 2
+    assert parsed[0]["slug"] == "a"
+    assert parsed[1]["slug"] == "b"
+
+
+def test_parse_json_response_unwraps_various_wrapper_keys():
+    """The unwrapper should work regardless of the wrapper key name."""
+    for key in ("results", "recipes", "data", "items"):
+        raw = f'{{"{key}": [{{"slug":"test","categories":["Lunch"]}}]}}'
+        parsed = parse_json_response(raw)
+        assert isinstance(parsed, list), f"Failed for wrapper key '{key}'"
+        assert parsed[0]["slug"] == "test"

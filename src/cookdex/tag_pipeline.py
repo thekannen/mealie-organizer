@@ -113,8 +113,7 @@ def main() -> int:
         else:
             cmd.append("--from-taxonomy")
 
-        print("=" * 60, flush=True)
-        print("[start] Layer 1: Rule-based tagging", flush=True)
+        print("[info] -------- Layer 1: Rule-based tagging --------", flush=True)
         t0 = time.monotonic()
         completed = subprocess.run(cmd, check=False)
         elapsed = time.monotonic() - t0
@@ -129,8 +128,7 @@ def main() -> int:
             if args.provider:
                 cmd.extend(["--provider", args.provider])
 
-            print("=" * 60, flush=True)
-            print("[start] Layer 2: AI categorization", flush=True)
+            print("[info] -------- Layer 2: AI categorization --------", flush=True)
             t0 = time.monotonic()
             completed = subprocess.run(cmd, check=False)
             elapsed = time.monotonic() - t0
@@ -148,7 +146,6 @@ def main() -> int:
         print("[warn] Both layers skipped — nothing to do.", flush=True)
         return 0
 
-    print("=" * 60, flush=True)
     failed = [name for name, code in results if code != 0]
     if failed:
         print(f"[done] {len(results)} layer(s) run — failed: {', '.join(failed)}", flush=True)
