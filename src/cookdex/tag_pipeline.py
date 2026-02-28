@@ -38,7 +38,7 @@ from .config import env_or_config, to_bool
 def _categorizer_provider_active() -> bool:
     """Return True when a usable AI provider is configured."""
     provider = str(
-        env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "")
+        env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "chatgpt")
     ).strip().lower()
     return bool(provider) and provider not in {"none", "off", "false", "0", "disabled"}
 

@@ -59,14 +59,6 @@ def parse_stage_list(raw: str) -> list[str]:
     return stages
 
 
-def _categorizer_provider_active() -> bool:
-    """Return True when a usable AI provider is configured."""
-    provider = str(
-        env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "")
-    ).strip().lower()
-    return bool(provider) and provider not in {"none", "off", "false", "0", "disabled"}
-
-
 def _str_or_none(value: object) -> str | None:
     if value is None:
         return None

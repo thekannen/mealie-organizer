@@ -54,6 +54,7 @@
     "success_file": "parsed_success.log"
   },
   "categorizer": {
+    "provider": "chatgpt",
     "batch_size": 2,
     "max_workers": 3,
     "tag_max_name_length": 24,

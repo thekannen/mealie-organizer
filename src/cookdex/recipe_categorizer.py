@@ -86,7 +86,7 @@ def derive_target_mode(args: argparse.Namespace) -> str:
 
 
 def resolve_provider(cli_provider: str | None = None, forced_provider: str | None = None) -> str:
-    provider = forced_provider or cli_provider or env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "ollama")
+    provider = forced_provider or cli_provider or env_or_config("CATEGORIZER_PROVIDER", "categorizer.provider", "chatgpt")
     provider = require_str(provider, "categorizer.provider").strip().lower()
     if provider not in {"ollama", "chatgpt", "anthropic"}:
         raise ValueError(

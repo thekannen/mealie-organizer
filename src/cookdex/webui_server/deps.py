@@ -83,8 +83,14 @@ def normalize_username(raw: str) -> str:
 def build_runtime_env(state: StateStore, cipher: SecretCipher) -> dict[str, str]:
     from .env_catalog import ENV_VAR_SPECS
 
-    # Start with os.environ values for known env-catalog keys
+    # Start with non-empty, non-secret env-catalog defaults as a baseline
+    # so subprocesses see the same values the user sees in the Settings UI.
     env: dict[str, str] = {}
+    for spec in ENV_VAR_SPECS:
+        if not spec.secret and spec.default:
+            env[spec.key] = spec.default
+
+    # os.environ values override catalog defaults
     for spec in ENV_VAR_SPECS:
         raw = os.environ.get(spec.key, "").strip()
         if raw:
