@@ -113,7 +113,7 @@ function isTaskOptionVisible(option, values = {}, includeAdvanced = true) {
 }
 
 function parseLogEvents(text) {
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/);
   const events = [];
   let summaryBuf = null;
   let dataMaintenanceStageSet = new Set();
