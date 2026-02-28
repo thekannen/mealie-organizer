@@ -29,6 +29,7 @@ htmlcov/
 .pytype/
 .ruff_cache/
 configs/.history
+configs/.drafts/
 
 # Local runtime/output folders
 cache/
