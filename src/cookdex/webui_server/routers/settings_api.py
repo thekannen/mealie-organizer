@@ -569,11 +569,12 @@ def _ssh_exec(
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "PasswordAuthentication=no",
             "-i", resolved_key,
-            f"{user}@{host}",
-            command,
+            shlex.quote(f"{user}@{host}"),
+            "sh",
         ]
         completed = subprocess.run(
             ssh_cmd,
+            input=command,
             capture_output=True,
             text=True,
             timeout=timeout + 5,
@@ -637,11 +638,12 @@ def _ssh_exec(
                 "-o", "StrictHostKeyChecking=accept-new",
                 "-o", "PasswordAuthentication=no",
                 "-i", resolved_key,
-                f"{user}@{host}",
-                command,
+                shlex.quote(f"{user}@{host}"),
+                "sh",
             ]
             completed = subprocess.run(
                 ssh_cmd,
+                input=command,
                 capture_output=True,
                 text=True,
                 timeout=timeout + 5,
