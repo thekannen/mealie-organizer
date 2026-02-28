@@ -22,7 +22,7 @@ const RESOURCE_LABELS = {
   units_aliases: "Units",
   cookbooks: "Cookbooks",
 };
-const TAB_ORDER = ["plan", "taxonomy", "cookbooks", "validate", "publish"];
+const TAB_ORDER = ["plan", "taxonomy", "cookbooks"];
 
 function ensureDraftShape(rawDraft) {
   const source = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
@@ -110,6 +110,11 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
       .map((_, index) => index)
       .filter((index) => !query || JSON.stringify(resourceItems[index] || {}).toLowerCase().includes(query));
   }, [resourceItems, search]);
+  const filteredSelectedCount = useMemo(
+    () => filteredResourceIndexes.filter((index) => selectedRows.has(index)).length,
+    [filteredResourceIndexes, selectedRows]
+  );
+  const allFilteredSelected = filteredResourceIndexes.length > 0 && filteredSelectedCount === filteredResourceIndexes.length;
   const taxonomyNameStats = useMemo(() => {
     const names = new Map();
     const duplicateNames = new Set();
@@ -204,6 +209,14 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
     const updated = await saveDraft(dirtyResources);
     if (!updated) return;
     await runValidation(updated.version);
+  };
+
+  const runValidationAction = async () => {
+    if (hasUnsavedChanges) {
+      await saveAndValidate();
+      return;
+    }
+    await runValidation();
   };
 
   const publishDraft = async () => {
@@ -347,8 +360,8 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
               <p className="muted tiny">
                 Last published: {formatTime(snapshot?.meta?.last_published_at)} by {snapshot?.meta?.last_published_by || "-"}
               </p>
-              <button className="ghost" onClick={() => setTab("validate")}>
-                <Icon name="check-circle" /> Run Validation
+              <button className="ghost" onClick={runValidationAction} disabled={saving || validating}>
+                <Icon name="check-circle" /> {validating ? "Validating..." : "Run Validation"}
               </button>
             </div>
           </div>
@@ -422,15 +435,33 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
               <table className="workspace-table">
                 <thead>
                   <tr>
-                    <th />
-                    <th />
-                    <th>#</th>
+                    <th className="table-col-select">
+                      <input
+                        type="checkbox"
+                        checked={allFilteredSelected}
+                        disabled={filteredResourceIndexes.length === 0}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSelectedRows((prev) => {
+                            const next = new Set(prev);
+                            for (const index of filteredResourceIndexes) {
+                              if (checked) next.add(index);
+                              else next.delete(index);
+                            }
+                            return next;
+                          });
+                        }}
+                        aria-label="Select all rows"
+                      />
+                    </th>
+                    <th className="table-col-drag" />
+                    <th className="workspace-row-index-head">#</th>
                     <th>Name</th>
                     {resource === "labels" ? <th>Color</th> : null}
                     {resource === "tools" ? <th>On Hand</th> : null}
                     {resource === "units_aliases" ? <th>Abbreviation</th> : null}
                     {resource === "units_aliases" ? <th>Aliases</th> : null}
-                    <th />
+                    <th className="table-col-action" />
                   </tr>
                 </thead>
                 <tbody>
@@ -455,7 +486,7 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                           setDragIndex(null);
                         }}
                       >
-                        <td>
+                        <td className="table-col-select">
                           <input
                             type="checkbox"
                             checked={selectedRows.has(index)}
@@ -469,7 +500,9 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                             }}
                           />
                         </td>
-                        <td className="drag-handle">::</td>
+                        <td className="drag-handle table-col-drag">
+                          <Icon name="menu" />
+                        </td>
                         <td className="workspace-row-index">{index + 1}</td>
                         <td>
                           <div className="workspace-name-cell">
@@ -551,7 +584,7 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                             />
                           </td>
                         ) : null}
-                        <td>
+                        <td className="table-col-action">
                           <button
                             className="ghost small"
                             onClick={() => {
@@ -568,7 +601,7 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                   })}
                   {!filteredResourceIndexes.length ? (
                     <tr>
-                      <td colSpan={resource === "units_aliases" ? 7 : resource === "labels" || resource === "tools" ? 6 : 5}>
+                      <td colSpan={resource === "units_aliases" ? 8 : resource === "labels" || resource === "tools" ? 7 : 6}>
                         <p className="muted tiny workspace-empty-row">
                           No rows match this filter. Clear search or add a new row.
                         </p>
@@ -803,147 +836,131 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
           </div>
         ) : null}
 
-        {tab === "validate" ? (
-          <div className="workspace-tab-content">
-            <p className="muted">Validation is required before publish.</p>
-            <article className={`workspace-validation-state ${validationState.tone}`}>
-              <h4>Validation Status</h4>
-              <p className="tiny">{validationState.label}</p>
-              <ul className="workspace-checklist">
-                <li className={!hasUnsavedChanges ? "ok" : "pending"}>
-                  <Icon name={!hasUnsavedChanges ? "check-circle" : "x-circle"} />
-                  <span>Draft saved</span>
-                </li>
-                <li className={validationCurrent ? "ok" : "pending"}>
-                  <Icon name={validationCurrent ? "check-circle" : "x-circle"} />
-                  <span>Validation run on current version</span>
-                </li>
-                <li className={validationCurrent && validation?.can_publish ? "ok" : "pending"}>
-                  <Icon name={validationCurrent && validation?.can_publish ? "check-circle" : "x-circle"} />
-                  <span>No blocking errors</span>
-                </li>
-              </ul>
-            </article>
-            {hasUnsavedChanges ? (
-              <p className="banner warning"><span>Save draft changes before validation.</span></p>
-            ) : null}
-            <div className="split-actions">
-              <button className="primary" onClick={saveAndValidate} disabled={saving || validating}>
-                <Icon name="save" /> {saving ? "Saving..." : validating ? "Validating..." : "Save Draft + Validate"}
-              </button>
-              <button className="ghost" onClick={() => runValidation()} disabled={hasUnsavedChanges || validating}>
-                <Icon name="check-circle" /> {validating ? "Validating..." : "Validate Current Draft"}
-              </button>
-            </div>
-            {validation ? (
-              <div className="validation-results">
-                <span className={`status-pill ${validation.can_publish ? "success" : "danger"}`}>
-                  {validation.can_publish ? "Publishable" : "Blocking errors present"}
-                </span>
-                {(validation.errors || []).length > 0 ? (
-                  <article className="validation-panel error">
-                    <h4>Blocking Errors</h4>
-                    <ul>
-                      {(validation.errors || []).map((issue, index) => (
-                        <li key={`err-${index}`}>{issue.message}</li>
-                      ))}
-                    </ul>
-                  </article>
-                ) : null}
-                {(validation.warnings || []).length > 0 ? (
-                  <article className="validation-panel warning">
-                    <h4>Warnings</h4>
-                    <ul>
-                      {(validation.warnings || []).map((issue, index) => (
-                        <li key={`warn-${index}`}>{issue.message}</li>
-                      ))}
-                    </ul>
-                  </article>
-                ) : null}
-              </div>
-            ) : (
-              <article className="validation-panel">
-                <h4>What validation checks</h4>
-                <ul>
-                  <li>Schema and type checks across all draft resources.</li>
-                  <li>Duplicate and normalization checks for taxonomy values.</li>
-                  <li>Cookbook rule integrity and query filter checks.</li>
-                </ul>
-              </article>
-            )}
-          </div>
-        ) : null}
-
-        {tab === "publish" ? (
-          <div className="workspace-tab-content">
-            <p className="muted">Publish writes managed files and then hands off to tasks.</p>
-            <div className="workspace-table-wrap">
-              <table className="workspace-table compact">
-                <thead>
-                  <tr>
-                    <th>Resource</th>
-                    <th>Draft</th>
-                    <th>Managed</th>
-                    <th>Diff</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {resourceRows.map((row) => (
-                    <tr key={`publish-${row.name}`}>
-                      <td>{row.label}</td>
-                      <td>{row.draftCount}</td>
-                      <td>{row.managedCount}</td>
-                      <td>{row.changedCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!validationCurrent ? (
-              <p className="banner warning"><span>Run validation on the current draft version before publish.</span></p>
-            ) : null}
-            {hasUnsavedChanges ? (
-              <p className="banner warning"><span>You have unsaved local edits.</span></p>
-            ) : null}
-            <div className="split-actions">
-              <button className="primary" onClick={publishDraft} disabled={!canPublish || publishing}>
-                <Icon name="upload" /> {publishing ? "Publishing..." : "Publish Draft to Managed Files"}
-              </button>
-            </div>
-            {publishResult ? (
-              <article className="publish-result-panel">
-                <h4>Publish Complete</h4>
-                <p className="muted tiny">Published at {formatTime(publishResult.published_at)}</p>
-                <div className="publish-next-actions">
-                  <button className="ghost" onClick={() => onOpenTasks?.("taxonomy-refresh")}>
-                    Open Tasks with taxonomy-refresh preselected
-                  </button>
-                  <button className="ghost" onClick={() => onOpenTasks?.("cookbook-sync")}>
-                    Open Tasks with cookbook-sync preselected
-                  </button>
-                </div>
-              </article>
-            ) : null}
-          </div>
-        ) : null}
       </article>
 
-      {drawerOpen ? (
-        <aside className="card workspace-json-drawer">
-          <div className="drawer-head">
-            <h3>Advanced JSON · {RESOURCE_LABELS[drawerResource]}</h3>
-            <button className="ghost small" onClick={() => setDrawerOpen(false)}>
-              <Icon name="x" />
+      <aside className="recipe-workspace-side">
+        <article className="card workspace-side-card">
+          <h3><Icon name="check-circle" /> Validate Draft</h3>
+          <p className="muted tiny">Validation is required before publish.</p>
+          <article className={`workspace-validation-state ${validationState.tone}`}>
+            <h4>Validation Status</h4>
+            <p className="tiny">{validationState.label}</p>
+            <ul className="workspace-checklist">
+              <li className={!hasUnsavedChanges ? "ok" : "pending"}>
+                <Icon name={!hasUnsavedChanges ? "check-circle" : "x-circle"} />
+                <span>Draft saved</span>
+              </li>
+              <li className={validationCurrent ? "ok" : "pending"}>
+                <Icon name={validationCurrent ? "check-circle" : "x-circle"} />
+                <span>Validation run on current version</span>
+              </li>
+              <li className={validationCurrent && validation?.can_publish ? "ok" : "pending"}>
+                <Icon name={validationCurrent && validation?.can_publish ? "check-circle" : "x-circle"} />
+                <span>No blocking errors</span>
+              </li>
+            </ul>
+          </article>
+          <div className="workspace-side-actions">
+            <button className="primary" onClick={saveAndValidate} disabled={saving || validating}>
+              <Icon name="save" /> {saving ? "Saving..." : validating ? "Validating..." : "Save Draft + Validate"}
+            </button>
+            <button className="ghost" onClick={() => runValidation()} disabled={hasUnsavedChanges || validating}>
+              <Icon name="check-circle" /> {validating ? "Validating..." : "Validate Current Draft"}
             </button>
           </div>
-          <textarea rows={20} value={drawerText} onChange={(event) => setDrawerText(event.target.value)} />
-          {drawerError ? <p className="danger-text tiny">{drawerError}</p> : null}
-          <div className="split-actions">
-            <button className="primary" onClick={applyAdvancedJson}>Apply JSON</button>
-            <button className="ghost" onClick={() => setDrawerError("")}>Clear Error</button>
+          {validation ? (
+            <div className="validation-results">
+              <span className={`status-pill ${validation.can_publish ? "success" : "danger"}`}>
+                {validation.can_publish ? "Publishable" : "Blocking errors present"}
+              </span>
+              {(validation.errors || []).length > 0 ? (
+                <article className="validation-panel error">
+                  <h4>Blocking Errors</h4>
+                  <ul>
+                    {(validation.errors || []).map((issue, index) => (
+                      <li key={`err-${index}`}>{issue.message}</li>
+                    ))}
+                  </ul>
+                </article>
+              ) : null}
+              {(validation.warnings || []).length > 0 ? (
+                <article className="validation-panel warning">
+                  <h4>Warnings</h4>
+                  <ul>
+                    {(validation.warnings || []).map((issue, index) => (
+                      <li key={`warn-${index}`}>{issue.message}</li>
+                    ))}
+                  </ul>
+                </article>
+              ) : null}
+            </div>
+          ) : (
+            <article className="validation-panel">
+              <h4>What validation checks</h4>
+              <ul>
+                <li>Schema and type checks across all draft resources.</li>
+                <li>Duplicate and normalization checks for taxonomy values.</li>
+                <li>Cookbook rule integrity and query filter checks.</li>
+              </ul>
+            </article>
+          )}
+        </article>
+
+        <article className="card workspace-side-card">
+          <h3><Icon name="upload" /> Publish Draft</h3>
+          <p className="muted tiny">Publish writes managed files and then hands off to tasks.</p>
+          <ul className="workspace-publish-list">
+            {resourceRows.map((row) => (
+              <li key={`publish-${row.name}`}>
+                <strong>{row.label}</strong>
+                <span className="tiny muted">Draft {row.draftCount} | Managed {row.managedCount} | Diff {row.changedCount}</span>
+              </li>
+            ))}
+          </ul>
+          {!validationCurrent ? (
+            <p className="banner warning"><span>Run validation on the current draft version before publish.</span></p>
+          ) : null}
+          {hasUnsavedChanges ? (
+            <p className="banner warning"><span>You have unsaved local edits.</span></p>
+          ) : null}
+          <div className="workspace-side-actions">
+            <button className="primary" onClick={publishDraft} disabled={!canPublish || publishing}>
+              <Icon name="upload" /> {publishing ? "Publishing..." : "Publish Draft to Managed Files"}
+            </button>
           </div>
-        </aside>
-      ) : null}
+          {publishResult ? (
+            <article className="publish-result-panel">
+              <h4>Publish Complete</h4>
+              <p className="muted tiny">Published at {formatTime(publishResult.published_at)}</p>
+              <div className="publish-next-actions">
+                <button className="ghost" onClick={() => onOpenTasks?.("taxonomy-refresh")}>
+                  Open Tasks with taxonomy-refresh preselected
+                </button>
+                <button className="ghost" onClick={() => onOpenTasks?.("cookbook-sync")}>
+                  Open Tasks with cookbook-sync preselected
+                </button>
+              </div>
+            </article>
+          ) : null}
+        </article>
+
+        {drawerOpen ? (
+          <aside className="card workspace-json-drawer">
+            <div className="drawer-head">
+              <h3>Advanced JSON - {RESOURCE_LABELS[drawerResource]}</h3>
+              <button className="ghost small" onClick={() => setDrawerOpen(false)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <textarea rows={20} value={drawerText} onChange={(event) => setDrawerText(event.target.value)} />
+            {drawerError ? <p className="danger-text tiny">{drawerError}</p> : null}
+            <div className="split-actions">
+              <button className="primary" onClick={applyAdvancedJson}>Apply JSON</button>
+              <button className="ghost" onClick={() => setDrawerError("")}>Clear Error</button>
+            </div>
+          </aside>
+        ) : null}
+      </aside>
     </section>
   );
 }

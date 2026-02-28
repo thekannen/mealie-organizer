@@ -1528,7 +1528,7 @@ details[open] > summary .log-progress-chevron {
 }
 
 .recipe-workspace-grid {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 380px;
   align-items: start;
 }
 
@@ -1546,6 +1546,39 @@ details[open] > summary .log-progress-chevron {
 
 .recipe-workspace-meta {
   margin-left: auto;
+}
+
+.recipe-workspace-side {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+}
+
+.workspace-side-card {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.workspace-side-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.workspace-publish-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.38rem;
+}
+
+.workspace-publish-list li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 0.36rem 0.46rem;
+  display: grid;
+  gap: 0.18rem;
 }
 
 .workspace-tab-content {
@@ -1628,8 +1661,7 @@ details[open] > summary .log-progress-chevron {
 .workspace-table th,
 .workspace-table td {
   border-bottom: 1px solid var(--line);
-  padding: 0.38rem 0.42rem;
-  vertical-align: top;
+  padding: 0.3rem 0.32rem;
 }
 
 .workspace-table th {
@@ -1637,6 +1669,16 @@ details[open] > summary .log-progress-chevron {
   font-size: 0.77rem;
   color: var(--text-muted);
   background: var(--surface-soft);
+  vertical-align: middle;
+}
+
+.workspace-table td {
+  vertical-align: middle;
+}
+
+.workspace-table th:first-child,
+.workspace-table td:first-child {
+  padding-left: 0.18rem;
 }
 
 .workspace-table tr:last-child td {
@@ -1664,20 +1706,52 @@ details[open] > summary .log-progress-chevron {
   color: var(--text-muted);
   user-select: none;
   cursor: move;
-  width: 1.25rem;
+  width: 1.4rem;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drag-handle .ui-icon {
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 2.2;
+}
+
+.table-col-select {
+  width: 1.65rem;
+  text-align: center;
+}
+
+.table-col-drag {
+  width: 1.6rem;
   text-align: center;
 }
 
 .workspace-row-index {
-  width: 2.3rem;
+  width: 2rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+  padding-right: 0.22rem;
+}
+
+.workspace-row-index-head {
+  width: 2rem;
+  text-align: right;
+  padding-right: 0.22rem;
+}
+
+.table-col-action {
+  width: 6rem;
+  text-align: center;
 }
 
 .workspace-name-cell {
   display: grid;
   gap: 0.2rem;
+  margin-left: -0.05rem;
 }
 
 .workspace-empty-row {
