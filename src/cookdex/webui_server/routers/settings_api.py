@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -542,6 +543,46 @@ def _validated_ssh_key_path(raw_path: str) -> str:
     return safe_path
 
 
+def _subprocess_ssh(
+    host: str, user: str, key_path: str, command: str, timeout: int,
+) -> tuple[str, str, int]:
+    """Run an SSH command via subprocess using a temporary config file.
+
+    All user-derived values (host, user, key path) are written to a
+    temporary SSH config file rather than passed as command-line arguments,
+    preventing command-line injection.  The remote command is delivered via
+    stdin to a remote ``sh`` process.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".ssh_config", delete=False, prefix="cookdex_ssh_",
+    ) as cfg:
+        cfg.write(f"Host target\n")
+        cfg.write(f"  Hostname {host}\n")
+        cfg.write(f"  User {user}\n")
+        cfg.write(f"  IdentityFile {key_path}\n")
+        cfg.write(f"  BatchMode yes\n")
+        cfg.write(f"  ConnectTimeout {max(3, timeout)}\n")
+        cfg.write(f"  StrictHostKeyChecking accept-new\n")
+        cfg.write(f"  PasswordAuthentication no\n")
+        config_path = cfg.name
+
+    try:
+        completed = subprocess.run(
+            ["ssh", "-F", config_path, "target", "sh"],
+            input=command,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+            check=False,
+        )
+        return completed.stdout, completed.stderr, int(completed.returncode)
+    finally:
+        try:
+            os.unlink(config_path)
+        except OSError:
+            pass
+
+
 def _ssh_exec(
     host: str,
     user: str,
@@ -562,25 +603,7 @@ def _ssh_exec(
         paramiko = None  # type: ignore[assignment]
 
     if paramiko is None:
-        ssh_cmd = [
-            "ssh",
-            "-o", "BatchMode=yes",
-            "-o", f"ConnectTimeout={max(3, timeout)}",
-            "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "PasswordAuthentication=no",
-            "-i", resolved_key,
-            shlex.quote(f"{user}@{host}"),
-            "sh",
-        ]
-        completed = subprocess.run(
-            ssh_cmd,
-            input=command,
-            capture_output=True,
-            text=True,
-            timeout=timeout + 5,
-            check=False,
-        )
-        return completed.stdout, completed.stderr, int(completed.returncode)
+        return _subprocess_ssh(host, user, resolved_key, command, timeout)
 
     known_hosts = os.path.join(
         os.path.realpath(os.path.expanduser("~/.ssh")), "known_hosts",
@@ -631,25 +654,7 @@ def _ssh_exec(
                 exit_code,
             )
         except Exception:
-            ssh_cmd = [
-                "ssh",
-                "-o", "BatchMode=yes",
-                "-o", f"ConnectTimeout={max(3, timeout)}",
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "PasswordAuthentication=no",
-                "-i", resolved_key,
-                shlex.quote(f"{user}@{host}"),
-                "sh",
-            ]
-            completed = subprocess.run(
-                ssh_cmd,
-                input=command,
-                capture_output=True,
-                text=True,
-                timeout=timeout + 5,
-                check=False,
-            )
-            return completed.stdout, completed.stderr, int(completed.returncode)
+            return _subprocess_ssh(host, user, resolved_key, command, timeout)
     finally:
         client.close()
 
