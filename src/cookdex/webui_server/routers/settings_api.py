@@ -499,11 +499,12 @@ def _validated_container_name(value: str) -> str:
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
-    """Resolve a user-provided SSH key path.
+    """Resolve a user-provided SSH key path safely within ``~/.ssh/``.
 
-    Supports:
-    - plain filename (resolved under ~/.ssh/)
-    - explicit path (absolute or relative to home/current context)
+    Accepts a plain filename (e.g. ``cookdex_mealie``) or a path that
+    includes ``~/.ssh/`` (e.g. ``~/.ssh/cookdex_mealie``).  The resolved
+    file **must** reside directly inside ``~/.ssh/`` — paths that escape
+    that directory are rejected to prevent path-traversal attacks.
     """
     candidate = str(raw_path or "").strip()
     if not candidate:
@@ -511,22 +512,22 @@ def _validated_ssh_key_path(raw_path: str) -> str:
 
     ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
 
-    # Fast path: explicit path provided and file exists.
-    if ("/" in candidate or "\\" in candidate) and os.path.isfile(os.path.realpath(os.path.expanduser(candidate))):
-        return os.path.realpath(os.path.expanduser(candidate))
+    # Extract just the filename; ignore any directory components the
+    # caller may have supplied so the result is always inside ~/.ssh/.
+    filename = os.path.basename(os.path.expanduser(candidate))
+    if not filename or filename.startswith("."):
+        raise ValueError("Invalid SSH key filename.")
 
-    # Filename-only fallback: resolve against files present in ~/.ssh/.
-    target = os.path.basename(os.path.expanduser(candidate))
-    try:
-        for entry in os.listdir(ssh_dir):
-            if entry == target:
-                resolved = os.path.join(ssh_dir, entry)
-                if os.path.isfile(resolved):
-                    return resolved
-    except OSError:
-        pass
+    resolved = os.path.realpath(os.path.join(ssh_dir, filename))
 
-    raise FileNotFoundError("SSH key not found.")
+    # Belt-and-suspenders: ensure the resolved path is under ~/.ssh/.
+    if not resolved.startswith(ssh_dir + os.sep) and resolved != ssh_dir:
+        raise ValueError("SSH key path escapes ~/.ssh/.")
+
+    if not os.path.isfile(resolved):
+        raise FileNotFoundError("SSH key not found.")
+
+    return resolved
 
 
 def _ssh_exec(
@@ -795,9 +796,6 @@ done
             {},
         )
 
-    def _sh_q(value: str) -> str:
-        return "'" + str(value).replace("'", "'\"'\"'") + "'"
-
     cache: dict[str, str] = {}
 
     def _read_remote(path: str, base_path: str) -> str:
@@ -828,7 +826,8 @@ done
             if candidate in cache:
                 text = cache[candidate]
             else:
-                cmd = f"p={_sh_q(candidate)}; if [ -r \"$p\" ]; then sed -n '1,4p' \"$p\"; fi"
+                q_path = shlex.quote(candidate)
+                cmd = f"p={q_path}; if [ -r \"$p\" ]; then sed -n '1,4p' \"$p\"; fi"
                 out_text, _err_text, code = _ssh_exec(ssh_host, ssh_user, ssh_key, cmd, timeout=12)
                 text = out_text if code == 0 else ""
                 cache[candidate] = text
@@ -907,13 +906,16 @@ def _detect_db_credentials(
 
         if mealie_containers:
             container = _validated_container_name(mealie_containers[0])
-            q_container = shlex.quote(container)
 
             # Strategy 2: docker inspect
             try:
+                inspect_cmd = shlex.join([
+                    "docker", "inspect", "--format",
+                    "{{range .Config.Env}}{{println .}}{{end}}",
+                    container,
+                ])
                 out, _err, inspect_code = _ssh_exec(
-                    ssh_host, ssh_user, ssh_key,
-                    f"docker inspect --format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {q_container}",
+                    ssh_host, ssh_user, ssh_key, inspect_cmd,
                 )
                 if inspect_code == 0 and out.strip():
                     detected = _parse_mealie_env(out)
@@ -925,9 +927,9 @@ def _detect_db_credentials(
 
             # Strategy 3: docker exec env
             try:
+                exec_cmd = shlex.join(["docker", "exec", container, "env"])
                 out, _err, exec_code = _ssh_exec(
-                    ssh_host, ssh_user, ssh_key,
-                    f"docker exec {q_container} env",
+                    ssh_host, ssh_user, ssh_key, exec_cmd,
                 )
                 if exec_code == 0 and out.strip():
                     detected = _parse_mealie_env(out)

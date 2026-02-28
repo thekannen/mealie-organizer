@@ -13,7 +13,7 @@
     const response = await fetch(`${basePath}/api/v1${path}`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
       body: JSON.stringify(body),
     });
     const text = await response.text();
