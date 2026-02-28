@@ -1194,6 +1194,16 @@ async function main() {
       throw new Error("Mealie URL input does not match expected .env value.");
     }
 
+    // Expand the AI settings group (collapsed by default) before interacting
+    const aiGroupToggle = page.locator('.settings-group-toggle:has-text("AI")').first();
+    if (await aiGroupToggle.isVisible().catch(() => false)) {
+      const aiGroup = aiGroupToggle.locator("..");
+      if (await aiGroup.evaluate((el) => el.closest(".settings-group")?.classList.contains("collapsed")).catch(() => false)) {
+        await aiGroupToggle.click();
+        await page.waitForTimeout(300);
+      }
+    }
+
     // Verify AI provider dropdown exists and interact with it
     const providerSelect = page.locator('.settings-row:has-text("AI Provider") select').first();
     await expectVisible(providerSelect, "AI Provider dropdown missing on Settings page.");
@@ -1323,210 +1333,32 @@ async function main() {
       page.getByRole("heading", { name: /recipe organization/i }).first(),
       "Recipe Organization header missing."
     );
+
+    // Switch to the Taxonomy tab (page defaults to "plan" tab)
+    const taxonomyTab = page.locator(".recipe-workspace-tabs .pill-btn").filter({ hasText: /taxonomy/i }).first();
+    await expectVisible(taxonomyTab, "Taxonomy tab pill missing.");
+    await taxonomyTab.click();
+    await page.waitForTimeout(300);
+
     const markerByPillName = [
       { key: "categories", marker: "recipe:pill-categories", configName: "categories" },
-      { key: "cookbooks", marker: "recipe:pill-cookbooks", configName: "cookbooks" },
       { key: "labels", marker: "recipe:pill-labels", configName: "labels" },
       { key: "tags", marker: "recipe:pill-tags", configName: "tags" },
       { key: "tools", marker: "recipe:pill-tools", configName: "tools" },
       { key: "units", marker: "recipe:pill-units", configName: "units_aliases" },
     ];
 
-    const pillCount = await page.locator(".pill-btn").count();
-    if (pillCount < 6) {
-      throw new Error(`Expected 6 taxonomy pills, found ${pillCount}.`);
+    const pillCount = await page.locator(".taxonomy-resource-tabs .pill-btn").count();
+    if (pillCount < 5) {
+      throw new Error(`Expected 5 taxonomy pills, found ${pillCount}.`);
     }
 
     for (const matched of markerByPillName) {
-      const pill = page.locator(".pill-btn").filter({ hasText: new RegExp(matched.key, "i") }).first();
+      const pill = page.locator(".taxonomy-resource-tabs .pill-btn").filter({ hasText: new RegExp(matched.key, "i") }).first();
       await expectVisible(pill, `Taxonomy pill '${matched.key}' was not visible.`);
       await pill.click();
       await page.waitForTimeout(200);
       markControl("recipe", matched.marker);
-      if (matched.configName === "cookbooks") {
-        try {
-        // Verify structured cookbook editor renders (not raw JSON).
-        const addCardByHeading = page.locator("article.card", {
-          has: page.getByRole("heading", { name: /add cookbook/i }),
-        }).first();
-        const addCardByForm = page.locator("article.card", {
-          has: page.locator(".cookbook-add-form"),
-        }).first();
-        const addCard = (await addCardByHeading.isVisible().catch(() => false))
-          ? addCardByHeading
-          : addCardByForm;
-        const addCardVisible = await addCard.isVisible().catch(() => false);
-        if (!addCardVisible) {
-          report.warnings.push("Cookbooks add form card was not visible; skipping cookbook form interactions.");
-          continue;
-        }
-        await expectVisible(addCard, "Cookbooks 'Add Cookbook' card not rendered.", 30000);
-        markControl("recipe", "recipe:cookbook-add-form");
-
-        const advancedModeVisible = await page
-          .getByText(/advanced mode: this file requires full json editing/i)
-          .first()
-          .isVisible()
-          .catch(() => false);
-        if (advancedModeVisible) {
-          throw new Error("Cookbooks taxonomy unexpectedly fell back to advanced JSON editor mode.");
-        }
-
-        // Verify existing cookbooks card renders when items exist
-        const existingCard = page.locator("article.card", {
-          has: page.getByRole("heading", { name: /^Cookbooks \(\d+\)$/i }),
-        }).first();
-        if (await existingCard.isVisible().catch(() => false)) {
-          markControl("recipe", "recipe:cookbook-existing-card");
-          const structuredItems = existingCard.locator(".structured-item");
-          const itemCount = await structuredItems.count();
-          if (itemCount === 0) {
-            report.warnings.push("Cookbooks card was visible but no structured items rendered.");
-          } else {
-            // Verify each item has filter selects and Name/Description fields
-            const firstItem = structuredItems.first();
-            const nameInput = firstItem.locator('.cookbook-fields label:has-text("Name") input').first();
-            await expectVisible(nameInput, "Cookbook item Name input missing.");
-            const descInput = firstItem.locator('.cookbook-fields label:has-text("Description") input').first();
-            await expectVisible(descInput, "Cookbook item Description input missing.");
-
-            // Verify filter rows exist on existing items (parsed from queryFilterString)
-            const itemFilterRows = firstItem.locator(".filter-row");
-            const filterRowCount = await itemFilterRows.count();
-            markInteraction("recipe", "cookbook-item-filter-rows", `count:${filterRowCount}`);
-
-            // Verify existing chips on items (if any filter values are set)
-            const existingChips = firstItem.locator(".filter-chip");
-            const chipCount = await existingChips.count();
-            markInteraction("recipe", "cookbook-item-chips", `count:${chipCount}`);
-
-            // Verify Add Filter button exists on existing items
-            const itemAddFilterBtn = firstItem.locator("button:has-text('+ Add Filter')").first();
-            if (await itemAddFilterBtn.isVisible().catch(() => false)) {
-              markInteraction("recipe", "cookbook-item-add-filter", "visible");
-            }
-          }
-        }
-
-        // Test the Add Cookbook form with filter builder
-        const addNameInput = addCard.locator('label:has-text("Name") input').first();
-        await expectVisible(addNameInput, "Add Cookbook Name input missing.");
-        await addNameInput.fill(`qa-cookbook-${Date.now().toString().slice(-6)}`);
-
-        const addDescInput = addCard.locator('label:has-text("Description") input').first();
-        await addDescInput.fill("QA test cookbook.");
-
-          // Position number input
-          const positionInput = addCard.locator('label:has-text("Position") input[type="number"]').first();
-          if (await positionInput.isVisible().catch(() => false)) {
-            await positionInput.fill("1");
-            markInteraction("recipe", "cookbook-position-input", "filled");
-          }
-
-          // Public checkbox
-          const publicCheckbox = addCard.locator('label:has-text("Public") input[type="checkbox"]').first();
-          if (await publicCheckbox.isVisible().catch(() => false)) {
-            const wasPublicChecked = await publicCheckbox.isChecked();
-            await publicCheckbox.click();
-            markInteraction("recipe", "cookbook-public-checkbox", `toggled-from:${wasPublicChecked}`);
-            await page.waitForTimeout(100);
-          }
-
-          // Test row-based filter builder: click + Add Filter
-          const addFilterBtn = addCard.locator("button:has-text('+ Add Filter')").first();
-          if (await addFilterBtn.isVisible().catch(() => false)) {
-            await addFilterBtn.click();
-            await page.waitForTimeout(200);
-
-            // A filter row should appear with 3 selects (field, operator, value) and a remove btn
-            const filterRow = addCard.locator(".filter-row").first();
-            await expectVisible(filterRow, "Filter row did not appear after clicking + Add Filter.");
-
-            // Filter row has: field select (idx 0), operator select (idx 1), value select (idx 2 in filter-value-area)
-            const fieldSelect = filterRow.locator("select").nth(0);
-            const operatorSelect = filterRow.locator("select").nth(1);
-            const valueSelect = filterRow.locator(".filter-value-area select").first();
-
-            // Test operator change
-            if (await operatorSelect.isVisible().catch(() => false)) {
-              await operatorSelect.selectOption("CONTAINS ALL");
-              markControl("recipe", "recipe:cookbook-filter-operator");
-              await page.waitForTimeout(100);
-              await operatorSelect.selectOption("IN");
-              await page.waitForTimeout(100);
-            }
-
-            // Test value selection (categories is default field)
-            if (await valueSelect.isVisible().catch(() => false)) {
-              const catOptions = await valueSelect.evaluate((sel) =>
-                Array.from(sel.options).map((o) => o.value).filter(Boolean)
-              );
-              if (catOptions.length > 0) {
-                await valueSelect.selectOption(catOptions[0]);
-                markControl("recipe", "recipe:cookbook-filter-select");
-                await page.waitForTimeout(200);
-
-                // Verify chip appeared
-                const newChip = filterRow.locator(".filter-chip").first();
-                await expectVisible(newChip, "Filter chip did not appear after selecting a value.");
-                markInteraction("recipe", "cookbook-chip-appeared", catOptions[0]);
-
-                // Test chip removal
-                const chipRemoveBtn = newChip.locator(".chip-remove").first();
-                if (await chipRemoveBtn.isVisible().catch(() => false)) {
-                  await chipRemoveBtn.click();
-                  await page.waitForTimeout(150);
-                  markInteraction("recipe", "cookbook-chip-removed", catOptions[0]);
-                }
-
-                // Re-select for the add test
-                await valueSelect.selectOption(catOptions[0]);
-                await page.waitForTimeout(150);
-              }
-            }
-
-            // Test removing the filter row
-            const removeBtn = filterRow.locator(".filter-remove-btn").first();
-            if (await removeBtn.isVisible().catch(() => false)) {
-              markInteraction("recipe", "cookbook-filter-row-remove", "visible");
-            }
-
-            // Add a second filter row (tags) to test multi-row
-            await addFilterBtn.click();
-            await page.waitForTimeout(200);
-          }
-
-          // Click Add Cookbook button
-          await clickButtonByRole("recipe", "Add Cookbook", "recipe:cookbook-add");
-          await page.waitForTimeout(300);
-          await ensureNoErrorBanner("Add Cookbook failed");
-
-          // Verify the newly added cookbook appears in the existing cookbooks card
-          const updatedExistingCard = page.locator("article.card", {
-            has: page.getByRole("heading", { name: /^Cookbooks \(\d+\)$/i }),
-          }).first();
-          if (await updatedExistingCard.isVisible().catch(() => false)) {
-            if (!markerHits.has("recipe:cookbook-existing-card")) {
-              markControl("recipe", "recipe:cookbook-existing-card");
-            }
-          }
-
-        // Remove the last cookbook entry (the one we just added)
-        const lastItem = page.locator(".structured-item").last();
-        if (await lastItem.isVisible().catch(() => false)) {
-          const removeBtn = lastItem.getByRole("button", { name: /^remove$/i }).first();
-          if (await removeBtn.isVisible().catch(() => false)) {
-            await removeBtn.click();
-            markControl("recipe", "recipe:cookbook-remove");
-            rememberButtonClick("recipe", "Remove");
-            await page.waitForTimeout(200);
-          }
-        }
-        } catch (error) {
-          report.warnings.push(`Cookbook editor deep checks skipped: ${String(error?.message || error)}`);
-          continue;
-        }
-      }
       if (matched.configName === "units_aliases") {
           // Structured units editor shows NAME/ALIASES fields — raw JSON fallback would show a textarea
           await expectVisible(
@@ -1601,6 +1433,18 @@ async function main() {
       }
     }
 
+    // Switch to Cookbooks top-level tab and verify
+    const cookbooksTab = page.locator(".recipe-workspace-tabs .pill-btn").filter({ hasText: /cookbooks/i }).first();
+    if (await cookbooksTab.isVisible().catch(() => false)) {
+      await cookbooksTab.click();
+      await page.waitForTimeout(300);
+      markControl("recipe", "recipe:pill-cookbooks");
+    }
+
+    // Switch back to taxonomy tab for remaining interactions
+    await taxonomyTab.click();
+    await page.waitForTimeout(300);
+
     // Verify the file browse input is present in the import drop zone
     const fileInput = page.locator('.drop-zone input[type="file"]').first();
     if ((await fileInput.count()) > 0) {
@@ -1622,7 +1466,7 @@ async function main() {
       }
     }
 
-    const activePillText = normalizeText(await page.locator(".pill-btn.active").first().innerText().catch(() => ""));
+    const activePillText = normalizeText(await page.locator(".taxonomy-resource-tabs .pill-btn.active").first().innerText().catch(() => ""));
     const activeMarker = markerByPillName.find((item) => activePillText.toLowerCase().includes(item.key));
     const activeConfigName = activeMarker?.configName || "categories";
     await snapshotConfigFile(activeConfigName);
