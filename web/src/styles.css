@@ -1705,18 +1705,27 @@ details[open] > summary .log-progress-chevron {
 .drag-handle {
   color: var(--text-muted);
   user-select: none;
-  cursor: move;
-  width: 1.4rem;
+  width: 2rem;
   text-align: center;
+  padding-left: 0.12rem;
+  padding-right: 0.12rem;
+}
+
+.drag-handle-glyph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 6px;
+  cursor: grab;
+  line-height: 0;
 }
 
-.drag-handle .ui-icon {
-  width: 1rem;
-  height: 1rem;
-  stroke-width: 2.2;
+.drag-handle-glyph .ui-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke-width: 2.1;
 }
 
 .table-col-select {
@@ -1725,7 +1734,8 @@ details[open] > summary .log-progress-chevron {
 }
 
 .table-col-drag {
-  width: 1.6rem;
+  width: 2rem;
+  min-width: 2rem;
   text-align: center;
 }
 

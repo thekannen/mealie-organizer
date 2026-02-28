@@ -501,7 +501,9 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                           />
                         </td>
                         <td className="drag-handle table-col-drag">
-                          <Icon name="menu" />
+                          <span className="drag-handle-glyph" aria-hidden="true">
+                            <Icon name="menu" />
+                          </span>
                         </td>
                         <td className="workspace-row-index">{index + 1}</td>
                         <td>
