@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -109,6 +111,20 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Suppress ConnectionResetError spam on Windows. The ProactorEventLoop
+        # tries socket.shutdown() on already-closed connections, flooding the
+        # terminal and sometimes locking it up.
+        if sys.platform == "win32":
+            loop = asyncio.get_running_loop()
+            _default = loop.default_exception_handler
+
+            def _handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+                if isinstance(context.get("exception"), ConnectionResetError):
+                    return
+                _default(context)
+
+            loop.set_exception_handler(_handler)
+
         app.state.services = services
         services.runner.start()
         services.scheduler.start()
