@@ -246,6 +246,25 @@ function parseMarkdownBlocks(markdown) {
   const isOrderedItem = (line) => /^\s*\d+\.\s+/.test(line);
   const isHeading = (line) => /^\s*#{1,6}\s+/.test(line);
   const isFence = (line) => /^\s*```/.test(line);
+  const isTableRow = (line) => /^\s*\|.*\|\s*$/.test(line);
+  const isTableDivider = (line) => {
+    const trimmed = String(line || "").trim();
+    if (!trimmed.includes("|")) return false;
+    const cells = trimmed
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+    if (cells.length < 2) return false;
+    return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+  };
+  const parseTableCells = (line) =>
+    String(line || "")
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
 
   while (index < lines.length) {
     const line = lines[index];
@@ -271,6 +290,21 @@ function parseMarkdownBlocks(markdown) {
       const level = Math.min(4, Math.max(2, rawLevel));
       blocks.push({ type: "heading", level, text: String(match ? match[2] : line).trim() });
       index += 1;
+      continue;
+    }
+
+    if (isTableRow(line) && index + 1 < lines.length && isTableDivider(lines[index + 1])) {
+      const headers = parseTableCells(line);
+      index += 2;
+      const rows = [];
+      while (index < lines.length && isTableRow(lines[index])) {
+        const row = parseTableCells(lines[index]);
+        if (row.some((cell) => cell.length > 0)) {
+          rows.push(row);
+        }
+        index += 1;
+      }
+      blocks.push({ type: "table", headers, rows });
       continue;
     }
 
@@ -307,7 +341,8 @@ function parseMarkdownBlocks(markdown) {
       !isFence(lines[index]) &&
       !isHeading(lines[index]) &&
       !isListItem(lines[index]) &&
-      !isOrderedItem(lines[index])
+      !isOrderedItem(lines[index]) &&
+      !(isTableRow(lines[index]) && index + 1 < lines.length && isTableDivider(lines[index + 1]))
     ) {
       paragraph.push(lines[index].trim());
       index += 1;
@@ -353,6 +388,37 @@ export function renderMarkdownDocument(markdown) {
             <li key={`md-${index}-${itemIndex}`}>{renderInlineMarkdown(item, `md-${index}-${itemIndex}`)}</li>
           ))}
         </ol>
+      );
+    }
+    if (block.type === "table") {
+      const columnCount = Math.max(
+        block.headers.length,
+        ...block.rows.map((row) => (Array.isArray(row) ? row.length : 0))
+      );
+      const headerCells = Array.from({ length: columnCount }, (_, colIndex) => block.headers[colIndex] || "");
+      return (
+        <div key={`md-${index}`} className="md-table-wrap">
+          <table className="md-table">
+            <thead>
+              <tr>
+                {headerCells.map((header, colIndex) => (
+                  <th key={`md-${index}-h-${colIndex}`}>{renderInlineMarkdown(header, `md-${index}-h-${colIndex}`)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={`md-${index}-r-${rowIndex}`}>
+                  {headerCells.map((_, colIndex) => (
+                    <td key={`md-${index}-r-${rowIndex}-c-${colIndex}`}>
+                      {renderInlineMarkdown(row[colIndex] || "", `md-${index}-r-${rowIndex}-c-${colIndex}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
     return <p key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</p>;

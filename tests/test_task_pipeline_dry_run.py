@@ -26,6 +26,7 @@ ALL_TASK_IDS = [
     "data-maintenance",
     "health-check",
     "ingredient-parse",
+    "slug-repair",
     "tag-categorize",
     "taxonomy-refresh",
     "yield-normalize",

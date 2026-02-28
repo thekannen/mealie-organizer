@@ -1510,7 +1510,6 @@ details[open] > summary .log-progress-chevron {
   gap: 0.42rem;
 }
 
-.ai-task-list li,
 .config-shortcuts li,
 .policy-list li {
   border: 1px solid var(--line);
@@ -1521,6 +1520,20 @@ details[open] > summary .log-progress-chevron {
   justify-content: space-between;
   align-items: flex-start;
   gap: 0.55rem;
+}
+
+.ai-task-list li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  padding: 0.48rem 0.56rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.ai-task-list li p {
+  margin: 0;
+  text-align: left;
 }
 
 .policy-list .field-inline {
@@ -2486,6 +2499,40 @@ button.danger {
 .markdown-preview ul,
 .markdown-preview ol {
   padding-left: 1.05rem;
+}
+
+.markdown-preview .md-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.markdown-preview .md-table {
+  width: 100%;
+  min-width: 460px;
+  border-collapse: collapse;
+  font-size: 0.77rem;
+}
+
+.markdown-preview .md-table th,
+.markdown-preview .md-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.markdown-preview .md-table th {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: color-mix(in oklab, var(--surface-soft) 82%, #000 18%);
+}
+
+.markdown-preview .md-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .doc-code {

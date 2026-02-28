@@ -14,6 +14,7 @@ dependencies = [
   "cryptography>=42.0.0",
   "eval_type_backport>=0.2.0; python_version < '3.10'",
   "fastapi>=0.115.0",
+  "python-slugify>=8.0.0",
   "requests>=2.31.0",
   "sqlalchemy>=2.0.30",
   "uvicorn>=0.30.0",

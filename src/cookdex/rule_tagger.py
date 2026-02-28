@@ -421,7 +421,9 @@ class RecipeRuleTagger:
                     headers=headers,
                     timeout=30,
                 )
-                if not patch.ok:
+                if patch.status_code == 403:
+                    print(f"[warn] PATCH '{slug}' returned 403 (Mealie slug-mismatch bug)", flush=True)
+                elif not patch.ok:
                     print(f"[warn] PATCH failed for '{slug}': {patch.status_code}", flush=True)
 
         return count

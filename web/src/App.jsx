@@ -24,7 +24,6 @@ import {
   FILTER_OPERATORS,
   parseIso,
   parseLineEditorContent,
-  renderMarkdownDocument,
   runTypeLabel,
   statusClass,
   userRoleLabel,
@@ -732,6 +731,7 @@ export default function App() {
   const [connectionChecks, setConnectionChecks] = useState({
     mealie: { loading: false, ok: null, detail: "" },
     openai: { loading: false, ok: null, detail: "" },
+    anthropic: { loading: false, ok: null, detail: "" },
     ollama: { loading: false, ok: null, detail: "" },
     db: { loading: false, ok: null, detail: "" },
     dbDetect: { loading: false, ok: null, detail: "" },
@@ -753,7 +753,6 @@ export default function App() {
   const [forcedResetShowPass, setForcedResetShowPass] = useState(false);
 
   const [taxonomyItemsByFile, setTaxonomyItemsByFile] = useState({});
-  const [helpDocs, setHelpDocs] = useState([]);
   const [debugLog, setDebugLog] = useState(null);
   const [debugLogLoading, setDebugLogLoading] = useState(false);
   const [overviewMetrics, setOverviewMetrics] = useState(null);
@@ -1247,7 +1246,6 @@ export default function App() {
     setSchedules(nextSchedules);
     setConfigFiles(data.config?.items || []);
     setUsers(data.users?.items || []);
-    setHelpDocs(data.help?.items || []);
     setOverviewMetrics(data.metrics);
     setQualityMetrics(data.quality);
     setAboutMeta(data.about);
@@ -1303,6 +1301,7 @@ export default function App() {
       "=== Connection Tests ===",
       connLine("Mealie", conns.mealie),
       connLine("OpenAI", conns.openai),
+      connLine("Anthropic", conns.anthropic),
       connLine("Ollama", conns.ollama),
       connLine("Direct DB", conns.direct_db),
       "",
@@ -1317,6 +1316,8 @@ export default function App() {
       `Mealie key:       ${cfg.mealie_key_set ? "set" : "NOT SET"}`,
       `OpenAI key:       ${cfg.openai_key_set ? "set" : "not set"}`,
       `OpenAI model:     ${cfg.openai_model || "(default)"}`,
+      `Anthropic key:    ${cfg.anthropic_key_set ? "set" : "not set"}`,
+      `Anthropic model:  ${cfg.anthropic_model || "(default)"}`,
       `Ollama URL:       ${cfg.ollama_url || "(not set)"}`,
       `Ollama model:     ${cfg.ollama_model || "(default)"}`,
       "",
@@ -1401,7 +1402,7 @@ export default function App() {
     try {
       const [
         taskPayload, runPayload, schedulePayload, settingsPayload,
-        configPayload, usersPayload, helpPayload,
+        configPayload, usersPayload,
         metricsPayload, qualityPayload, aboutPayload, healthPayload,
       ] = await Promise.all([
         api("/tasks"),
@@ -1410,7 +1411,6 @@ export default function App() {
         api("/settings"),
         api("/config/files"),
         api("/users"),
-        api("/help/docs").catch(() => ({ items: [] })),
         api("/metrics/overview").catch(() => null),
         api("/metrics/quality").catch(() => null),
         api("/about/meta").catch(() => null),
@@ -1420,7 +1420,7 @@ export default function App() {
       const data = {
         tasks: taskPayload, runs: runPayload, schedules: schedulePayload,
         settings: settingsPayload, config: configPayload, users: usersPayload,
-        help: helpPayload, metrics: metricsPayload, quality: qualityPayload,
+        metrics: metricsPayload, quality: qualityPayload,
         about: aboutPayload, health: healthPayload,
         timestamp: new Date().toISOString(), savedAt: Date.now(),
       };
@@ -4197,9 +4197,7 @@ export default function App() {
             >
               <Icon name="download" />
               {taxonomyActionLoading === "mealie" ? "Initializing..." : "Initialize from Mealie"}
-            </button>
-
-            <hr />
+            </button>            
 
             <label className="field">
               <span>Starter Pack Import Mode</span>
@@ -4547,28 +4545,6 @@ export default function App() {
           </article>
 
           <article className="card">
-            <h3>Reference Guides</h3>
-            <p className="muted">Embedded documentation you can read without leaving the app.</p>
-
-            <div className="accordion-stack">
-              {helpDocs.length === 0 ? (
-                <p className="muted tiny">No embedded docs were found in this deployment.</p>
-              ) : (
-                helpDocs.map((doc) => (
-                  <details className="accordion" key={doc.id}>
-                    <summary>
-                      <Icon name="info" />
-                      <span>{doc.title}</span>
-                      <Icon name="chevron" />
-                    </summary>
-                    <div className="doc-preview markdown-preview">{renderMarkdownDocument(doc.content)}</div>
-                  </details>
-                ))
-              )}
-            </div>
-          </article>
-
-          <article className="card">
             <h3>Report a Bug</h3>
             <p className="muted">Collect debug logs and open a GitHub issue to help the developer reproduce and fix problems.</p>
 
@@ -4617,6 +4593,7 @@ export default function App() {
                           </div>
                           <ConnRow label="Mealie" conn={conns.mealie} />
                           <ConnRow label="OpenAI" conn={conns.openai} />
+                          <ConnRow label="Anthropic" conn={conns.anthropic} />
                           <ConnRow label="Ollama" conn={conns.ollama} />
                           <ConnRow label="Direct DB" conn={conns.direct_db} />
                           <div className="debug-health-row">
@@ -4712,13 +4689,6 @@ export default function App() {
             </a>
           </article>
 
-          <article className="card">
-            <h3><Icon name="help" /> Why this app exists</h3>
-            <p className="muted">
-              CookDex is designed for home server users who want powerful cleanup and organization workflows without
-              command-line complexity.
-            </p>
-          </article>
       </section>
     );
   }
@@ -4974,4 +4944,3 @@ export default function App() {
     </main>
   );
 }
-

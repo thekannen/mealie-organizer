@@ -35,22 +35,185 @@ def require_float(value: object, field: str) -> float:
 
 
 def parse_json_response(result_text):
-    cleaned = result_text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    cleaned = cleaned.replace("“", '"').replace("”", '"').replace("'", '"')
+    """Parse JSON from an LLM response with progressive cleaning stages."""
+    if not result_text or not isinstance(result_text, str):
+        return None
+
+    trimmed = result_text.strip()
+
+    # Stage 0: try raw text directly (fast path for well-formed responses).
+    result = _parse_stage(trimmed)
+    if result is not None:
+        return result
+
+    # Stage 1: strip markdown code fences.
+    defenced = re.sub(r"^```(?:json)?\s*\n?", "", trimmed, count=1, flags=re.IGNORECASE)
+    defenced = re.sub(r"\n?\s*```\s*$", "", defenced).strip()
+    if defenced != trimmed:
+        result = _parse_stage(defenced)
+        if result is not None:
+            return result
+
+    # Stage 2: extract outermost JSON array/object from surrounding prose.
+    text = defenced
+    extracted = _extract_json_block(text)
+    if extracted is not None and extracted != text:
+        result = _parse_stage(extracted)
+        if result is not None:
+            return result
+        text = extracted
+
+    # Stage 3: fix smart (curly) double quotes and trailing commas.
+    cleaned = _fix_smart_quotes(text)
     cleaned = re.sub(r",(\s*[\]}])", r"\1", cleaned)
-    cleaned = re.sub(r"(\w+):", r'"\1":', cleaned)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"\[.*\]", cleaned, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except Exception:
-                pass
+    result = _parse_stage(cleaned)
+    if result is not None:
+        return result
+
+    # Stage 4: quote bare keys and replace single-quoted strings.
+    fixed = _replace_single_quoted_strings(_quote_bare_keys(cleaned))
+    if fixed != cleaned:
+        result = _parse_stage(fixed)
+        if result is not None:
+            return result
+
+    # Stage 5: attempt to repair truncated JSON.
+    repaired = _repair_truncated_json(fixed)
+    if repaired is not None:
+        result = _parse_stage(repaired)
+        if result is not None:
+            return result
+
     return None
+
+
+def _try_json_loads(text):
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def _unwrap_if_needed(parsed):
+    """If parsed is a single-key dict wrapping a list, unwrap it.
+
+    Handles OpenAI json_object mode returning {"results": [...]} instead of [...].
+    """
+    if isinstance(parsed, dict) and len(parsed) == 1:
+        value = next(iter(parsed.values()))
+        if isinstance(value, list):
+            return value
+    return parsed
+
+
+def _parse_stage(text):
+    result = _try_json_loads(text)
+    if result is not None:
+        return _unwrap_if_needed(result)
+    return None
+
+
+def _extract_json_block(text):
+    """Find the outermost JSON array or object using bracket-depth counting.
+
+    Tries array first. If the first JSON-significant character is '[' but the
+    array is incomplete (truncated), returns None so truncation repair can run.
+    """
+    first_bracket = text.find("[")
+    first_brace = text.find("{")
+
+    pairs = [("[", "]"), ("{", "}")]
+    # If '[' appears before '{', only try array extraction so truncated arrays
+    # are not short-circuited by a complete inner object.
+    if first_bracket != -1 and (first_brace == -1 or first_bracket < first_brace):
+        pairs = [("[", "]")]
+
+    for open_char, close_char in pairs:
+        start = text.find(open_char)
+        if start == -1:
+            continue
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == "\\" and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == open_char:
+                depth += 1
+            elif ch == close_char:
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+    return None
+
+
+def _fix_smart_quotes(text):
+    """Replace curly double-quotes with straight double-quotes.
+
+    Single curly quotes (apostrophes) are left alone to avoid corrupting values.
+    """
+    return text.replace("\u201c", '"').replace("\u201d", '"')
+
+
+def _quote_bare_keys(text):
+    """Quote unquoted JSON object keys without corrupting already-quoted keys."""
+    return re.sub(r'(?<=[{\[,])\s*(\w+)\s*:', r' "\1":', text)
+
+
+def _replace_single_quoted_strings(text):
+    """Replace single-quoted JSON strings with double-quoted ones."""
+    return re.sub(r"'((?:[^'\\]|\\.)*)'", r'"\1"', text)
+
+
+def _repair_truncated_json(text):
+    """Close unclosed brackets/braces in JSON truncated by token limits."""
+    if not text or text[0] not in ("[", "{"):
+        return None
+
+    stack = []
+    in_string = False
+    escape_next = False
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in ("[", "{"):
+            stack.append("]" if ch == "[" else "}")
+        elif ch in ("]", "}"):
+            if stack and stack[-1] == ch:
+                stack.pop()
+
+    if not stack:
+        return None  # already balanced
+
+    # Trim back to last complete value boundary if we're mid-string.
+    base = text
+    if in_string:
+        last_quote = base.rfind('"')
+        if last_quote >= 0:
+            base = base[:last_quote]
+
+    base = base.rstrip().rstrip(",")
+    return base + "".join(reversed(stack))
 
 
 class MealieCategorizer:
@@ -382,9 +545,15 @@ Recipes:
             result = self.query_text(prompt_text)
             if result:
                 parsed = parse_json_response(result)
-                if parsed:
+                if parsed is not None:
                     return parsed
-            self.log(f"[warn] Retry {attempt + 1}/{attempts} failed.")
+                snippet = result[:200].replace("\n", "\\n")
+                if len(result) > 200:
+                    snippet += f"... ({len(result)} chars total)"
+                reason = f"invalid JSON in response: {snippet}"
+            else:
+                reason = "empty or error response from provider"
+            self.log(f"[warn] Retry {attempt + 1}/{attempts} failed: {reason}")
             self.increment_stat("query_retry_warnings")
             if attempt < attempts - 1:
                 sleep_for = (self.query_retry_base_seconds * (2**attempt)) + random.uniform(0, 0.75)
@@ -584,6 +753,13 @@ Recipes:
             json=payload,
             timeout=60,
         )
+        if response.status_code == 403:
+            self.log(
+                f"[warn] PATCH '{recipe_slug}' returned 403 (Mealie slug-mismatch bug: "
+                f"stored slug differs from name-derived slug; see mealie#4915)"
+            )
+            self.increment_stat("update_failures")
+            return False
         if response.status_code != 200:
             self.log(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
             self.increment_stat("update_failures")

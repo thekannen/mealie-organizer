@@ -28,11 +28,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from slugify import slugify
+
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 
 DEFAULT_REPORT = "reports/recipe_name_normalize_report.json"
 DEFAULT_WORKERS = 8
+
+
+def _make_slug(name: str) -> str:
+    """Generate a slug matching Mealie's create_recipe_slug()."""
+    s = slugify(name)
+    if len(s) > 250:
+        s = s[:250]
+    return s
+
 
 # Ordered from most-specific to least-specific.
 _PREFIX_PATTERNS: list[re.Pattern] = [
@@ -184,7 +195,10 @@ class RecipeNameNormalizer:
 
         def _patch(action: NameAction) -> tuple[NameAction, bool, str]:
             try:
-                self.client.patch_recipe(action.slug, {"name": action.new_name})
+                self.client.patch_recipe(action.slug, {
+                    "name": action.new_name,
+                    "slug": _make_slug(action.new_name),
+                })
                 return action, True, ""
             except Exception as exc:
                 return action, False, str(exc)

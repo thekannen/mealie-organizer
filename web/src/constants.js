@@ -35,7 +35,7 @@ export const PAGE_META = {
   },
   about: {
     title: "About CookDex",
-    subtitle: "Version, project links, and operational metrics for this deployment.",
+    subtitle: "CookDex is designed for home server users who want powerful cleanup and organization workflows without command-line complexity.",
   },
 };
 
@@ -84,19 +84,20 @@ export const HELP_SETUP_GUIDES = [
     tip: "OpenAI charges per API call. The default model (gpt-4o-mini) is inexpensive \u2014 categorizing 1,000 recipes typically costs under $0.50.",
   },
   {
-    id: "mealie-db-credentials",
-    title: "Find your Mealie Database Credentials",
-    icon: "database",
-    what: "Direct DB access is optional but dramatically faster for bulk tasks. You need the database credentials from your Mealie deployment.",
+    id: "anthropic-api-key",
+    title: "Get an Anthropic API Key",
+    icon: "wand",
+    what: "An Anthropic API key lets you use Claude models for recipe categorization. This is optional \u2014 rule-based categorization works without any AI provider.",
     steps: [
-      "Open the docker-compose.yml (or .env file) used to run your Mealie server.",
-      "Look for Postgres environment variables: POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB (Mealie defaults to mealie for the database name).",
-      "In CookDex Settings under the Direct DB group, set DB Type to postgres.",
-      "Enter the host (the server IP or Docker service name), port (default 5432), database name, username, and password.",
-      "If Postgres is only reachable via SSH (e.g. a remote server), also fill in SSH Tunnel Host, SSH User, and SSH Key Path.",
-      "Click Test DB to verify the connection.",
+      "Go to console.anthropic.com and sign in (or create an account).",
+      "Open the API Keys page from the left sidebar.",
+      "Click Create Key, give it a name, and click Create.",
+      "Copy the key immediately \u2014 Anthropic only shows it once.",
+      "In CookDex Settings, set AI Provider to Anthropic (Claude).",
+      "Paste the key into the Anthropic API Key field under the AI group.",
+      "Click Test Anthropic to verify it works.",
     ],
-    tip: "For Mealie Docker installs using SQLite instead of Postgres, set DB Type to sqlite and provide the path to mealie.db (usually /app/data/mealie.db inside the Mealie container).",
+    tip: "Anthropic charges per API call. Claude Haiku is the most cost-effective option for categorization \u2014 comparable to gpt-4o-mini in cost.",
   },
   {
     id: "ssh-tunnel-setup",
@@ -115,6 +116,21 @@ export const HELP_SETUP_GUIDES = [
       "Click Test DB to verify the full tunnel + database connection.",
     ],
     tip: "CookDex opens and closes the tunnel automatically for each task run \u2014 no background ssh process needed. The key must be mounted into the container; host paths like ~/.ssh/ are not visible inside Docker.",
+  },
+  {
+    id: "mealie-db-credentials",
+    title: "Find your Mealie Database Credentials",
+    icon: "database",
+    what: "Direct DB access is optional but dramatically faster for bulk tasks. You need the database credentials from your Mealie deployment.",
+    steps: [
+      "Open the docker-compose.yml (or .env file) used to run your Mealie server.",
+      "Look for Postgres environment variables: POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB (Mealie defaults to mealie for the database name).",
+      "In CookDex Settings under the Direct DB group, set DB Type to postgres.",
+      "Enter the host (the server IP or Docker service name), port (default 5432), database name, username, and password.",
+      "If Postgres is only reachable via SSH (e.g. a remote server), also fill in SSH Tunnel Host, SSH User, and SSH Key Path.",
+      "Click Test DB to verify the connection.",
+    ],
+    tip: "For Mealie Docker installs using SQLite instead of Postgres, set DB Type to sqlite and provide the path to mealie.db (usually /app/data/mealie.db inside the Mealie container).",
   },
 ];
 
@@ -224,6 +240,19 @@ export const HELP_TASK_GUIDES = [
       "Disable Dry Run and confirm the policy unlock to write changes.",
     ],
     tip: "Run this first after a bulk import. The junk filter is fast and catches most non-recipe content automatically.",
+  },
+  {
+    id: "slug-repair",
+    title: "Repair Recipe Slugs",
+    icon: "link",
+    group: "Actions",
+    what: "Detects and fixes recipe slug mismatches caused by name normalization. When a recipe name is changed without updating its URL slug, Mealie\u2019s permission check blocks further edits (403 errors). This task scans all recipes via API to find mismatches; fixes require direct database access.",
+    steps: [
+      "Run with Dry Run on to scan for mismatched slugs and see the SQL fix statements.",
+      "If you have DB credentials configured, enable Use Direct DB and disable Dry Run to apply fixes automatically.",
+      "If you do not have DB access, copy the printed SQL statements and run them manually against your Mealie database.",
+    ],
+    tip: "Run this after using Clean Recipe Library with Normalize Names enabled. Future name normalizations now include slug updates automatically.",
   },
   {
     id: "ingredient-parse",

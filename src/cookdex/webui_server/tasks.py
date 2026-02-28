@@ -465,6 +465,19 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
+def _build_slug_repair(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "use_db"})
+    env, dangerous = _common_env(options)
+    dry_run = _bool_option(options, "dry_run", True)
+    use_db = _bool_option(options, "use_db", False)
+    cmd = _py_module("cookdex.slug_repair")
+    if not dry_run:
+        cmd.append("--apply")
+    if use_db:
+        cmd.append("--use-db")
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
 def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "use_db"})
     env, dangerous = _common_env(options)
@@ -722,6 +735,26 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_clean_recipes,
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="slug-repair",
+                title="Repair Recipe Slugs",
+                group="Actions",
+                description="Detect and fix recipe slug mismatches caused by name normalization. Mismatched slugs block recipe updates (403 errors). Scan always runs via API; fixes require direct DB access.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Scan only — print mismatches and SQL fix statements."),
+                    OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
+                        "boolean",
+                        default=False,
+                        help_text="Apply fixes directly via Mealie's database. Required for writing — the API cannot update these recipes.",
+                        advanced=True,
+                    ),
+                ],
+                build=_build_slug_repair,
             )
         )
         self._register(

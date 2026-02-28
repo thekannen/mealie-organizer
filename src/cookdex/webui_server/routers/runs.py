@@ -24,6 +24,7 @@ async def list_tasks(
     runtime_env = build_runtime_env(services.state, services.cipher)
     db_configured = bool(runtime_env.get("MEALIE_DB_TYPE", "").strip())
     has_openai = bool(runtime_env.get("OPENAI_API_KEY", "").strip())
+    has_anthropic = bool(runtime_env.get("ANTHROPIC_API_KEY", "").strip())
     has_ollama = bool(runtime_env.get("OLLAMA_URL", "").strip())
     for task in tasks:
         task["policy"] = policies.get(task["task_id"], {"allow_dangerous": False})
@@ -34,6 +35,8 @@ async def list_tasks(
                 provider_choices = []
                 if has_openai:
                     provider_choices.append({"value": "chatgpt", "label": "ChatGPT (OpenAI)"})
+                if has_anthropic:
+                    provider_choices.append({"value": "anthropic", "label": "Anthropic (Claude)"})
                 if has_ollama:
                     provider_choices.append({"value": "ollama", "label": "Ollama (Local)"})
                 if not provider_choices:

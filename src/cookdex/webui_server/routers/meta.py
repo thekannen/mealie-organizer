@@ -263,6 +263,7 @@ async def get_help_docs(
 def _build_health_report(services: Services) -> dict[str, Any]:
     """Collect instance health metrics + live connection tests for debug reports."""
     from .settings_api import (
+        _test_anthropic_connection,
         _test_db_connection,
         _test_mealie_connection,
         _test_ollama_connection,
@@ -297,6 +298,8 @@ def _build_health_report(services: Services) -> dict[str, Any]:
     mealie_api_key = str(runtime_env.get("MEALIE_API_KEY", "")).strip()
     openai_api_key = str(runtime_env.get("OPENAI_API_KEY", "")).strip()
     openai_model = str(runtime_env.get("OPENAI_MODEL", "")).strip()
+    anthropic_api_key = str(runtime_env.get("ANTHROPIC_API_KEY", "")).strip()
+    anthropic_model = str(runtime_env.get("ANTHROPIC_MODEL", "")).strip()
     ollama_url = str(runtime_env.get("OLLAMA_URL", "")).strip()
     ollama_model = str(runtime_env.get("OLLAMA_MODEL", "")).strip()
 
@@ -315,6 +318,11 @@ def _build_health_report(services: Services) -> dict[str, Any]:
         openai_conn = _conn(*_test_openai_connection(openai_api_key, openai_model or "gpt-4o-mini"))
     else:
         openai_conn = _conn(False, "Not configured")
+
+    if anthropic_api_key:
+        anthropic_conn = _conn(*_test_anthropic_connection(anthropic_api_key, anthropic_model or "claude-sonnet-4-6"))
+    else:
+        anthropic_conn = _conn(False, "Not configured")
 
     if ollama_url:
         ollama_conn = _conn(*_test_ollama_connection(ollama_url, ollama_model))
@@ -335,12 +343,15 @@ def _build_health_report(services: Services) -> dict[str, Any]:
             "mealie_key_set": bool(mealie_api_key),
             "openai_key_set": bool(openai_api_key),
             "openai_model": openai_model or None,
+            "anthropic_key_set": bool(anthropic_api_key),
+            "anthropic_model": anthropic_model or None,
             "ollama_url": ollama_url or None,
             "ollama_model": ollama_model or None,
         },
         "connections": {
             "mealie": mealie_conn,
             "openai": openai_conn,
+            "anthropic": anthropic_conn,
             "ollama": ollama_conn,
             "direct_db": db_conn,
         },

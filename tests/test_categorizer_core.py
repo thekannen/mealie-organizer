@@ -20,6 +20,93 @@ def test_parse_json_response_returns_none_for_invalid_payload():
     assert parsed is None
 
 
+def test_parse_json_response_returns_none_for_empty_and_none():
+    assert parse_json_response("") is None
+    assert parse_json_response("   ") is None
+    assert parse_json_response(None) is None
+
+
+def test_parse_json_response_valid_json_passes_through():
+    raw = '[{"slug":"abc","categories":["Dinner"],"tags":["Quick"],"tools":["Blender"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+    assert parsed[0]["tools"] == ["Blender"]
+
+
+def test_parse_json_response_does_not_corrupt_urls_in_values():
+    raw = '[{"slug":"test","url":"https://example.com","categories":["Dinner"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["url"] == "https://example.com"
+
+
+def test_parse_json_response_does_not_double_quote_keys():
+    raw = '{"slug": "test", "categories": ["Dinner"]}'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, dict) or isinstance(parsed, list)
+    if isinstance(parsed, dict):
+        assert parsed["slug"] == "test"
+
+
+def test_parse_json_response_preserves_apostrophes():
+    raw = '[{"slug":"grandmas-pie","tags":["Grandma\'s Favorite"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert "Grandma's Favorite" in parsed[0]["tags"]
+
+
+def test_parse_json_response_handles_preamble_text():
+    raw = "Here are the categorized recipes:\n\n" + \
+          '[{"slug":"abc","categories":["Dinner"],"tags":["Quick"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_handles_postamble_text():
+    raw = '[{"slug":"abc","categories":["Dinner"]}]\n\nI hope this helps!'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_handles_truncated_array():
+    raw = '[{"slug":"abc","categories":["Dinner"]},{"slug":"def","categories":["Lu'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert len(parsed) >= 1
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_handles_truncated_after_comma():
+    raw = '[{"slug":"abc","categories":["Dinner"]},'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_smart_double_quotes():
+    raw = '[{\u201cslug\u201d: \u201cabc\u201d, \u201ccategories\u201d: [\u201cDinner\u201d]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_unwraps_object_wrapping_array():
+    raw = '{"results": [{"slug":"abc","categories":["Dinner"]}]}'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["slug"] == "abc"
+
+
+def test_parse_json_response_nested_brackets_in_values():
+    raw = 'Result: [{"slug":"test","note":"uses [brackets] in text","categories":["Dinner"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0]["note"] == "uses [brackets] in text"
+
+
 def test_update_recipe_metadata_dry_run_does_not_patch(monkeypatch, tmp_path, capsys):
     def _should_not_patch(*_args, **_kwargs):
         raise AssertionError("requests.patch should not run in dry-run mode")

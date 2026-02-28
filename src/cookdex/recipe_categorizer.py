@@ -173,6 +173,7 @@ def query_ollama(
     payload = {
         "model": model,
         "prompt": prompt_text + "\n\nRespond only with valid JSON.",
+        "format": "json",
         "options": options,
     }
     last_error = None
@@ -237,8 +238,9 @@ def query_anthropic(
         "max_tokens": max_tokens,
         "messages": [
             {"role": "user", "content": prompt_text + "\n\nRespond only with valid JSON."},
+            {"role": "assistant", "content": "["},
         ],
-        "system": "You are a precise JSON-only assistant.",
+        "system": "You are a precise JSON-only assistant. Always respond with a raw JSON array.",
     }
     url = f"{base_url.rstrip('/')}/messages"
     headers = {
@@ -266,7 +268,9 @@ def query_anthropic(
             data = response.json()
             content = data.get("content", [])
             if isinstance(content, list) and content:
-                return content[0].get("text", "").strip()
+                text = content[0].get("text", "").strip()
+                # Prepend the "[" from the prefilled assistant turn.
+                return "[" + text if text else None
             return None
         except requests.RequestException as exc:
             last_error = exc
