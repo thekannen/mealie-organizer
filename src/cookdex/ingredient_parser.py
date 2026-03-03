@@ -34,6 +34,84 @@ class AlreadyParsed(Exception):
     pass
 
 
+class ReviewTagManager:
+    """Lazily resolve (or create) a Mealie tag and add/remove it on recipes."""
+
+    def __init__(self, client: MealieApiClient, tag_name: str, dry_run: bool) -> None:
+        self._client = client
+        self._tag_name = tag_name
+        self._dry_run = dry_run
+        self._tag: dict[str, str] | None = None  # {"id": ..., "name": ...}
+        self._resolved = False
+
+    def _resolve_tag(self) -> dict[str, str] | None:
+        if self._resolved:
+            return self._tag
+        self._resolved = True
+        if not self._tag_name:
+            return None
+        try:
+            all_tags = self._client.get_organizer_items("tags")
+        except requests.RequestException as exc:
+            print(f"[warn] ReviewTagManager: failed to list tags: {_short_text(str(exc))}", flush=True)
+            return None
+        name_lower = self._tag_name.strip().lower()
+        for tag in all_tags:
+            if str(tag.get("name", "")).strip().lower() == name_lower:
+                self._tag = {"id": str(tag["id"]), "name": str(tag["name"])}
+                return self._tag
+        # Tag doesn't exist — create it
+        if self._dry_run:
+            print(f"[dry-run] Would create tag '{self._tag_name}'", flush=True)
+            return None
+        try:
+            created = self._client.create_organizer_item("tags", {"name": self._tag_name})
+            self._tag = {"id": str(created["id"]), "name": str(created["name"])}
+            print(f"[tag] Created review tag '{self._tag_name}'", flush=True)
+        except requests.RequestException as exc:
+            print(f"[warn] ReviewTagManager: failed to create tag: {_short_text(str(exc))}", flush=True)
+        return self._tag
+
+    def ensure_tagged(self, slug: str, recipe_tags: list[dict[str, Any]]) -> bool:
+        """Add the review tag to the recipe if not already present. Returns True if tag was added."""
+        tag = self._resolve_tag()
+        if tag is None:
+            return False
+        tag_id = tag["id"]
+        if any(str(t.get("id", "")) == tag_id for t in recipe_tags):
+            return False
+        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", ""))} for t in recipe_tags if t.get("id")]
+        new_tags.append(tag)
+        if self._dry_run:
+            print(f"[dry-run] Would tag '{slug}' with '{self._tag_name}'", flush=True)
+            return True
+        try:
+            self._client.patch_recipe(slug, {"tags": new_tags})
+            return True
+        except requests.RequestException as exc:
+            print(f"[warn] Failed to tag '{slug}': {_short_text(str(exc))}", flush=True)
+            return False
+
+    def ensure_untagged(self, slug: str, recipe_tags: list[dict[str, Any]]) -> bool:
+        """Remove the review tag from the recipe if present. Returns True if tag was removed."""
+        tag = self._resolve_tag()
+        if tag is None:
+            return False
+        tag_id = tag["id"]
+        if not any(str(t.get("id", "")) == tag_id for t in recipe_tags):
+            return False
+        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", ""))} for t in recipe_tags if str(t.get("id", "")) != tag_id]
+        if self._dry_run:
+            print(f"[dry-run] Would untag '{slug}' from '{self._tag_name}'", flush=True)
+            return True
+        try:
+            self._client.patch_recipe(slug, {"tags": new_tags})
+            return True
+        except requests.RequestException as exc:
+            print(f"[warn] Failed to untag '{slug}': {_short_text(str(exc))}", flush=True)
+            return False
+
+
 @dataclass(frozen=True)
 class ParserRunConfig:
     confidence_threshold: float
@@ -52,6 +130,7 @@ class ParserRunConfig:
     success_log_filename: str
     scan_cache_filename: str
     recheck_review: bool
+    review_tag_name: str
 
 
 @dataclass
@@ -63,6 +142,8 @@ class ParserRunSummary:
     skipped_already_parsed: int = 0
     skipped_cached: int = 0
     dropped_blank_ingredients: int = 0
+    tagged_for_review: int = 0
+    untagged_on_success: int = 0
 
 
 def _short_text(value: str, max_len: int = 220) -> str:
@@ -169,6 +250,7 @@ def parser_run_config() -> ParserRunConfig:
         success_log_filename=str(env_or_config("SUCCESS_FILE", "parser.success_file", "parsed_success.log")),
         scan_cache_filename=str(env_or_config("SCAN_CACHE_FILE", "parser.scan_cache_file", "parse_scan_cache.json")),
         recheck_review=bool(env_or_config("PARSER_RECHECK_REVIEW", "parser.recheck_review", False, to_bool)),
+        review_tag_name=str(env_or_config("PARSER_REVIEW_TAG", "parser.review_tag_name", "Parser: Needs Review")),
     )
 
 
@@ -222,6 +304,7 @@ def apply_cli_overrides(config: ParserRunConfig, args: argparse.Namespace) -> Pa
         success_log_filename=config.success_log_filename,
         scan_cache_filename=config.scan_cache_filename,
         recheck_review=True if args.recheck_review else config.recheck_review,
+        review_tag_name=config.review_tag_name,
     )
 
 
@@ -591,6 +674,7 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
         _save_scan_cache(cache_path, scan_cache)
         return summary
 
+    tag_mgr = ReviewTagManager(client, config.review_tag_name, config.dry_run)
     reviews: list[dict[str, Any]] = []
     successes: list[str] = []
     last_progress_ts = time.monotonic()
@@ -656,6 +740,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                         "attempts": attempts,
                     }
                 )
+                if tag_mgr.ensure_tagged(slug, recipe.get("tags") or []):
+                    summary.tagged_for_review += 1
                 _set_scan_cache(
                     scan_cache,
                     slug=slug,
@@ -677,6 +763,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                         "raw_lines": raw_lines,
                     }
                 )
+                if tag_mgr.ensure_tagged(slug, recipe.get("tags") or []):
+                    summary.tagged_for_review += 1
                 _set_scan_cache(
                     scan_cache,
                     slug=slug,
@@ -696,6 +784,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                         "suspicious_reasons": suspicious_reasons,
                     }
                 )
+                if tag_mgr.ensure_tagged(slug, recipe.get("tags") or []):
+                    summary.tagged_for_review += 1
                 _set_scan_cache(
                     scan_cache,
                     slug=slug,
@@ -725,6 +815,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                             "parsed": normalized,
                         }
                     )
+                    if tag_mgr.ensure_tagged(slug, recipe.get("tags") or []):
+                        summary.tagged_for_review += 1
                     _set_scan_cache(
                         scan_cache,
                         slug=slug,
@@ -739,6 +831,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                     status="parsed",
                 )
 
+            if tag_mgr.ensure_untagged(slug, recipe.get("tags") or []):
+                summary.untagged_on_success += 1
             successes.append(recipe_name)
             summary.parsed_successfully += 1
             print(
@@ -815,6 +909,8 @@ def main() -> int:
         "Skipped (parsed)": summary.skipped_already_parsed,
         "Skipped (cache)": summary.skipped_cached,
         "Dropped (blank)": summary.dropped_blank_ingredients,
+        "Tagged for Review": summary.tagged_for_review,
+        "Untagged on Success": summary.untagged_on_success,
     }), flush=True)
     return 0
 

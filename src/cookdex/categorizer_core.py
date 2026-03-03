@@ -231,6 +231,7 @@ class MealieCategorizer:
         tag_max_name_length=24,
         tag_min_usage=0,
         dry_run=False,
+        inter_request_delay=0.0,
     ):
         self.mealie_url = mealie_url.rstrip("/")
         self.batch_size = batch_size
@@ -243,6 +244,7 @@ class MealieCategorizer:
         self.tag_max_name_length = tag_max_name_length
         self.tag_min_usage = tag_min_usage
         self.dry_run = dry_run
+        self.inter_request_delay = inter_request_delay
         self.query_retries = max(
             1,
             require_int(
@@ -265,6 +267,8 @@ class MealieCategorizer:
         self.cache_lock = threading.Lock()
         self.print_lock = threading.Lock()
         self.stats_lock = threading.Lock()
+        self._throttle_lock = threading.Lock()
+        self._last_request_time = 0.0
         self.cache_enabled = True
         self.stats = {
             "query_retry_warnings": 0,
@@ -542,9 +546,21 @@ Recipes:
                 raise
         return self._get_paginated(f"{self.mealie_url}/tools?perPage=1000", timeout=60)
 
+    def _throttle(self):
+        """Enforce minimum delay between API requests across all threads."""
+        if self.inter_request_delay <= 0:
+            return
+        with self._throttle_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < self.inter_request_delay:
+                time.sleep(self.inter_request_delay - elapsed)
+            self._last_request_time = time.monotonic()
+
     def safe_query_with_retry(self, prompt_text, retries=None):
         attempts = retries if retries is not None else self.query_retries
         for attempt in range(attempts):
+            self._throttle()
             result = self.query_text(prompt_text)
             if result:
                 parsed = parse_json_response(result)

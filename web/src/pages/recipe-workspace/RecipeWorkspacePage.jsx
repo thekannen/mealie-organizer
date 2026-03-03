@@ -212,7 +212,22 @@ function buildResourceDiff(draftItems, managedItems) {
   };
 }
 
-export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) {
+export default function RecipeWorkspacePage({
+  onNotice,
+  onError,
+  onOpenTasks,
+  taxonomyFileNames = [],
+  configLabels = {},
+  taxonomySetupFiles = [],
+  setTaxonomySetupFiles,
+  taxonomyBootstrapMode = "replace",
+  setTaxonomyBootstrapMode,
+  starterPackMode = "merge",
+  setStarterPackMode,
+  taxonomyActionLoading = "",
+  onInitializeFromMealie,
+  onImportStarterPack,
+}) {
   const [tab, setTab] = useState("plan");
   const [resource, setResource] = useState("categories");
   const [snapshot, setSnapshot] = useState(null);
@@ -706,6 +721,81 @@ export default function RecipeWorkspacePage({ onNotice, onError, onOpenTasks }) 
                 </article>
               ))}
             </div>
+            <details className="accordion taxonomy-setup-accordion">
+              <summary>
+                <Icon name="book-open" />
+                <span>
+                  <span>Taxonomy Setup</span>
+                  <span className="muted tiny"> - Initialize baseline from Mealie or starter pack</span>
+                </span>
+                <Icon name="chevron" />
+              </summary>
+              <div className="doc-preview taxonomy-setup-panel">
+                <p className="muted tiny">Initialize or seed managed taxonomy files before drafting and publishing taxonomy updates.</p>
+                <label className="field">
+                  <span>Files</span>
+                  <div className="taxonomy-setup-files">
+                    {taxonomyFileNames.map((name) => (
+                      <label key={`plan-setup-${name}`} className="field-inline">
+                        <input
+                          type="checkbox"
+                          checked={taxonomySetupFiles.includes(name)}
+                          onChange={(event) => {
+                            if (typeof setTaxonomySetupFiles !== "function") return;
+                            setTaxonomySetupFiles((prev) => {
+                              if (event.target.checked) return [...new Set([...(prev || []), name])];
+                              return (prev || []).filter((item) => item !== name);
+                            });
+                          }}
+                        />
+                        <span>{configLabels[name] || name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </label>
+                <label className="field">
+                  <span>Initialize from Mealie</span>
+                  <select
+                    value={taxonomyBootstrapMode}
+                    onChange={(event) => setTaxonomyBootstrapMode?.(event.target.value)}
+                  >
+                    <option value="replace">Replace managed files with current Mealie</option>
+                    <option value="merge">Merge current Mealie into managed files</option>
+                  </select>
+                </label>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => onInitializeFromMealie?.(taxonomySetupFiles)}
+                  disabled={taxonomyActionLoading === "mealie"}
+                >
+                  <Icon name="download" />
+                  {taxonomyActionLoading === "mealie" ? "Initializing..." : "Initialize from Mealie"}
+                </button>
+                <label className="field">
+                  <span>Starter Pack Import Mode</span>
+                  <select
+                    value={starterPackMode}
+                    onChange={(event) => setStarterPackMode?.(event.target.value)}
+                  >
+                    <option value="merge">Merge starter pack into managed files</option>
+                    <option value="replace">Replace managed files with starter pack</option>
+                  </select>
+                </label>
+                <button
+                  className="ghost"
+                  type="button"
+                  onClick={() => onImportStarterPack?.(taxonomySetupFiles)}
+                  disabled={taxonomyActionLoading === "starter-pack"}
+                >
+                  <Icon name="upload" />
+                  {taxonomyActionLoading === "starter-pack" ? "Importing..." : "Import Starter Pack"}
+                </button>
+                <p className="muted tiny">
+                  Recommended for existing libraries: initialize from Mealie first, then import starter pack in merge mode.
+                </p>
+              </div>
+            </details>
             <div className="workspace-plan-footer">
               <p className="muted tiny">
                 Last published: {formatTime(snapshot?.meta?.last_published_at)} by {snapshot?.meta?.last_published_by || "-"}

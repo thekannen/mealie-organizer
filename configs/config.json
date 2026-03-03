@@ -16,9 +16,9 @@
       "request_timeout": 180,
       "http_retries": 3,
       "options": {
-        "num_ctx": 1024,
-        "temperature": 0.1,
-        "num_predict": 96,
+        "num_ctx": 4096,
+        "temperature": 0.0,
+        "num_predict": 1024,
         "top_p": 0.8,
         "num_thread": 8
       }
@@ -51,11 +51,12 @@
     "request_backoff_seconds": 0.4,
     "output_dir": "reports",
     "low_confidence_file": "review_low_confidence.json",
-    "success_file": "parsed_success.log"
+    "success_file": "parsed_success.log",
+    "review_tag_name": "Parser: Needs Review"
   },
   "categorizer": {
     "provider": "chatgpt",
-    "batch_size": 2,
+    "batch_size": 5,
     "max_workers": 3,
     "tag_max_name_length": 24,
     "tag_min_usage": 0,

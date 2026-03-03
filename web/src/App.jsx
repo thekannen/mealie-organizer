@@ -27,6 +27,8 @@ import {
   runTypeLabel,
   statusClass,
   userRoleLabel,
+  formatRelativeTime,
+  formatCountdown,
 } from "./utils.jsx";
 import Icon from "./components/Icon";
 import CoverageRing from "./components/CoverageRing";
@@ -673,6 +675,7 @@ export default function App() {
   const [taskValues, setTaskValues] = useState({});
   const [showAdvancedTaskOptions, setShowAdvancedTaskOptions] = useState(false);
   const [runSearch, setRunSearch] = useState("");
+  const [taskPickerSearch, setTaskPickerSearch] = useState("");
   const [runTypeFilter, setRunTypeFilter] = useState("all");
   const [logBuffer, setLogBuffer] = useState("");
   const [logMaximized, setLogMaximized] = useState(false);
@@ -767,7 +770,6 @@ export default function App() {
   const [healthMeta, setHealthMeta] = useState(null);
   const [lastLoadedAt, setLastLoadedAt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState(new Set(["Data Pipeline", "Actions", "Organizers", "Audits"]));
   const [taskHandoff, setTaskHandoff] = useState(null);
 
   const selectedTaskDef = useMemo(
@@ -786,14 +788,6 @@ export default function App() {
   }, [tasks]);
 
   const TASK_GROUP_ORDER = ["Data Pipeline", "Actions", "Organizers", "Audits"];
-
-  function toggleTaskGroup(name) {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) { next.delete(name); } else { next.add(name); }
-      return next;
-    });
-  }
 
   function toggleSettingsGroup(name) {
     setCollapsedSettingsGroups((prev) => {
@@ -821,6 +815,21 @@ export default function App() {
     "taxonomy-refresh": "refresh",
     "cookbook-sync": "book-open",
     "health-check": "check-circle",
+  };
+
+  const TASK_GROUP_COLORS = {
+    "Data Pipeline": "pipeline",
+    Actions: "actions",
+    Organizers: "organizers",
+    Audits: "audits",
+  };
+
+  const STATUS_ICONS = {
+    queued: { icon: "clock", label: "Queued" },
+    running: { icon: "loader", label: "Running" },
+    succeeded: { icon: "check-circle", label: "Done" },
+    failed: { icon: "x-circle", label: "Failed" },
+    canceled: { icon: "x", label: "Canceled" },
   };
 
   const taskGroups = useMemo(() => {
@@ -890,6 +899,32 @@ export default function App() {
       if (stats[key] !== undefined) {
         stats[key] += 1;
       }
+    }
+    return stats;
+  }, [runs]);
+
+  const lastRunByTask = useMemo(() => {
+    const map = new Map();
+    for (const run of runs) {
+      const ts = run.finished_at || run.started_at || run.created_at;
+      const existing = map.get(run.task_id);
+      if (!existing || (ts && ts > existing.ts)) {
+        map.set(run.task_id, { status: run.status, ts });
+      }
+    }
+    return map;
+  }, [runs]);
+
+  const last24hStats = useMemo(() => {
+    const cutoff = Date.now() - 86400000;
+    const stats = { total: 0, succeeded: 0, failed: 0, running: 0 };
+    for (const run of runs) {
+      const ts = new Date(run.created_at || 0).getTime();
+      if (ts < cutoff) continue;
+      stats.total++;
+      if (run.status === "succeeded") stats.succeeded++;
+      else if (run.status === "failed") stats.failed++;
+      else if (run.status === "running") stats.running++;
     }
     return stats;
   }, [runs]);
@@ -2233,6 +2268,21 @@ export default function App() {
       const result = await api(`/settings/models/${kind}`, { method: "POST", body });
       if (Array.isArray(result.models)) {
         setAvailableModels((prev) => ({ ...prev, [kind]: result.models }));
+
+        // Auto-correct draft if current value isn't in the fetched list.
+        // Prevents controlled <select> from showing one value while state
+        // holds a stale one (e.g. catalog default "mistral:7b" when only
+        // "llama3.1:8b" is available).
+        const modelKey = kind === "openai" ? "OPENAI_MODEL" : kind === "anthropic" ? "ANTHROPIC_MODEL" : kind === "ollama" ? "OLLAMA_MODEL" : null;
+        if (modelKey && result.models.length > 0) {
+          setEnvDraft((prev) => {
+            const current = String(prev[modelKey] ?? "").trim();
+            if (!current || !result.models.includes(current)) {
+              return { ...prev, [modelKey]: result.models[0] };
+            }
+            return prev;
+          });
+        }
       }
     } catch (exc) {
       console.warn(`Failed to fetch ${kind} models:`, exc?.message || exc);
@@ -2520,6 +2570,24 @@ export default function App() {
 
   function renderTasksPage() {
     const selectedRun = runs.find((item) => item.run_id === selectedRunId) || null;
+    const taskPickerQuery = taskPickerSearch.trim().toLowerCase();
+    const visibleTaskGroups = taskGroups
+      .map(([groupName, groupTasks]) => [
+        groupName,
+        groupTasks.filter((task) => {
+          if (!taskPickerQuery) return true;
+          const haystack = `${task.title || ""} ${task.description || ""} ${task.task_id || ""}`.toLowerCase();
+          return haystack.includes(taskPickerQuery);
+        }),
+      ])
+      .filter(([, groupTasks]) => groupTasks.length > 0);
+    const selectedTaskGroup = selectedTaskDef
+      ? taskGroups.find(([, groupTasks]) => groupTasks.some((task) => task.task_id === selectedTaskDef.task_id))?.[0] || ""
+      : "";
+    const selectedTaskOptionCount = Array.isArray(selectedTaskDef?.options) ? selectedTaskDef.options.length : 0;
+    const selectedTaskAdvancedCount = Array.isArray(selectedTaskDef?.options)
+      ? selectedTaskDef.options.filter((option) => option.advanced).length
+      : 0;
 
     function formatScheduleTiming(schedule) {
       const kind = schedule.schedule_kind;
@@ -2537,217 +2605,320 @@ export default function App() {
 
     return (
       <section className="page-grid tasks-grid">
-        <div className="stacked-cards">
+        <div className="stacked-cards tasks-start-column">
           <article className="card">
             <h3>Start a Run</h3>
-            <p className="muted">Queue one-off tasks for immediate execution.</p>
+            <p className="muted">Pick a task, adjust options, then run.</p>
 
             <div className="run-form">
-              <div className="task-picker">
-                {taskGroups.map(([groupName, groupTasks], gi) => {
-                  const collapsed = collapsedGroups.has(groupName);
-                  return (
-                    <div key={groupName} className="task-group">
-                      <button
-                        type="button"
-                        className={`task-group-header${gi === 0 ? " first" : ""}`}
-                        onClick={() => toggleTaskGroup(groupName)}
-                      >
-                        <span className="task-group-label">{groupName}</span>
-                        <span className={`task-group-chevron${collapsed ? " collapsed" : ""}`}>▾</span>
-                      </button>
-                      {!collapsed && groupTasks.map((task) => (
-                        <button
-                          key={task.task_id}
-                          type="button"
-                          className={`task-item${selectedTask === task.task_id ? " active" : ""}`}
-                          onClick={() => setSelectedTask(task.task_id)}
-                        >
-                          <span className="task-item-title">
-                            <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-item-icon" />
-                            {task.title}
-                          </span>
-                          <span className="task-item-desc">{task.description}</span>
-                        </button>
+              <div className="start-run-layout">
+                <div className="task-pill-picker">
+                  <label className="field task-picker-search-field">
+                    <span>Find Task</span>
+                    <input
+                      value={taskPickerSearch}
+                      onChange={(event) => setTaskPickerSearch(event.target.value)}
+                      placeholder="Search task name"
+                    />
+                  </label>
+                  {visibleTaskGroups.length === 0 ? (
+                    <p className="muted tiny task-picker-empty">No tasks match this search.</p>
+                  ) : (
+                    <div className="task-pill-groups">
+                      {visibleTaskGroups.map(([groupName, groupTasks]) => (
+                        <section key={groupName} className="task-pill-group" data-group={TASK_GROUP_COLORS[groupName] || "default"}>
+                          <div className="task-pill-group-head">
+                            <h4>{groupName}</h4>
+                            <span className="status-pill neutral tiny-pill">{groupTasks.length}</span>
+                          </div>
+                          <div className="task-pill-grid">
+                            {groupTasks.map((task) => {
+                              const lastRun = lastRunByTask.get(task.task_id);
+                              const dotClass = lastRun
+                                ? lastRun.status === "succeeded" ? "dot-success"
+                                  : lastRun.status === "failed" ? "dot-danger"
+                                  : lastRun.status === "running" ? "dot-running"
+                                  : "dot-neutral"
+                                : null;
+                              return (
+                                <button
+                                  key={task.task_id}
+                                  type="button"
+                                  className={`task-pill${selectedTask === task.task_id ? " active" : ""}`}
+                                  onClick={() => setSelectedTask(task.task_id)}
+                                >
+                                  <span className="task-pill-icon-wrap">
+                                    <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-pill-icon" />
+                                  </span>
+                                  <span className="task-pill-text">
+                                    <span className="task-pill-title">{task.title}</span>
+                                    {task.description ? <span className="task-pill-desc">{task.description}</span> : null}
+                                  </span>
+                                  {lastRun ? (
+                                    <span className={`task-pill-last-run ${dotClass}`} title={`Last: ${lastRun.status}`}>
+                                      <span className="task-pill-last-dot" />
+                                      <span>{formatRelativeTime(lastRun.ts)}</span>
+                                    </span>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
                       ))}
                     </div>
-                  );
-                })}
-              </div>
-
-              {!selectedTaskDef ? (
-                <p className="muted tiny">Select a task above to configure and run it.</p>
-              ) : (() => {
-                const visibleOptions = (selectedTaskDef.options || []).filter((option) =>
-                  isTaskOptionVisible(option, taskValues, true)
-                );
-                const basicOptions = visibleOptions.filter((option) => !option.advanced);
-                const advancedOptions = visibleOptions.filter((option) => option.advanced);
-                const shownOptions = showAdvancedTaskOptions ? visibleOptions : basicOptions;
-
-                if (visibleOptions.length === 0) {
-                  return <p className="muted tiny">This task has no additional options.</p>;
-                }
-
-                return (
-                  <>
-                    {advancedOptions.length > 0 && (
-                      <>
-                        <label className="field field-inline">
-                          <span>Show advanced options</span>
-                          <input
-                            type="checkbox"
-                            checked={showAdvancedTaskOptions}
-                            onChange={(event) => setShowAdvancedTaskOptions(event.target.checked)}
-                          />
-                        </label>
-                        {!showAdvancedTaskOptions && (
-                          <p className="muted tiny">{advancedOptions.length} advanced option(s) hidden.</p>
-                        )}
-                      </>
-                    )}
-                    {shownOptions.length > 0 ? (
-                      <div className="option-grid">
-                        {shownOptions.map((option) =>
-                          fieldFromOption(option, taskValues[option.key], (key, value) =>
-                            setTaskValues((prev) => ({ ...prev, [key]: value })),
-                            taskValues
-                          )
-                        )}
-                      </div>
-                    ) : (
-                      <p className="muted tiny">No basic options for this task. Enable advanced options to customize it.</p>
-                    )}
-                  </>
-                );
-              })()}
-
-              <label className="field field-inline schedule-toggle" style={selectedTaskDef ? undefined : { display: "none" }}>
-                <span>Schedule Run</span>
-                <input
-                  type="checkbox"
-                  checked={scheduleMode}
-                  onChange={(event) => setScheduleMode(event.target.checked)}
-                />
-              </label>
-
-              {scheduleMode && (
-                <div className="schedule-inline">
-                  <label className="field">
-                    <span>Schedule Name</span>
-                    <input
-                      value={scheduleForm.name}
-                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
-                      placeholder="e.g. Morning cleanup"
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span>Type</span>
-                    <select
-                      value={scheduleForm.kind}
-                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
-                    >
-                      <option value="interval">Interval</option>
-                      <option value="once">Once</option>
-                    </select>
-                  </label>
-
-                  {scheduleForm.kind === "interval" ? (
-                    <>
-                      <div className="interval-row">
-                        <label className="field">
-                          <span>Every</span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={scheduleForm.intervalValue}
-                            onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalValue: event.target.value }))}
-                          />
-                        </label>
-                        <label className="field">
-                          <span>&nbsp;</span>
-                          <select
-                            value={scheduleForm.intervalUnit}
-                            onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalUnit: event.target.value }))}
-                          >
-                            <option value="seconds">Seconds</option>
-                            <option value="minutes">Minutes</option>
-                            <option value="hours">Hours</option>
-                            <option value="days">Days</option>
-                          </select>
-                        </label>
-                      </div>
-                      <label className="field">
-                        <span>Start date</span>
-                        <input
-                          type="datetime-local"
-                          value={scheduleForm.start_at}
-                          min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, start_at: event.target.value }))}
-                        />
-                      </label>
-                      <label className="field">
-                        <span>End date <span className="muted">(optional)</span></span>
-                        <input
-                          type="datetime-local"
-                          value={scheduleForm.end_at}
-                          min={scheduleForm.start_at || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                          onChange={(event) => setScheduleForm((prev) => ({ ...prev, end_at: event.target.value }))}
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <label className="field">
-                      <span>Run at</span>
-                      <input
-                        type="datetime-local"
-                        value={scheduleForm.run_at}
-                        min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
-                        onChange={(event) => setScheduleForm((prev) => ({ ...prev, run_at: event.target.value }))}
-                      />
-                    </label>
                   )}
-
-                  <label className="field field-inline">
-                    <span>Enabled</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(scheduleForm.enabled)}
-                      onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-                    />
-                  </label>
-
-                  <label className="field field-inline">
-                    <span>Run if schedule is missed</span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(scheduleForm.run_if_missed)}
-                      onChange={(event) =>
-                        setScheduleForm((prev) => ({ ...prev, run_if_missed: event.target.checked }))
-                      }
-                    />
-                  </label>
                 </div>
-              )}
 
-              {selectedTaskDef && (scheduleMode ? (
-                <button type="button" className="primary" onClick={createSchedule}>
-                  <Icon name="save" />
-                  Save Schedule
-                </button>
-              ) : (
-                <button type="button" className="primary" onClick={triggerRun}>
-                  <Icon name="play" />
-                  Queue Run
-                </button>
-              ))}
+                <div className="start-run-main">
+                  {!selectedTaskDef ? (
+                    <p className="muted tiny">Select a task to configure and run it.</p>
+                  ) : (
+                    <>
+                      <div className="start-run-task-hero">
+                        <span className="task-hero-icon">
+                          <Icon name={TASK_ICONS[selectedTaskDef.task_id] || "zap"} />
+                        </span>
+                        <div className="start-run-task-head">
+                          <h4>{selectedTaskDef.title}</h4>
+                          <p className="muted tiny">{selectedTaskDef.description}</p>
+                        </div>
+                        <div className="start-run-task-badges">
+                          {selectedTaskGroup ? <span className="status-pill neutral">{selectedTaskGroup}</span> : null}
+                          <span className="status-pill neutral">{selectedTaskOptionCount} option{selectedTaskOptionCount === 1 ? "" : "s"}</span>
+                          {selectedTaskAdvancedCount > 0 ? (
+                            <span className="status-pill warning">{selectedTaskAdvancedCount} advanced</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const visibleOptions = (selectedTaskDef.options || []).filter((option) =>
+                          isTaskOptionVisible(option, taskValues, true)
+                        );
+                        const hasDryRun = visibleOptions.some((o) => o.key === "dry_run");
+                        const filteredBasic = visibleOptions.filter((o) => !o.advanced && o.key !== "dry_run");
+                        const advancedOptions = visibleOptions.filter((option) => option.advanced);
+                        const renderOptionFields = (options) =>
+                          options.map((option) =>
+                            fieldFromOption(option, taskValues[option.key], (key, optionValue) =>
+                              setTaskValues((prev) => ({ ...prev, [key]: optionValue })),
+                              taskValues
+                            )
+                          );
+
+                        return (
+                          <>
+                            {hasDryRun && (
+                              <div className="mode-toggle-bar">
+                                <button
+                                  type="button"
+                                  className={`mode-toggle-btn safe-mode${taskValues.dry_run !== false ? " active" : ""}`}
+                                  onClick={() => setTaskValues((prev) => ({ ...prev, dry_run: true }))}
+                                >
+                                  <Icon name="shield" />
+                                  <span className="mode-toggle-label">Safe Mode</span>
+                                  <span className="mode-toggle-hint">Preview only, no changes</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`mode-toggle-btn live-mode${taskValues.dry_run === false ? " active" : ""}`}
+                                  onClick={() => setTaskValues((prev) => ({ ...prev, dry_run: false }))}
+                                >
+                                  <Icon name="zap" />
+                                  <span className="mode-toggle-label">Live</span>
+                                  <span className="mode-toggle-hint">Apply real changes</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {filteredBasic.length > 0 ? (
+                              <div className="option-grid">{renderOptionFields(filteredBasic)}</div>
+                            ) : !hasDryRun && visibleOptions.length === 0 ? (
+                              <p className="muted tiny">This task has no additional options.</p>
+                            ) : null}
+
+                            {advancedOptions.length > 0 ? (
+                              <div className={`advanced-options-panel${showAdvancedTaskOptions ? " open" : ""}`}>
+                                <div className="advanced-options-head">
+                                  <button
+                                    type="button"
+                                    className={`chip-btn advanced-toggle-btn ${showAdvancedTaskOptions ? "active" : ""}`}
+                                    onClick={() => setShowAdvancedTaskOptions((prev) => !prev)}
+                                  >
+                                    <Icon name="wand" />
+                                    {showAdvancedTaskOptions ? "Hide Advanced" : "Show Advanced"}
+                                  </button>
+                                  <span className="muted tiny">{advancedOptions.length} advanced option(s)</span>
+                                </div>
+                                {showAdvancedTaskOptions ? (
+                                  <div className="option-grid option-grid-advanced">
+                                    {renderOptionFields(advancedOptions)}
+                                  </div>
+                                ) : (
+                                  <p className="muted tiny">Advanced options are hidden.</p>
+                                )}
+                              </div>
+                            ) : null}
+                          </>
+                        );
+                      })()}
+
+                      <div className="schedule-mode-switch" role="tablist" aria-label="Run mode">
+                        <button
+                          type="button"
+                          className={`ghost small ${!scheduleMode ? "active" : ""}`}
+                          onClick={() => setScheduleMode(false)}
+                          aria-pressed={!scheduleMode}
+                        >
+                          <Icon name="play" />
+                          Run Now
+                        </button>
+                        <button
+                          type="button"
+                          className={`ghost small ${scheduleMode ? "active" : ""}`}
+                          onClick={() => setScheduleMode(true)}
+                          aria-pressed={scheduleMode}
+                        >
+                          <Icon name="calendar" />
+                          Schedule
+                        </button>
+                      </div>
+
+                      {scheduleMode && (
+                        <div className="schedule-inline">
+                          <label className="field">
+                            <span>Schedule Name</span>
+                            <input
+                              value={scheduleForm.name}
+                              onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
+                              placeholder="e.g. Morning cleanup"
+                            />
+                          </label>
+
+                          <label className="field">
+                            <span>Type</span>
+                            <select
+                              value={scheduleForm.kind}
+                              onChange={(event) => setScheduleForm((prev) => ({ ...prev, kind: event.target.value }))}
+                            >
+                              <option value="interval">Interval</option>
+                              <option value="once">Once</option>
+                            </select>
+                          </label>
+
+                          {scheduleForm.kind === "interval" ? (
+                            <>
+                              <div className="interval-row">
+                                <label className="field">
+                                  <span>Every</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={scheduleForm.intervalValue}
+                                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalValue: event.target.value }))}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>&nbsp;</span>
+                                  <select
+                                    value={scheduleForm.intervalUnit}
+                                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, intervalUnit: event.target.value }))}
+                                  >
+                                    <option value="seconds">Seconds</option>
+                                    <option value="minutes">Minutes</option>
+                                    <option value="hours">Hours</option>
+                                    <option value="days">Days</option>
+                                  </select>
+                                </label>
+                              </div>
+                              <label className="field">
+                                <span>Start date</span>
+                                <input
+                                  type="datetime-local"
+                                  value={scheduleForm.start_at}
+                                  min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, start_at: event.target.value }))}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>End date <span className="muted">(optional)</span></span>
+                                <input
+                                  type="datetime-local"
+                                  value={scheduleForm.end_at}
+                                  min={scheduleForm.start_at || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, end_at: event.target.value }))}
+                                />
+                              </label>
+                            </>
+                          ) : (
+                            <label className="field">
+                              <span>Run at</span>
+                              <input
+                                type="datetime-local"
+                                value={scheduleForm.run_at}
+                                min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                                onChange={(event) => setScheduleForm((prev) => ({ ...prev, run_at: event.target.value }))}
+                              />
+                            </label>
+                          )}
+
+                          <label className="field field-inline">
+                            <span>Enabled</span>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(scheduleForm.enabled)}
+                              onChange={(event) => setScheduleForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                            />
+                          </label>
+
+                          <label className="field field-inline">
+                            <span>Run if schedule is missed</span>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(scheduleForm.run_if_missed)}
+                              onChange={(event) =>
+                                setScheduleForm((prev) => ({ ...prev, run_if_missed: event.target.checked }))
+                              }
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                      {scheduleMode ? (
+                        <button type="button" className="primary action-hero-btn" onClick={createSchedule}>
+                          <Icon name="save" />
+                          Save Schedule
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`primary action-hero-btn ${taskValues.dry_run === false ? "live-action" : "safe-action"}`}
+                          onClick={triggerRun}
+                        >
+                          <Icon name={taskValues.dry_run === false ? "zap" : "play"} />
+                          {taskValues.dry_run === false ? "Run Live" : "Preview Run"}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </article>
         </div>
 
-        <div className="stacked-cards">
-          {schedules.length > 0 ? (
+        <div className="stacked-cards tasks-schedule-column">
+          {schedules.length === 0 ? (
+            <article className="card schedule-empty-state">
+              <div className="schedule-empty-icon">
+                <Icon name="calendar" />
+              </div>
+              <h4>No Schedules Yet</h4>
+              <p className="muted tiny">Automate your workflows by scheduling tasks to run on a timer.</p>
+              <p className="muted tiny">Select a task, switch to <strong>Schedule</strong> mode, and save.</p>
+            </article>
+          ) : (
             <article className="card">
               <h3>Saved Schedules</h3>
               <p className="muted">{schedules.length} schedule{schedules.length !== 1 ? "s" : ""} configured.</p>
@@ -2774,6 +2945,15 @@ export default function App() {
                             {formatScheduleTiming(schedule)}
                             {" · "}
                             {schedule.schedule_data?.run_if_missed ? "Run if missed" : "Skip if missed"}
+                            {schedule.enabled !== false && schedule.next_run_at ? (
+                              <>
+                                {" "}
+                                <span className="schedule-countdown">
+                                  <Icon name="play" />
+                                  {formatCountdown(schedule.next_run_at)}
+                                </span>
+                              </>
+                            ) : null}
                           </p>
                         </div>
                         <div className="schedule-item-actions">
@@ -3003,8 +3183,32 @@ export default function App() {
                 })}
               </ul>
             </article>
-          ) : null}
+          )}
+        </div>
 
+        <div className="tasks-monitor-grid">
+          {runs.some((r) => r.status === "running") && (
+            <div className="running-banner">
+              <span className="running-banner-dot" />
+              <Icon name="loader" className="spin" />
+              <span>
+                {(() => {
+                  const active = runs.filter((r) => r.status === "running");
+                  return `${active.length} task${active.length !== 1 ? "s" : ""} running`;
+                })()}
+              </span>
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => {
+                  const r = runs.find((r) => r.status === "running");
+                  if (r) setSelectedRunId(r.run_id);
+                }}
+              >
+                View Log
+              </button>
+            </div>
+          )}
           <article className="card">
             <div className="card-head split">
             <div>
@@ -3045,6 +3249,28 @@ export default function App() {
             </button>
           </div>
 
+          {last24hStats.total > 0 && (
+            <div className="activity-stats-bar">
+              <span className="activity-stat">
+                <Icon name="check-circle" />
+                <strong>{last24hStats.succeeded}</strong> passed
+              </span>
+              <span className="activity-stat stat-danger">
+                <Icon name="x-circle" />
+                <strong>{last24hStats.failed}</strong> failed
+              </span>
+              {last24hStats.running > 0 && (
+                <span className="activity-stat stat-running">
+                  <Icon name="loader" />
+                  <strong>{last24hStats.running}</strong> active
+                </span>
+              )}
+              <span className="activity-stat stat-total">
+                {last24hStats.total} total in 24h
+              </span>
+            </div>
+          )}
+
           <div className="table-wrap">
             <table className="runs-table">
               <thead>
@@ -3081,11 +3307,15 @@ export default function App() {
                         <td>{runTypeLabel(run)}</td>
                         <td>
                           <span className={`status-pill ${isDryRun ? "dry-run" : "live-run"}`}>
-                            {isDryRun ? "Dry Run" : "Live"}
+                            <Icon name={isDryRun ? "shield" : "zap"} />
+                            {isDryRun ? "Safe" : "Live"}
                           </span>
                         </td>
                         <td>
-                          <span className={`status-pill ${statusClass(run.status)}`}>{run.status}</span>
+                          <span className={`status-indicator ${statusClass(run.status)}`}>
+                            <Icon name={STATUS_ICONS[run.status]?.icon || "info"} />
+                            {STATUS_ICONS[run.status]?.label || run.status}
+                          </span>
                         </td>
                         <td>{formatRunTime(run)}</td>
                         <td className="muted">{formatDateTimeShort(run.started_at || run.created_at)}</td>
@@ -3286,17 +3516,15 @@ export default function App() {
   }
 
   const GROUP_ICONS = { Connection: "link", AI: "wand", "Direct DB": "database" };
+  const GROUP_DESCRIPTIONS = {
+    Connection: "Mealie URL and API key",
+    AI: "Provider, model, and API keys for recipe categorization",
+    "Direct DB": "PostgreSQL and SSH tunnel for bulk operations",
+  };
 
   function renderSettingsPage() {
     const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-    const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
-    const visibleGroupCount = visibleEnvGroups.length;
-    const expandedGroupCount = visibleEnvGroups.reduce(
-      (sum, [group]) => sum + (collapsedSettingsGroups.has(group) ? 0 : 1),
-      0
-    );
-    const visibleSettingCount = visibleEnvGroups.reduce((sum, [, items]) => sum + items.length, 0);
-
+    const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "chatgpt" ? "chatgpt" : "anthropic";
     return (
       <section className="page-grid settings-grid">
         <article className="card">
@@ -3309,21 +3537,6 @@ export default function App() {
               <Icon name="refresh" />
               Reload
             </button>
-          </div>
-
-          <div className="settings-overview">
-            <div className="settings-overview-stat">
-              <span className="tiny muted">Visible settings</span>
-              <strong>{visibleSettingCount}</strong>
-            </div>
-            <div className="settings-overview-stat">
-              <span className="tiny muted">Groups</span>
-              <strong>{visibleGroupCount}</strong>
-            </div>
-            <div className="settings-overview-stat">
-              <span className="tiny muted">Expanded</span>
-              <strong>{expandedGroupCount}</strong>
-            </div>
           </div>
 
           <div className="settings-jump-nav" role="navigation" aria-label="Jump to settings section">
@@ -3358,7 +3571,7 @@ export default function App() {
                     aria-expanded={!isCollapsed}
                   >
                     <h4><Icon name={GROUP_ICONS[group] || "settings"} /> {group}</h4>
-                    <span className="tiny muted">{items.length} setting{items.length === 1 ? "" : "s"}</span>
+                    <span className="tiny muted">{isCollapsed && GROUP_DESCRIPTIONS[group] ? GROUP_DESCRIPTIONS[group] : `${items.length} setting${items.length === 1 ? "" : "s"}`}</span>
                     <Icon name="chevron" />
                   </button>
                   {!isCollapsed ? (
@@ -3525,71 +3738,6 @@ export default function App() {
           </article>
 
           <article className="card">
-            <h3><Icon name="book-open" /> Taxonomy Setup</h3>
-            <p className="muted">Initialize or seed managed taxonomy files. Use this once, then continue authoring in Recipe Organization.</p>
-
-            <label className="field">
-              <span>Files</span>
-              <div className="taxonomy-setup-files">
-                {TAXONOMY_FILE_NAMES.map((name) => (
-                  <label key={`setup-${name}`} className="field-inline">
-                    <input
-                      type="checkbox"
-                      checked={taxonomySetupFiles.includes(name)}
-                      onChange={(event) => {
-                        setTaxonomySetupFiles((prev) => {
-                          if (event.target.checked) {
-                            return [...new Set([...prev, name])];
-                          }
-                          return prev.filter((item) => item !== name);
-                        });
-                      }}
-                    />
-                    <span>{CONFIG_LABELS[name]}</span>
-                  </label>
-                ))}
-              </div>
-            </label>
-
-            <label className="field">
-              <span>Initialize from Mealie</span>
-              <select value={taxonomyBootstrapMode} onChange={(event) => setTaxonomyBootstrapMode(event.target.value)}>
-                <option value="replace">Replace managed files with current Mealie</option>
-                <option value="merge">Merge current Mealie into managed files</option>
-              </select>
-            </label>
-            <button
-              className="primary"
-              type="button"
-              onClick={() => initializeFromMealieBaseline(taxonomySetupFiles)}
-              disabled={taxonomyActionLoading === "mealie"}
-            >
-              <Icon name="download" />
-              {taxonomyActionLoading === "mealie" ? "Initializing..." : "Initialize from Mealie"}
-            </button>
-
-            <label className="field">
-              <span>Starter Pack Import Mode</span>
-              <select value={starterPackMode} onChange={(event) => setStarterPackMode(event.target.value)}>
-                <option value="merge">Merge starter pack into managed files</option>
-                <option value="replace">Replace managed files with starter pack</option>
-              </select>
-            </label>
-            <button
-              className="ghost"
-              type="button"
-              onClick={() => importStarterPack(taxonomySetupFiles)}
-              disabled={taxonomyActionLoading === "starter-pack"}
-            >
-              <Icon name="upload" />
-              {taxonomyActionLoading === "starter-pack" ? "Importing..." : "Import Starter Pack"}
-            </button>
-            <p className="muted tiny">
-              Recommended for existing libraries: initialize from Mealie first, then import starter pack in merge mode.
-            </p>
-          </article>
-
-          <article className="card">
             <h3><Icon name="info" /> About AI Integration</h3>
             <p className="muted">AI is optional. The following tasks use the configured provider when enabled:</p>
             <ul className="ai-task-list">
@@ -3618,6 +3766,17 @@ export default function App() {
           setTaskHandoff({ task_id: taskId });
           setActivePage("tasks");
         }}
+        taxonomyFileNames={TAXONOMY_FILE_NAMES}
+        configLabels={CONFIG_LABELS}
+        taxonomySetupFiles={taxonomySetupFiles}
+        setTaxonomySetupFiles={setTaxonomySetupFiles}
+        taxonomyBootstrapMode={taxonomyBootstrapMode}
+        setTaxonomyBootstrapMode={setTaxonomyBootstrapMode}
+        starterPackMode={starterPackMode}
+        setStarterPackMode={setStarterPackMode}
+        taxonomyActionLoading={taxonomyActionLoading}
+        onInitializeFromMealie={initializeFromMealieBaseline}
+        onImportStarterPack={importStarterPack}
       />
     );
 
@@ -4822,6 +4981,8 @@ export default function App() {
     const appVersion = aboutMeta?.app_version || healthMeta?.version || "-";
     const backendStatus = healthMeta?.ok === false ? "Degraded" : "Connected";
     const lastSyncLabel = lastLoadedAt ? formatDateTime(lastLoadedAt) : "-";
+    const host = String(window?.location?.hostname || "").toLowerCase();
+    const environmentLabel = host === "localhost" || host === "127.0.0.1" || host === "::1" ? "Local" : "Self-hosted";
 
     return (
       <section className="page-grid about-grid">
@@ -4842,7 +5003,7 @@ export default function App() {
               </li>
               <li>
                 <span>Environment</span>
-                <strong>Self-hosted</strong>
+                <strong>{environmentLabel}</strong>
               </li>
             </ul>
           </article>

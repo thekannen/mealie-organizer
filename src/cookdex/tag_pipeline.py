@@ -92,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="Custom rules file for Layer 1 (overrides taxonomy derivation).",
     )
+    parser.add_argument(
+        "--recat",
+        action="store_true",
+        help="Re-categorize all recipes (passed to AI layer).",
+    )
     return parser
 
 
@@ -127,6 +132,8 @@ def main() -> int:
             cmd = [sys.executable, "-m", "cookdex.recipe_categorizer"]
             if args.provider:
                 cmd.extend(["--provider", args.provider])
+            if args.recat:
+                cmd.append("--recat")
 
             print("[info] -------- Layer 2: AI categorization --------", flush=True)
             t0 = time.monotonic()

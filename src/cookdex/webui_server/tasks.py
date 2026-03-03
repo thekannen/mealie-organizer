@@ -110,9 +110,11 @@ _JUNK_REASON_CHOICES: list[dict[str, str]] = [
 # ---------------------------------------------------------------------------
 
 def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file", "missing_targets"})
+    _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file", "missing_targets", "recat"})
     env, dangerous = _common_env(options)
     method = _str_option(options, "method", "both") or "both"
+
+    recat = _bool_option(options, "recat", False)
 
     if method == "both":
         cmd = _py_module("cookdex.tag_pipeline")
@@ -126,6 +128,8 @@ def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
         if use_db:
             cmd.append("--use-db")
         cmd.extend(["--missing-targets", missing_targets])
+        if recat:
+            cmd.append("--recat")
     elif method == "rules":
         cmd = _py_module("cookdex.rule_tagger", "--from-taxonomy")
         dry_run = _bool_option(options, "dry_run", True)
@@ -146,6 +150,8 @@ def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
         cmd = _py_module("cookdex.recipe_categorizer")
         if provider:
             cmd.extend(["--provider", provider])
+        if recat:
+            cmd.append("--recat")
 
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
@@ -851,6 +857,14 @@ class TaskRegistry:
                             {"value": "rules", "label": "Rules Only"},
                             {"value": "ai", "label": "AI Only"},
                         ],
+                    ),
+                    OptionSpec(
+                        "recat",
+                        "Re-categorize All",
+                        "boolean",
+                        default=False,
+                        help_text="Re-process every recipe, even those that already have categories/tags/tools assigned.",
+                        hidden_when={"key": "method", "value": "rules"},
                     ),
                     OptionSpec(
                         "provider",
