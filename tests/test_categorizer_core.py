@@ -467,7 +467,8 @@ def test_ok_line_has_idx_total(monkeypatch, tmp_path, capsys):
         {},
     )
     out = capsys.readouterr().out
-    assert "[ok] 3/10 ok-recipe" in out
+    # Counter should be 4/10 (3 previous + 1 for this recipe)
+    assert "[ok] 4/10 ok-recipe" in out
 
 
 def test_summary_is_json_with_title(tmp_path, capsys):

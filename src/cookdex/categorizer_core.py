@@ -724,6 +724,7 @@ Recipes:
 
         if not cats_changed and not tags_changed and not tools_changed:
             self.increment_stat("recipes_no_change")
+            self.advance_progress(1)
             return False
 
         payload = {}
@@ -750,6 +751,7 @@ Recipes:
             self.increment_stat("categories_added", len(cats_added))
             self.increment_stat("tags_added", len(tags_added))
             self.increment_stat("tools_added", len(tools_added))
+            self.advance_progress(1)
             return True
 
         response = requests.patch(
@@ -764,18 +766,21 @@ Recipes:
                 f"stored slug differs from name-derived slug; see mealie#4915)"
             )
             self.increment_stat("update_failures")
+            self.advance_progress(1)
             return False
         if response.status_code != 200:
             self.log(f"[error] Update failed '{recipe_slug}': {response.status_code} {response.text}")
             self.increment_stat("update_failures")
+            self.advance_progress(1)
             return False
 
-        done, total, _ = self.progress_snapshot()
-        self.log(f"[ok] {done}/{total} {recipe_slug} {detail}")
         self.increment_stat("recipes_updated")
         self.increment_stat("categories_added", len(cats_added))
         self.increment_stat("tags_added", len(tags_added))
         self.increment_stat("tools_added", len(tools_added))
+        self.advance_progress(1)
+        done, total, _ = self.progress_snapshot()
+        self.log(f"[ok] {done}/{total} {recipe_slug} {detail}")
 
         with self.cache_lock:
             self.cache[recipe_slug] = {
@@ -862,8 +867,7 @@ Recipes:
         if missing:
             self.log(f"[warn] Model returned no data for: {', '.join(missing)}")
             self.increment_stat("model_missing_entry_count", len(missing))
-
-        return len(recipes_by_slug)
+            self.advance_progress(len(missing))
 
     def classify_single_recipe_with_fallback(self, recipe, category_names, tag_names, tool_names):
         slug = (recipe.get("slug") or "").strip()
@@ -941,7 +945,6 @@ Recipes:
                 tags_by_name,
                 tools_by_name,
             )
-            self.advance_progress(1)
 
     def process_batch(self, batch, category_names, tag_names, tool_names, categories_by_name, tags_by_name, tools_by_name):
         if not batch:
@@ -987,7 +990,7 @@ Recipes:
             )
             return
 
-        processed_count = self.apply_parsed_entries_to_batch(
+        self.apply_parsed_entries_to_batch(
             batch,
             parsed,
             tag_names,
@@ -996,7 +999,6 @@ Recipes:
             tags_by_name,
             tools_by_name,
         )
-        self.advance_progress(processed_count)
 
     def run(self):
         self.reset_stats()
