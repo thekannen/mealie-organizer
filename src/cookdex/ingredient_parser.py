@@ -58,7 +58,7 @@ class ReviewTagManager:
         name_lower = self._tag_name.strip().lower()
         for tag in all_tags:
             if str(tag.get("name", "")).strip().lower() == name_lower:
-                self._tag = {"id": str(tag["id"]), "name": str(tag["name"])}
+                self._tag = {"id": str(tag["id"]), "name": str(tag["name"]), "slug": str(tag.get("slug") or "")}
                 return self._tag
         # Tag doesn't exist — create it
         if self._dry_run:
@@ -66,7 +66,7 @@ class ReviewTagManager:
             return None
         try:
             created = self._client.create_organizer_item("tags", {"name": self._tag_name})
-            self._tag = {"id": str(created["id"]), "name": str(created["name"])}
+            self._tag = {"id": str(created["id"]), "name": str(created["name"]), "slug": str(created.get("slug") or "")}
             print(f"[tag] Created review tag '{self._tag_name}'", flush=True)
         except requests.RequestException as exc:
             print(f"[warn] ReviewTagManager: failed to create tag: {_short_text(str(exc))}", flush=True)
@@ -80,7 +80,7 @@ class ReviewTagManager:
         tag_id = tag["id"]
         if any(str(t.get("id", "")) == tag_id for t in recipe_tags):
             return False
-        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", ""))} for t in recipe_tags if t.get("id")]
+        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", "")), "slug": str(t.get("slug") or "")} for t in recipe_tags if t.get("id")]
         new_tags.append(tag)
         if self._dry_run:
             print(f"[dry-run] Would tag '{slug}' with '{self._tag_name}'", flush=True)
@@ -100,7 +100,7 @@ class ReviewTagManager:
         tag_id = tag["id"]
         if not any(str(t.get("id", "")) == tag_id for t in recipe_tags):
             return False
-        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", ""))} for t in recipe_tags if str(t.get("id", "")) != tag_id]
+        new_tags = [{"id": str(t["id"]), "name": str(t.get("name", "")), "slug": str(t.get("slug") or "")} for t in recipe_tags if str(t.get("id", "")) != tag_id]
         if self._dry_run:
             print(f"[dry-run] Would untag '{slug}' from '{self._tag_name}'", flush=True)
             return True
@@ -859,12 +859,12 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                 )
                 last_progress_ts = now
 
-    # Emit a final [ok] to push the progress bar to 100% if it didn't
-    # land there naturally (e.g. when the last candidates were all skipped).
-    if summary.total_candidates > 0 and summary.parsed_successfully > 0:
-        last_ok_idx = summary.total_candidates
+    if summary.total_candidates > 0:
         print(
-            f"[ok] {last_ok_idx}/{summary.total_candidates} scan-complete duration=0.00s",
+            f"[info] {summary.total_candidates}/{summary.total_candidates} scanned (100%) "
+            f"-- {summary.parsed_successfully} parsed, "
+            f"{len(reviews)} review, "
+            f"{summary.skipped_already_parsed} skipped",
             flush=True,
         )
 

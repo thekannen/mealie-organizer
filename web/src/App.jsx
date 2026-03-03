@@ -832,6 +832,22 @@ export default function App() {
     canceled: { icon: "x", label: "Canceled" },
   };
 
+  const TASK_SUMMARIES = {
+    "data-maintenance": (o) => {
+      const stages = Array.isArray(o.stages) && o.stages.length > 0 ? o.stages.length : "all";
+      return `Run ${stages} maintenance stage${stages === 1 ? "" : "s"} ${o.dry_run !== false ? "in preview" : "with live changes"}`;
+    },
+    "clean-recipes": (o) => `${o.dry_run !== false ? "Preview" : "Remove"} duplicate and junk recipes`,
+    "slug-repair": (o) => `${o.dry_run !== false ? "Detect" : "Fix"} recipe slug mismatches`,
+    "ingredient-parse": (o) => `Parse ingredients with NLP ${o.dry_run !== false ? "(preview)" : "(live)"}`,
+    "yield-normalize": (o) => `${o.dry_run !== false ? "Preview" : "Normalize"} missing yield and servings data`,
+    "cleanup-duplicates": (o) => `Find and ${o.dry_run !== false ? "preview" : "merge"} duplicate ${o.target || "food & unit"} entries`,
+    "tag-categorize": (o) => `Auto-categorize recipes using ${o.method === "rules" ? "rules only" : o.method === "ai" ? "AI only" : "rules + AI"}`,
+    "taxonomy-refresh": (o) => `Sync taxonomy from config files ${o.dry_run !== false ? "(preview)" : "(live)"}`,
+    "cookbook-sync": (o) => `${o.dry_run !== false ? "Preview" : "Sync"} cookbooks to match config`,
+    "health-check": () => "Run diagnostic audits on your recipe library",
+  };
+
   const taskGroups = useMemo(() => {
     const grouped = new Map();
     for (const task of tasks) {
@@ -927,6 +943,28 @@ export default function App() {
       else if (run.status === "running") stats.running++;
     }
     return stats;
+  }, [runs]);
+
+  const scheduleRunStats = useMemo(() => {
+    const map = new Map();
+    for (const run of runs) {
+      if (!run.schedule_id) continue;
+      const sid = String(run.schedule_id);
+      if (!map.has(sid)) map.set(sid, { total: 0, succeeded: 0 });
+      const s = map.get(sid);
+      s.total++;
+      if (run.status === "succeeded") s.succeeded++;
+    }
+    return map;
+  }, [runs]);
+
+  const recentTaskIds = useMemo(() => {
+    const seen = [];
+    for (const run of runs) {
+      if (!seen.includes(run.task_id)) seen.push(run.task_id);
+      if (seen.length >= 3) break;
+    }
+    return seen;
   }, [runs]);
 
   const filteredRuns = useMemo(() => {
@@ -1442,6 +1480,19 @@ export default function App() {
         const old = prev.find((r) => r.run_id === run.run_id);
         return !old || old.status !== "succeeded";
       });
+      // Detect run status transitions for success/failure micro-feedback.
+      if (prev.length > 0) {
+        for (const run of nextRuns) {
+          const old = prev.find((r) => r.run_id === run.run_id);
+          if (old && old.status === "running" && run.status === "succeeded") {
+            const title = taskTitleById.get(run.task_id) || run.task_id;
+            showNotice(`\u2705 ${title} completed successfully.`);
+          } else if (old && old.status === "running" && run.status === "failed") {
+            const title = taskTitleById.get(run.task_id) || run.task_id;
+            showNotice(`\u274C ${title} failed.`);
+          }
+        }
+      }
       prevRunsRef.current = nextRuns;
       setRuns(nextRuns);
       if (qualityJustFinished) {
@@ -2613,6 +2664,22 @@ export default function App() {
             <div className="run-form">
               <div className="start-run-layout">
                 <div className="task-pill-picker">
+                  {recentTaskIds.length > 0 && (
+                    <div className="recent-tasks-row">
+                      <span className="recent-tasks-label">Recent</span>
+                      {recentTaskIds.map((tid) => (
+                        <button
+                          key={tid}
+                          type="button"
+                          className={`chip-btn small${selectedTask === tid ? " active" : ""}`}
+                          onClick={() => setSelectedTask(tid)}
+                        >
+                          <Icon name={TASK_ICONS[tid] || "zap"} />
+                          {taskTitleById.get(tid) || tid}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <label className="field task-picker-search-field">
                     <span>Find Task</span>
                     <input
@@ -2885,20 +2952,62 @@ export default function App() {
                         </div>
                       )}
 
+                      {TASK_SUMMARIES[selectedTaskDef.task_id] && (
+                        <p className="task-action-summary muted tiny">
+                          <Icon name="info" />
+                          {TASK_SUMMARIES[selectedTaskDef.task_id](taskValues)}
+                        </p>
+                      )}
+
                       {scheduleMode ? (
                         <button type="button" className="primary action-hero-btn" onClick={createSchedule}>
                           <Icon name="save" />
                           Save Schedule
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className={`primary action-hero-btn ${taskValues.dry_run === false ? "live-action" : "safe-action"}`}
-                          onClick={triggerRun}
-                        >
-                          <Icon name={taskValues.dry_run === false ? "zap" : "play"} />
-                          {taskValues.dry_run === false ? "Run Live" : "Preview Run"}
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            className={`primary action-hero-btn ${taskValues.dry_run === false ? "live-action" : "safe-action"}`}
+                            onClick={triggerRun}
+                          >
+                            <Icon name={taskValues.dry_run === false ? "zap" : "play"} />
+                            {taskValues.dry_run === false ? "Run Live" : "Preview Run"}
+                          </button>
+                          {(() => {
+                            const required = (selectedTaskDef.options || []).filter(
+                              (o) => o.required && !o.hidden
+                            );
+                            if (required.length === 0) return null;
+                            const filled = required.filter((o) => {
+                              const v = taskValues[o.key];
+                              return v !== undefined && v !== "" && v !== null;
+                            });
+                            const pct = Math.round((filled.length / required.length) * 100);
+                            if (pct >= 100) return null;
+                            const dashLen = pct * 0.628;
+                            return (
+                              <span
+                                className="readiness-ring"
+                                title={`${filled.length}/${required.length} required options set`}
+                              >
+                                <svg viewBox="0 0 24 24" className="readiness-svg">
+                                  <circle
+                                    cx="12" cy="12" r="10" fill="none"
+                                    stroke="var(--line)" strokeWidth="2.5"
+                                  />
+                                  <circle
+                                    cx="12" cy="12" r="10" fill="none"
+                                    stroke="var(--accent)" strokeWidth="2.5"
+                                    strokeDasharray={`${dashLen} 62.8`}
+                                    strokeLinecap="round"
+                                    transform="rotate(-90 12 12)"
+                                  />
+                                </svg>
+                              </span>
+                            );
+                          })()}
+                        </div>
                       )}
                     </>
                   )}
@@ -2938,7 +3047,10 @@ export default function App() {
                     <li key={scheduleId} className={`schedule-item${isEditing ? " is-editing" : ""}`}>
                       <div className="schedule-item-main">
                         <div>
-                          <strong>{schedule.name || schedule.schedule_id}</strong>
+                          <div className="schedule-name-row">
+                            <span className={`schedule-status-dot ${schedule.enabled !== false ? "dot-active" : "dot-inactive"}`} />
+                            <strong>{schedule.name || schedule.schedule_id}</strong>
+                          </div>
                           <p className="tiny muted">
                             {taskTitleById.get(schedule.task_id) || schedule.task_id}
                             {" · "}
@@ -2955,6 +3067,16 @@ export default function App() {
                               </>
                             ) : null}
                           </p>
+                          {(() => {
+                            const stats = scheduleRunStats.get(scheduleId);
+                            if (!stats || stats.total === 0) return null;
+                            const pct = Math.round((stats.succeeded / stats.total) * 100);
+                            return (
+                              <span className="schedule-streak">
+                                {stats.total} run{stats.total !== 1 ? "s" : ""} · {pct}% success
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="schedule-item-actions">
                           <button
@@ -3184,9 +3306,7 @@ export default function App() {
               </ul>
             </article>
           )}
-        </div>
 
-        <div className="tasks-monitor-grid">
           {runs.some((r) => r.status === "running") && (
             <div className="running-banner">
               <span className="running-banner-dot" />
@@ -3276,8 +3396,6 @@ export default function App() {
               <thead>
                 <tr>
                   <th>Task</th>
-                  <th>Type</th>
-                  <th>Mode</th>
                   <th>Status</th>
                   <th>Run Time</th>
                   <th>Started</th>
@@ -3287,7 +3405,12 @@ export default function App() {
               <tbody>
                 {filteredRuns.length === 0 ? (
                   <tr>
-                    <td colSpan={7}>No runs found.</td>
+                    <td colSpan={5} className="activity-empty">
+                      <div className="activity-empty-content">
+                        <Icon name="play" />
+                        <span>No activity yet. Queue a task to see results here.</span>
+                      </div>
+                    </td>
                   </tr>
                 ) : (
                   filteredRuns.map((run) => {
@@ -3304,20 +3427,21 @@ export default function App() {
                         aria-selected={selectedRunId === run.run_id}
                       >
                         <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
-                        <td>{runTypeLabel(run)}</td>
-                        <td>
-                          <span className={`status-pill ${isDryRun ? "dry-run" : "live-run"}`}>
-                            <Icon name={isDryRun ? "shield" : "zap"} />
-                            {isDryRun ? "Safe" : "Live"}
-                          </span>
-                        </td>
-                        <td>
+                        <td className="run-status-cell">
                           <span className={`status-indicator ${statusClass(run.status)}`}>
                             <Icon name={STATUS_ICONS[run.status]?.icon || "info"} />
                             {STATUS_ICONS[run.status]?.label || run.status}
                           </span>
+                          <span className={`run-mode-label ${isDryRun ? "mode-safe" : "mode-live"}`}>
+                            {isDryRun ? "Safe mode" : "Live"}
+                          </span>
+                          {run.status === "running" && (
+                            <div className="run-progress-bar">
+                              <div className="run-progress-fill" />
+                            </div>
+                          )}
                         </td>
-                        <td>{formatRunTime(run)}</td>
+                        <td className="muted">{formatRunTime(run)}</td>
                         <td className="muted">{formatDateTimeShort(run.started_at || run.created_at)}</td>
                         <td className="run-actions-cell">
                           {cancelable && (
