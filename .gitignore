@@ -7,7 +7,7 @@
 .venv/
 venv/
 
-# Python bytecode and artifacts
+# Python bytecode and build artifacts
 __pycache__/
 *.py[cod]
 *.pyo
@@ -19,18 +19,23 @@ build/
 dist/
 pip-wheel-metadata/
 
-# Test, coverage, and static analysis caches
+# Python/QA caches
 .pytest_cache/
-.pytest_tmp/
+.pytest_tmp*/
 .coverage
 .coverage.*
 htmlcov/
 .mypy_cache/
 .pytype/
 .ruff_cache/
-configs/.history
-configs/.drafts/
-.pytest_tmp2/
+
+# Frontend/build tooling caches
+web/node_modules/
+web/.vite/
+.playwright-mcp/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Local runtime/output folders
 cache/
@@ -38,17 +43,19 @@ logs/
 reports/
 .tmp/
 *.log
-.playwright-mcp/
 qa-*.png
 data/
 state.db
+
+# Local config workspace history
+configs/.history/
+configs/.drafts/
 
 # Editor and OS files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-web/node_modules/
 
 # Local issue tracking state
 .beads/

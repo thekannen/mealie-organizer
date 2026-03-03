@@ -118,3 +118,11 @@ This requires Playwright browsers to be installed (`cd web && npx playwright ins
 | UI shows "build missing" | Run `cd web && npm run build` |
 | Port already in use | Set `WEB_BIND_PORT=4821` in `.env` |
 | `configs/config.json` not found | Create it: `mkdir -p configs && echo '{"providers":{},"parser":{}}' > configs/config.json` |
+
+## Workspace cleanup
+
+Use the standard cleanup script when local artifacts start piling up:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev/clean_repo.ps1
+```
