@@ -30,6 +30,7 @@ htmlcov/
 .ruff_cache/
 configs/.history
 configs/.drafts/
+.pytest_tmp2/
 
 # Local runtime/output folders
 cache/

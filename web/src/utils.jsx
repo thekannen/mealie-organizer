@@ -497,6 +497,31 @@ export function formatRunTime(run) {
   return formatDurationMs(finished.getTime() - started.getTime());
 }
 
+export function formatRelativeTime(isoString) {
+  if (!isoString) return "";
+  const diff = Date.now() - new Date(isoString).getTime();
+  if (diff < 0) return "just now";
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return `${Math.floor(diff / 604800000)}w ago`;
+}
+
+export function formatCountdown(isoString) {
+  if (!isoString) return null;
+  const diff = new Date(isoString).getTime() - Date.now();
+  if (diff < 0) return "overdue";
+  if (diff < 60000) return "< 1m";
+  if (diff < 3600000) return `in ${Math.round(diff / 60000)}m`;
+  if (diff < 86400000) {
+    const h = Math.floor(diff / 3600000);
+    const m = Math.round((diff % 3600000) / 60000);
+    return `in ${h}h ${m}m`;
+  }
+  return `in ${Math.round(diff / 86400000)}d`;
+}
+
 export function runTypeLabel(run) {
   return run.schedule_id ? "Scheduled" : "Manual";
 }

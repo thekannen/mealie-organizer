@@ -40,8 +40,12 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 2, int), "categorizer.batch_size")
+BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 5, int), "categorizer.batch_size")
 MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int), "categorizer.max_workers")
+INTER_REQUEST_DELAY: float = require_float(
+    env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 1.5, float),
+    "categorizer.inter_request_delay",
+)
 TAG_MAX_NAME_LENGTH: int = require_int(
     env_or_config("TAG_MAX_NAME_LENGTH", "categorizer.tag_max_name_length", 24, int),
     "categorizer.tag_max_name_length",
@@ -103,6 +107,23 @@ def cache_file_for_provider(provider: str) -> str:
     )
 
 
+_MAX_RATE_LIMIT_RETRIES = 8
+
+
+def _rate_limit_wait(provider: str, response, rate_limit_hits: int) -> float:
+    """Return seconds to sleep on a 429/5xx, using Retry-After when available."""
+    retry_after = response.headers.get("Retry-After")
+    if retry_after and retry_after.replace(".", "", 1).isdigit():
+        wait = float(retry_after) + random.uniform(0.5, 1.5)
+    else:
+        wait = min(2.0 * (2 ** rate_limit_hits), 60.0) + random.uniform(0.5, 1.5)
+    print(
+        f"[warn] {provider} HTTP {response.status_code} "
+        f"(rate-limit hit #{rate_limit_hits + 1}), sleeping {wait:.1f}s"
+    )
+    return wait
+
+
 def query_chatgpt(
     prompt_text: str,
     model: str,
@@ -126,19 +147,27 @@ def query_chatgpt(
         "Content-Type": "application/json",
     }
     last_error = None
+    attempt = 0
+    rate_limit_hits = 0
 
-    for attempt in range(http_retries):
+    while attempt < http_retries:
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
-            if response.status_code == 429 or 500 <= response.status_code < 600:
-                retry_after = response.headers.get("Retry-After")
-                wait_for = float(retry_after) if retry_after and retry_after.isdigit() else (1.5 * (2**attempt))
-                wait_for += random.uniform(0, 0.5)
+            if response.status_code == 429:
+                if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
+                    print(f"[error] ChatGPT: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
+                    return None
+                time.sleep(_rate_limit_wait("ChatGPT", response, rate_limit_hits))
+                rate_limit_hits += 1
+                continue  # don't increment attempt for rate limits
+            if 500 <= response.status_code < 600:
+                wait_for = (1.5 * (2 ** attempt)) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] ChatGPT transient HTTP {response.status_code} "
+                    f"[warn] ChatGPT HTTP {response.status_code} "
                     f"(attempt {attempt + 1}/{http_retries}), sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
+                attempt += 1
                 continue
 
             response.raise_for_status()
@@ -146,21 +175,36 @@ def query_chatgpt(
             return data["choices"][0]["message"]["content"].strip()
         except requests.RequestException as exc:
             last_error = exc
-            if attempt < http_retries - 1:
-                wait_for = (1.5 * (2**attempt)) + random.uniform(0, 0.5)
+            attempt += 1
+            if attempt < http_retries:
+                wait_for = (1.5 * (2 ** (attempt - 1))) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] ChatGPT request exception (attempt {attempt + 1}/{http_retries}): {exc}. "
+                    f"[warn] ChatGPT request exception (attempt {attempt}/{http_retries}): {exc}. "
                     f"Sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
-            else:
-                break
+            continue
         except (ValueError, KeyError, TypeError) as exc:
             print(f"[error] ChatGPT response parse error: {exc}")
             return None
 
     print(f"ChatGPT request error: {last_error or 'exhausted retries'}")
     return None
+
+
+OLLAMA_ARRAY_SCHEMA: dict = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string"},
+            "categories": {"type": "array", "items": {"type": "string"}},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "tools": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["slug", "categories", "tags", "tools"],
+    },
+}
 
 
 def query_ollama(
@@ -174,52 +218,52 @@ def query_ollama(
     payload = {
         "model": model,
         "prompt": prompt_text + "\n\nRespond only with valid JSON.",
-        "format": "json",
+        "format": OLLAMA_ARRAY_SCHEMA,
         "options": options,
     }
     last_error = None
+    attempt = 0
+    rate_limit_hits = 0
 
-    for attempt in range(http_retries):
+    while attempt < http_retries:
         try:
             response = requests.post(
                 f"{url.rstrip('/')}/generate",
                 headers={"Content-Type": "application/json"},
-                data=json.dumps(payload),
-                stream=True,
+                json={**payload, "stream": False},
                 timeout=request_timeout,
             )
-            if response.status_code == 429 or 500 <= response.status_code < 600:
-                wait_for = (1.25 * (2**attempt)) + random.uniform(0, 0.5)
+            if response.status_code == 429:
+                if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
+                    print(f"[error] Ollama: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
+                    return None
+                time.sleep(_rate_limit_wait("Ollama", response, rate_limit_hits))
+                rate_limit_hits += 1
+                continue
+            if 500 <= response.status_code < 600:
+                wait_for = (1.25 * (2 ** attempt)) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] Ollama transient HTTP {response.status_code} "
+                    f"[warn] Ollama HTTP {response.status_code} "
                     f"(attempt {attempt + 1}/{http_retries}), sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
+                attempt += 1
                 continue
 
             response.raise_for_status()
-            text = ""
-            for line in response.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                    if "response" in chunk:
-                        text += chunk["response"]
-                except json.JSONDecodeError:
-                    continue
-            return text.strip()
+            data = response.json()
+            return (data.get("response") or "").strip()
         except requests.RequestException as exc:
             last_error = exc
-            if attempt < http_retries - 1:
-                wait_for = (1.25 * (2**attempt)) + random.uniform(0, 0.5)
+            attempt += 1
+            if attempt < http_retries:
+                wait_for = (1.25 * (2 ** (attempt - 1))) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] Ollama request exception (attempt {attempt + 1}/{http_retries}): {exc}. "
+                    f"[warn] Ollama request exception (attempt {attempt}/{http_retries}): {exc}. "
                     f"Sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
-            else:
-                break
+            continue
 
     print(f"Ollama request error: {last_error or 'exhausted retries'}")
     return None
@@ -250,19 +294,27 @@ def query_anthropic(
         "Content-Type": "application/json",
     }
     last_error = None
+    attempt = 0
+    rate_limit_hits = 0
 
-    for attempt in range(http_retries):
+    while attempt < http_retries:
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
-            if response.status_code == 429 or 500 <= response.status_code < 600:
-                retry_after = response.headers.get("Retry-After")
-                wait_for = float(retry_after) if retry_after and retry_after.isdigit() else (1.5 * (2**attempt))
-                wait_for += random.uniform(0, 0.5)
+            if response.status_code == 429:
+                if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
+                    print(f"[error] Anthropic: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
+                    return None
+                time.sleep(_rate_limit_wait("Anthropic", response, rate_limit_hits))
+                rate_limit_hits += 1
+                continue  # don't increment attempt for rate limits
+            if 500 <= response.status_code < 600:
+                wait_for = (1.5 * (2 ** attempt)) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] Anthropic transient HTTP {response.status_code} "
+                    f"[warn] Anthropic HTTP {response.status_code} "
                     f"(attempt {attempt + 1}/{http_retries}), sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
+                attempt += 1
                 continue
 
             response.raise_for_status()
@@ -275,15 +327,15 @@ def query_anthropic(
             return None
         except requests.RequestException as exc:
             last_error = exc
-            if attempt < http_retries - 1:
-                wait_for = (1.5 * (2**attempt)) + random.uniform(0, 0.5)
+            attempt += 1
+            if attempt < http_retries:
+                wait_for = (1.5 * (2 ** (attempt - 1))) + random.uniform(0, 0.5)
                 print(
-                    f"[warn] Anthropic request exception (attempt {attempt + 1}/{http_retries}): {exc}. "
+                    f"[warn] Anthropic request exception (attempt {attempt}/{http_retries}): {exc}. "
                     f"Sleeping {wait_for:.1f}s"
                 )
                 time.sleep(wait_for)
-            else:
-                break
+            continue
         except (ValueError, KeyError, TypeError) as exc:
             print(f"[error] Anthropic response parse error: {exc}")
             return None
@@ -352,9 +404,14 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
         return _query_chatgpt, f"ChatGPT ({model})"
 
     model = require_str(
-        env_or_config("OLLAMA_MODEL", "providers.ollama.model", "mistral:7b"),
+        env_or_config("OLLAMA_MODEL", "providers.ollama.model", ""),
         "providers.ollama.model",
     )
+    if not model:
+        raise ValueError(
+            "No Ollama model configured. Set OLLAMA_MODEL in environment, "
+            "config file, or the Settings UI."
+        )
     url = require_str(
         env_or_config("OLLAMA_URL", "providers.ollama.url", "http://localhost:11434/api"),
         "providers.ollama.url",
@@ -372,15 +429,15 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
     )
     options = {
         "num_ctx": require_int(
-            env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", 1024, int),
+            env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", 4096, int),
             "providers.ollama.options.num_ctx",
         ),
         "temperature": require_float(
-            env_or_config("OLLAMA_TEMPERATURE", "providers.ollama.options.temperature", 0.1, float),
+            env_or_config("OLLAMA_TEMPERATURE", "providers.ollama.options.temperature", 0.0, float),
             "providers.ollama.options.temperature",
         ),
         "num_predict": require_int(
-            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 96, int),
+            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 1024, int),
             "providers.ollama.options.num_predict",
         ),
         "top_p": require_float(
@@ -422,6 +479,7 @@ def main(forced_provider: str | None = None) -> None:
         tag_max_name_length=TAG_MAX_NAME_LENGTH,
         tag_min_usage=TAG_MIN_USAGE,
         dry_run=dry_run,
+        inter_request_delay=INTER_REQUEST_DELAY,
     )
     categorizer.run()
 
