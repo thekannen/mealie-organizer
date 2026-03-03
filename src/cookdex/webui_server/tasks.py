@@ -599,7 +599,7 @@ class TaskRegistry:
                         "confidence_threshold",
                         "Parse Confidence Threshold",
                         "integer",
-                        default=75,
+                        default=80,
                         help_text="Ingredient-parse NLP confidence % (0–100). Lower values accept more NLP results.",
                         advanced=True,
                     ),
