@@ -364,6 +364,63 @@ async function main() {
     return button;
   }
 
+  function taskPickerLocator() {
+    return page.locator(".task-picker, .task-pill-picker").first();
+  }
+
+  async function getTaskItemMeta() {
+    const legacyItems = page.locator(".task-item");
+    if ((await legacyItems.count()) > 0) {
+      return { items: legacyItems, titleSelector: ".task-item-title" };
+    }
+    const modernItems = page.locator(".task-pill");
+    return { items: modernItems, titleSelector: ".task-pill-title" };
+  }
+
+  async function setScheduleModeEnabled(enabled) {
+    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
+    if (await scheduleToggle.isVisible().catch(() => false)) {
+      await setCheckboxState(scheduleToggle, enabled);
+      await page.waitForTimeout(180);
+      return;
+    }
+
+    const targetBtn = enabled
+      ? page.getByRole("button", { name: /^schedule$/i }).first()
+      : page.getByRole("button", { name: /^run now$/i }).first();
+    await expectVisible(
+      targetBtn,
+      enabled ? "Schedule mode toggle button missing." : "Run Now mode toggle button missing."
+    );
+    const isPressed = (await targetBtn.getAttribute("aria-pressed").catch(() => "false")) === "true";
+    if (!isPressed) {
+      await targetBtn.click();
+      rememberButtonClick("tasks", enabled ? "Schedule" : "Run Now");
+      await page.waitForTimeout(200);
+    }
+  }
+
+  async function clickQueueRunCompat() {
+    const candidates = [
+      { label: /queue run/i, uiLabel: "Queue Run" },
+      { label: /preview run/i, uiLabel: "Preview Run" },
+      { label: /run live/i, uiLabel: "Run Live" },
+    ];
+
+    for (const candidate of candidates) {
+      const button = page.getByRole("button", { name: candidate.label }).first();
+      if (await button.isVisible().catch(() => false)) {
+        await button.click();
+        rememberButtonClick("tasks", candidate.uiLabel);
+        markControl("tasks", "tasks:queue-run");
+        await page.waitForTimeout(200);
+        return;
+      }
+    }
+
+    throw new Error("Run action button not found (expected Queue Run, Preview Run, or Run Live).");
+  }
+
   async function clickSidebarAction(label, marker) {
     const button = page.locator(".sidebar-actions button", { hasText: label }).first();
     await expectVisible(button, `Sidebar button '${label}' missing.`);
@@ -719,7 +776,7 @@ async function main() {
       rememberButtonClick("overview", "Run Quality Audit");
       markControl("overview", "overview:run-quality-audit");
       await page.waitForTimeout(400);
-      await expectVisible(page.locator(".task-picker").first(), "'Run Quality Audit ->' did not navigate to Tasks page.");
+      await expectVisible(taskPickerLocator(), "'Run Quality Audit ->' did not navigate to Tasks page.");
       markInteraction("overview", "quality-audit-nav", "tasks-page-reached");
       await clickNav("Overview");
       await page.waitForTimeout(250);
@@ -748,7 +805,7 @@ async function main() {
   await check("tasks-page-runs", async () => {
     await clickNav("Tasks");
     await expectVisible(page.getByRole("heading", { name: /tasks/i }).first(), "Tasks page header missing.");
-    await expectVisible(page.locator(".task-picker").first(), "Tasks card picker missing.");
+    await expectVisible(taskPickerLocator(), "Tasks card picker missing.");
 
     // Wait for any in-flight loadData() (e.g. from a previous sidebar Refresh click) to finish
     // before queuing tasks. If loadData() finishes AFTER our refreshRuns() calls it will overwrite
@@ -767,26 +824,24 @@ async function main() {
     // Expand all collapsed task groups
     await expandAllTaskGroups();
 
-    const taskItems = page.locator(".task-item");
+    const { items: taskItems, titleSelector } = await getTaskItemMeta();
     const taskCount = await taskItems.count();
     if (taskCount === 0) {
       throw new Error("No task items found in picker after expanding groups.");
     }
 
-    // Ensure schedule mode is OFF for run queuing
-    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
-    if (await scheduleToggle.isChecked().catch(() => false)) {
-      await scheduleToggle.uncheck();
-      await page.waitForTimeout(150);
-    }
-
     for (let index = 0; index < taskCount; index += 1) {
       const item = taskItems.nth(index);
-      const label = normalizeText(await item.locator(".task-item-title").innerText().catch(() => `task-${index}`));
+      let label = normalizeText(await item.locator(titleSelector).first().innerText().catch(() => ""));
+      if (!label) {
+        label = normalizeText(await item.innerText().catch(() => `task-${index}`));
+      }
       await item.click();
       await page.waitForTimeout(140);
+      // New UI only renders Run/Schedule toggle after a task is selected.
+      await setScheduleModeEnabled(false);
       await configureOptionFields(page.locator(".run-form"));
-      await clickButtonByRole("tasks", "Queue Run", "tasks:queue-run");
+      await clickQueueRunCompat();
       await ensureNoErrorBanner(`Run queue failed: ${label}`);
       report.coverage.tasksQueuedViaUi += 1;
       markInteraction("tasks", "queued-task", label);
@@ -939,23 +994,19 @@ async function main() {
 
   await check("tasks-page-schedules", async () => {
     await clickNav("Tasks");
-    await expectVisible(page.locator(".task-picker").first(), "Tasks card picker missing for schedule.");
+    await expectVisible(taskPickerLocator(), "Tasks card picker missing for schedule.");
 
     // Expand all task groups and prefer cookbook-sync to validate dry-run schedule coverage.
     await expandAllTaskGroups();
-    const cookbookTaskItem = page.locator(".task-item", { hasText: /cookbook sync/i }).first();
-    const firstTaskItem = (await cookbookTaskItem.count()) > 0 ? cookbookTaskItem : page.locator(".task-item").first();
+    const { items: scheduleTaskItems } = await getTaskItemMeta();
+    const cookbookTaskItem = scheduleTaskItems.filter({ hasText: /cookbook sync/i }).first();
+    const firstTaskItem = (await cookbookTaskItem.count()) > 0 ? cookbookTaskItem : scheduleTaskItems.first();
     await expectVisible(firstTaskItem, "No task items found for schedule creation.");
     await firstTaskItem.click();
     await page.waitForTimeout(200);
 
     // Enable schedule mode
-    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
-    await expectVisible(scheduleToggle, "Schedule Run toggle missing.");
-    if (!(await scheduleToggle.isChecked().catch(() => false))) {
-      await scheduleToggle.check();
-      await page.waitForTimeout(200);
-    }
+    await setScheduleModeEnabled(true);
 
     // Helper: build a datetime-local string for N hours from now
     function futureDtLocal(hoursAhead) {
@@ -987,10 +1038,7 @@ async function main() {
     await page.waitForTimeout(500);
 
     // After save the form may reset (toggle turns off). Re-enable schedule mode for second schedule.
-    if (!(await scheduleToggle.isChecked().catch(() => false))) {
-      await scheduleToggle.check();
-      await page.waitForTimeout(200);
-    }
+    await setScheduleModeEnabled(true);
 
     // Create a second interval schedule
     const intervalName2 = `qa-ui-int2-${Date.now().toString().slice(-7)}`;
@@ -1022,10 +1070,7 @@ async function main() {
     report.coverage.schedulesCreatedViaUi += created.length;
 
     // Turn schedule mode back off
-    if (await scheduleToggle.isChecked().catch(() => false)) {
-      await scheduleToggle.uncheck();
-      await page.waitForTimeout(150);
-    }
+    await setScheduleModeEnabled(false);
 
     await registerVisibleButtons("tasks");
     await screenshot("tasks-schedules");
@@ -1129,27 +1174,23 @@ async function main() {
     await screenshot("tasks-schedule-management");
   });
 
-  await check("tasks-once-schedule", async () => {
-    await clickNav("Tasks");
-    await expandAllTaskGroups();
-    const firstTaskItem = page.locator(".task-item").first();
-    await expectVisible(firstTaskItem, "No task items found for once-schedule creation.");
-    await firstTaskItem.click();
-    await page.waitForTimeout(200);
-
-    const scheduleToggle = page.locator('.schedule-toggle input[type="checkbox"]').first();
-    await expectVisible(scheduleToggle, "Schedule Run toggle missing for once-schedule test.");
-    if (!(await scheduleToggle.isChecked().catch(() => false))) {
-      await scheduleToggle.check();
+    await check("tasks-once-schedule", async () => {
+      await clickNav("Tasks");
+      await expandAllTaskGroups();
+      const { items: onceTaskItems } = await getTaskItemMeta();
+      const firstTaskItem = onceTaskItems.first();
+      await expectVisible(firstTaskItem, "No task items found for once-schedule creation.");
+      await firstTaskItem.click();
       await page.waitForTimeout(200);
-    }
+
+      await setScheduleModeEnabled(true);
 
     const onceName = `qa-ui-once-${Date.now().toString().slice(-7)}`;
     await fillFirstVisible(page.locator('label:has-text("Schedule Name") input'), onceName);
     await page.locator('label:has-text("Type") select').first().selectOption("once");
     await page.waitForTimeout(200);
 
-    const runAtInput = page.locator('input[type="datetime-local"]').first();
+    const runAtInput = page.locator('label:has-text("Run at") input[type="datetime-local"]').first();
     await expectVisible(runAtInput, "datetime-local input not visible for 'once' schedule type.");
     const futureDate = new Date(Date.now() + 3600000);
     const pad2 = (n) => String(n).padStart(2, "0");
@@ -1171,10 +1212,7 @@ async function main() {
     cleanupState.scheduleIds.add(String(onceItem.schedule_id));
     report.coverage.schedulesCreatedViaUi += 1;
 
-    if (await scheduleToggle.isChecked().catch(() => false)) {
-      await scheduleToggle.uncheck();
-      await page.waitForTimeout(150);
-    }
+    await setScheduleModeEnabled(false);
     await screenshot("tasks-once-schedule");
   });
 
