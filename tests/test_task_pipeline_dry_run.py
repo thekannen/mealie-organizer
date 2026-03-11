@@ -26,6 +26,7 @@ ALL_TASK_IDS = [
     "data-maintenance",
     "health-check",
     "ingredient-parse",
+    "reimport-recipes",
     "slug-repair",
     "tag-categorize",
     "taxonomy-refresh",
@@ -143,9 +144,9 @@ def test_data_maintenance_marks_advanced_options() -> None:
     descriptions = {d["task_id"]: d for d in REGISTRY.describe_tasks()}
     options = {o["key"]: o for o in descriptions["data-maintenance"]["options"]}
     assert options["dry_run"]["advanced"] is False
-    assert options["provider"]["advanced"] is False
+    assert options["provider"]["advanced"] is True
     assert options["apply_cleanups"]["advanced"] is False
-    assert options["stages"]["advanced"] is True
+    assert options["stages"]["advanced"] is False
     assert options["use_db"]["advanced"] is True
     assert options["confidence_threshold"]["advanced"] is True
 
