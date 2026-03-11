@@ -296,6 +296,20 @@ export const HELP_TASK_GUIDES = [
     tip: "A large food library with many variants is normal after bulk importing. Run this after any parsing job.",
   },
   {
+    id: "reimport-recipes",
+    title: "Re-import Recipes",
+    icon: "refresh-cw",
+    group: "Actions",
+    what: "Re-scrapes recipes from their original source URLs. Content fields are refreshed from the scraper while recipe identity, favorites, and library organization remain intact.",
+    steps: [
+      "Run with Dry Run enabled to review which recipes are eligible before making changes.",
+      "Set Max Recipes for a safe batch size when validating behavior on large libraries.",
+      "Use Specific Slugs with a comma-separated list to reimport only targeted recipes.",
+      "Disable Dry Run to apply the refresh and then rerun ingredient-parse if you need fresh structured ingredient data.",
+    ],
+    tip: "Use this after scraper improvements or site-format changes to refresh stale recipe bodies without deleting your library.",
+  },
+  {
     id: "tag-categorize",
     title: "Tag and Categorize Recipes",
     icon: "tag",
