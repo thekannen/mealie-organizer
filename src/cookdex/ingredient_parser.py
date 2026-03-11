@@ -13,7 +13,7 @@ import requests
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, to_bool
 
-DEFAULT_PARSER_STRATEGIES = ("nlp", "openai")
+DEFAULT_PARSER_STRATEGIES = ("nlp", "brute", "openai")
 SERVING_PHRASES = {"for serving", "for garnish", "for dipping"}
 NON_INGREDIENT_PREFIX_RE = re.compile(r"^(for|to)\s+", re.IGNORECASE)
 ZERO_QTY_ALLOWED_UNITS = {"pinch", "dash"}

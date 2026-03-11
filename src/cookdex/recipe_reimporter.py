@@ -26,6 +26,7 @@ from typing import Any
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .db_client import resolve_db_client
 
 DEFAULT_REPORT = "reports/recipe_reimport_report.json"
 _MAX_WORKERS = 4
@@ -138,6 +139,7 @@ class RecipeReimporter:
         self.max_workers = max_workers
         self.slugs_filter = set(slugs_filter) if slugs_filter else None
         self.report_file = Path(report_file)
+        self._db = None
 
     def run(self) -> dict[str, Any]:
         print("[start] Fetching all recipes from API ...", flush=True)
@@ -240,10 +242,10 @@ class RecipeReimporter:
             original = self.client.get_recipe(slug)
 
             # Build patch from scraped JSON-LD data.
+            # Do NOT include name or slug — Mealie derives slug from name and
+            # rejects the PATCH with 403 if it doesn't match the URL slug.
             patch: dict[str, Any] = {}
 
-            if scraped.get("name"):
-                patch["name"] = str(scraped["name"]).strip()
             if scraped.get("description"):
                 patch["description"] = str(scraped["description"]).strip()
 
@@ -281,8 +283,20 @@ class RecipeReimporter:
                 if field in original:
                     patch[field] = original[field]
 
-            # Apply.
-            self.client.patch_recipe(slug, patch)
+            # PATCH using the listing slug (what Mealie's router expects).
+            try:
+                self.client.patch_recipe(slug, patch)
+            except Exception as patch_exc:
+                # Mealie 403 = slug/name mismatch in DB.  Mealie's can_update()
+                # derives slug from name, but the DB slug may differ after a
+                # previous corrupted import.  Fix via direct DB update.
+                status_code = getattr(getattr(patch_exc, "response", None), "status_code", 0)
+                new_slug = self._repair_slug(slug, original) if status_code == 403 else None
+                if new_slug:
+                    # Slug repaired — retry the PATCH with the corrected slug.
+                    self.client.patch_recipe(new_slug, patch)
+                else:
+                    raise
 
             entry["status"] = "reimported"
             ing_count = len(patch.get("recipeIngredient", []))
@@ -294,6 +308,45 @@ class RecipeReimporter:
             print(f"[error] {idx}/{total} {slug}: {exc}", flush=True)
 
         return entry
+
+    def _repair_slug(self, listing_slug: str, original: dict[str, Any]) -> str | None:
+        """Fix a slug/name mismatch in the DB so Mealie's can_update() passes.
+
+        Mealie derives slug from the recipe name.  If the DB slug doesn't match
+        the name-derived slug, can_update() finds zero rows and returns 403.
+        We update the DB slug to match the name-derived slug.
+
+        Returns the new slug on success, None on failure.
+        """
+        try:
+            if self._db is None:
+                self._db = resolve_db_client()
+            if self._db is None:
+                return None
+
+            from slugify import slugify
+
+            current_name = original.get("name", "")
+            name_slug = slugify(current_name)
+
+            if name_slug == listing_slug:
+                return None  # slug matches name — 403 is from something else
+
+            recipe_id = original.get("id")
+            if not recipe_id:
+                return None
+
+            p = self._db._db.placeholder
+            self._db._db.execute(
+                f"UPDATE recipes SET slug = {p} WHERE id = {p}",
+                (name_slug, recipe_id),
+            )
+            self._db._db.commit()
+            print(f"[fix] {listing_slug}: repaired DB slug -> {name_slug}", flush=True)
+            return name_slug
+        except Exception as exc:
+            print(f"[warning] slug repair failed for {listing_slug}: {exc}", flush=True)
+            return None
 
     def _finish(
         self, total: int, candidates: list, action_log: list,
@@ -337,6 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="Apply reimports (default is dry-run).")
     parser.add_argument("--max", type=int, default=0, help="Max recipes to reimport (0 = all).")
     parser.add_argument("--slugs", type=str, default="", help="Comma-separated list of specific slugs.")
+    parser.add_argument("--threads", type=int, default=_MAX_WORKERS, help=f"Scrape thread count (default {_MAX_WORKERS}, max 8).")
     return parser
 
 
@@ -358,6 +412,7 @@ def main() -> None:
         ),
         dry_run=dry_run,
         max_recipes=args.max,
+        max_workers=min(args.threads, 8),
         slugs_filter=slugs_filter,
         report_file=resolve_repo_path(DEFAULT_REPORT),
     )

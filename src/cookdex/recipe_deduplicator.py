@@ -29,6 +29,7 @@ from typing import Any
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .db_client import resolve_db_client
 
 DEFAULT_REPORT = "reports/recipe_dedup_report.json"
 
@@ -125,12 +126,15 @@ class RecipeDeduplicator:
         *,
         dry_run: bool = True,
         apply: bool = False,
+        use_db: bool = False,
         report_file: Path | str = DEFAULT_REPORT,
     ) -> None:
         self.client = client
         self.dry_run = dry_run
         self.apply = apply
+        self.use_db = use_db
         self.report_file = Path(report_file)
+        self._db = None
 
     def run(self) -> dict[str, Any]:
         executable = self.apply and not self.dry_run
@@ -172,11 +176,18 @@ class RecipeDeduplicator:
                         entry["status"] = "deleted"
                         deleted += 1
                         print(f"[ok] {action_idx}/{total_dupes} {dupe_slug} kept={keeper_slug}", flush=True)
-                    except Exception as exc:
-                        entry["status"] = "error"
-                        entry["error"] = str(exc)
-                        failed += 1
-                        print(f"[error] {dupe_slug}: {exc}", flush=True)
+                    except Exception as api_exc:
+                        # API delete failed — try DB fallback for corrupted recipes.
+                        if self._try_db_delete(dupe_slug):
+                            entry["status"] = "deleted"
+                            entry["method"] = "db"
+                            deleted += 1
+                            print(f"[ok] {action_idx}/{total_dupes} {dupe_slug} kept={keeper_slug} (via DB)", flush=True)
+                        else:
+                            entry["status"] = "error"
+                            entry["error"] = str(api_exc)
+                            failed += 1
+                            print(f"[error] {dupe_slug}: {api_exc}", flush=True)
                 else:
                     entry["status"] = "planned"
                     print(f"[plan] {dupe_slug}: would delete '{dupe_name}', keeping '{keeper_name}'", flush=True)
@@ -202,6 +213,12 @@ class RecipeDeduplicator:
             f"{deleted} deleted ({mode} mode)",
             flush=True,
         )
+        if self._db is not None:
+            try:
+                self._db.close()
+            except Exception:
+                pass
+
         print("[summary] " + json.dumps({
             "__title__": "Deduplicator",
             "Total Recipes": total,
@@ -214,9 +231,25 @@ class RecipeDeduplicator:
         return report
 
 
+    def _try_db_delete(self, slug: str) -> bool:
+        """Attempt to delete a recipe via direct DB access. Returns True on success."""
+        if not self.use_db:
+            return False
+        try:
+            if self._db is None:
+                self._db = resolve_db_client()
+            if self._db is None:
+                return False
+            return self._db.delete_recipe(slug)
+        except Exception as exc:
+            print(f"[warning] DB delete fallback failed for {slug}: {exc}", flush=True)
+            return False
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Deduplicate recipes by canonical source URL.")
     parser.add_argument("--apply", action="store_true", help="Delete duplicate recipes from Mealie.")
+    parser.add_argument("--use-db", action="store_true", help="Fall back to direct DB delete for corrupted recipes.")
     return parser
 
 
@@ -235,6 +268,7 @@ def main() -> None:
         ),
         dry_run=dry_run,
         apply=bool(args.apply),
+        use_db=bool(args.use_db),
         report_file=resolve_repo_path(DEFAULT_REPORT),
     )
     deduplicator.run()
