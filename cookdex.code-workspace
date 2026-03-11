@@ -4,7 +4,8 @@
 			"path": "."
 		},
 		{
-			"path": "../../../../../../Documents/mealie"
+			"name": "mealie",
+			"path": "../mealie"
 		}
 	],
 	"settings": {}

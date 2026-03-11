@@ -157,6 +157,7 @@ class LabelsSyncManager:
             flush=True,
         )
         summary = {
+            "__title__": "Labels Sync",
             "Labels in Config": len(desired),
             "Labels in Mealie": len(existing),
             "Created": created,

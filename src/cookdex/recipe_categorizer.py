@@ -40,10 +40,10 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 5, int), "categorizer.batch_size")
-MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 3, int), "categorizer.max_workers")
+BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 20, int), "categorizer.batch_size")
+MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 1, int), "categorizer.max_workers")
 INTER_REQUEST_DELAY: float = require_float(
-    env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 1.5, float),
+    env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 3.0, float),
     "categorizer.inter_request_delay",
 )
 TAG_MAX_NAME_LENGTH: int = require_int(
@@ -107,19 +107,21 @@ def cache_file_for_provider(provider: str) -> str:
     )
 
 
-_MAX_RATE_LIMIT_RETRIES = 8
+_MAX_RATE_LIMIT_RETRIES = 15
 
 
 def _rate_limit_wait(provider: str, response, rate_limit_hits: int) -> float:
     """Return seconds to sleep on a 429/5xx, using Retry-After when available."""
     retry_after = response.headers.get("Retry-After")
     if retry_after and retry_after.replace(".", "", 1).isdigit():
-        wait = float(retry_after) + random.uniform(0.5, 1.5)
+        wait = float(retry_after) + random.uniform(1.0, 3.0)
     else:
-        wait = min(2.0 * (2 ** rate_limit_hits), 60.0) + random.uniform(0.5, 1.5)
+        # More aggressive backoff: start at 10s, grow slowly, cap at 90s
+        wait = min(10.0 + 5.0 * rate_limit_hits, 90.0) + random.uniform(1.0, 3.0)
     print(
         f"[warn] {provider} HTTP {response.status_code} "
-        f"(rate-limit hit #{rate_limit_hits + 1}), sleeping {wait:.1f}s"
+        f"(rate-limit hit #{rate_limit_hits + 1}), sleeping {wait:.1f}s",
+        flush=True,
     )
     return wait
 
@@ -367,7 +369,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             ),
         )
         max_tokens = require_int(
-            env_or_config("ANTHROPIC_MAX_TOKENS", "providers.anthropic.max_tokens", 4096, int),
+            env_or_config("ANTHROPIC_MAX_TOKENS", "providers.anthropic.max_tokens", 8192, int),
             "providers.anthropic.max_tokens",
         )
 

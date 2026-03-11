@@ -263,6 +263,7 @@ class RecipeQualityAuditor:
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Quality Audit",
             "Total Recipes": total,
             "Gold (5-6/6)": g,
             "Gold %": gold_pct,

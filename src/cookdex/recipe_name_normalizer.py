@@ -277,6 +277,7 @@ class RecipeNameNormalizer:
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Name Normalizer",
             "Total Recipes": total,
             "Candidates": len(actions),
             "Applied": applied,

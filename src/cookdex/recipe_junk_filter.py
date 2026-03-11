@@ -245,6 +245,7 @@ class RecipeJunkFilter:
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Junk Filter",
             "Total Recipes": total,
             "Junk Found": len(actions),
             "Top Reason": top_reason,
