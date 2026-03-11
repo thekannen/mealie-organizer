@@ -196,6 +196,16 @@ class MealieApiClient:
     def delete_recipe(self, slug: str) -> None:
         self._request_raw("DELETE", f"/recipes/{slug}", timeout=60)
 
+    def scrape_recipe_url(self, url: str) -> str:
+        """Scrape a recipe from a URL via Mealie's built-in scraper. Returns the new recipe's slug."""
+        response = self._request_raw(
+            "POST",
+            "/recipes/create/url",
+            json={"url": url, "includeTags": False, "includeCategories": False},
+            timeout=120,
+        )
+        return response.text.strip().strip('"')
+
     def parse_ingredients(self, ingredients: list[str], strategy: str) -> list[dict[str, Any]]:
         data = self.request_json(
             "POST",

@@ -18,6 +18,7 @@ class OptionSpec:
     choices: list[dict[str, Any]] | None = None
     multi: bool = False
     advanced: bool = False
+    option_group: str = ""
 
 
 @dataclass(frozen=True)
@@ -480,6 +481,22 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
+def _build_reimport_recipes(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"dry_run", "max_recipes", "slugs"})
+    env, dangerous = _common_env(options)
+    dry_run = _bool_option(options, "dry_run", True)
+    max_recipes = _int_option(options, "max_recipes", 0)
+    slugs = _str_option(options, "slugs", "")
+    cmd = _py_module("cookdex.recipe_reimporter")
+    if not dry_run:
+        cmd.append("--apply")
+    if max_recipes:
+        cmd.extend(["--max", str(max_recipes)])
+    if slugs:
+        cmd.extend(["--slugs", slugs])
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
 def _build_slug_repair(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"dry_run", "use_db"})
     env, dangerous = _common_env(options)
@@ -538,7 +555,6 @@ class TaskRegistry:
                         "string",
                         help_text="Select stages to run. Leave all unselected to run the full pipeline.",
                         multi=True,
-                        advanced=True,
                         choices=[
                             {"value": "dedup", "label": "Recipe Dedup"},
                             {"value": "junk", "label": "Junk Filter"},
@@ -557,121 +573,55 @@ class TaskRegistry:
                         ],
                     ),
                     OptionSpec(
-                        "provider",
-                        "AI Provider",
-                        "string",
-                        help_text="Override the categorizer provider used by the categorize stage. Leave blank to use the configured default.",
-                    ),
-                    OptionSpec(
-                        "use_db",
-                        "Use Direct DB",
-                        "boolean",
-                        default=False,
-                        help_text="Enable DB-backed reads/writes for quality and yield stages when those stages are selected.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "nutrition_sample",
-                        "Nutrition Sample Size",
+                        "confidence_threshold",
+                        "Confidence Threshold",
                         "integer",
-                        default=200,
-                        help_text="Quality-stage nutrition sample size (API mode only). Ignored when Use Direct DB is enabled.",
-                        hidden_when={"key": "use_db", "value": True},
+                        default=80,
+                        help_text="NLP confidence % (0–100). Lower values accept more NLP results.",
                         advanced=True,
+                        option_group="Ingredient Parse",
+                    ),
+                    OptionSpec(
+                        "max_recipes",
+                        "Max Recipes",
+                        "integer",
+                        help_text="Limit ingredient parsing to at most N recipes.",
+                        advanced=True,
+                        option_group="Ingredient Parse",
                     ),
                     OptionSpec(
                         "reason",
-                        "Junk Filter Category",
+                        "Junk Category",
                         "string",
-                        help_text="Limit junk filtering to one category when the junk stage runs.",
+                        help_text="Limit junk filtering to one category.",
                         choices=_JUNK_REASON_CHOICES,
                         advanced=True,
+                        option_group="Junk Filter",
                     ),
                     OptionSpec(
                         "force_all",
                         "Normalize All Names",
                         "boolean",
                         default=False,
-                        help_text="Apply name normalization to all recipes when the names stage runs.",
+                        help_text="Apply to all recipes, not just unformatted names.",
                         advanced=True,
+                        option_group="Name Normalize",
                     ),
                     OptionSpec(
-                        "confidence_threshold",
-                        "Parse Confidence Threshold",
-                        "integer",
-                        default=80,
-                        help_text="Ingredient-parse NLP confidence % (0–100). Lower values accept more NLP results.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "max_recipes",
-                        "Parse Max Recipes",
-                        "integer",
-                        help_text="Limit ingredient parsing to at most N recipes.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "after_slug",
-                        "Parse Resume After Slug",
+                        "provider",
+                        "AI Provider",
                         "string",
-                        help_text="Ingredient parser resume cursor. Skip through this slug and continue after it.",
+                        help_text="Override categorizer provider. Leave blank for configured default.",
                         advanced=True,
-                    ),
-                    OptionSpec(
-                        "parsers",
-                        "Parse Strategies",
-                        "string",
-                        help_text="Comma-separated parser order (for example `nlp,openai`).",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "force_parser",
-                        "Force Parse Strategy",
-                        "string",
-                        help_text="Force a single ingredient parser strategy for this run.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "page_size",
-                        "Parse Page Size",
-                        "integer",
-                        help_text="Recipes per page while listing ingredient parse candidates.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "delay_seconds",
-                        "Parse Delay Seconds",
-                        "number",
-                        help_text="Delay between successful ingredient patch operations.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "timeout_seconds",
-                        "Parse Timeout Seconds",
-                        "integer",
-                        help_text="HTTP timeout for ingredient parser requests.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "retries",
-                        "Parse Retries",
-                        "integer",
-                        help_text="HTTP retry count used by ingredient parser requests.",
-                        advanced=True,
-                    ),
-                    OptionSpec(
-                        "backoff_seconds",
-                        "Parse Backoff Seconds",
-                        "number",
-                        help_text="HTTP retry backoff factor used by ingredient parser requests.",
-                        advanced=True,
+                        option_group="Categorize",
                     ),
                     OptionSpec(
                         "taxonomy_mode",
-                        "Taxonomy Refresh Mode",
+                        "Refresh Mode",
                         "string",
-                        help_text="Override taxonomy stage mode for this pipeline run.",
+                        help_text="Override taxonomy refresh mode for this pipeline run.",
                         advanced=True,
+                        option_group="Taxonomy",
                         choices=[
                             {"value": "", "label": "Default"},
                             {"value": "merge", "label": "Merge (keep existing)"},
@@ -679,12 +629,30 @@ class TaskRegistry:
                         ],
                     ),
                     OptionSpec(
+                        "use_db",
+                        "Use Direct DB",
+                        "boolean",
+                        default=False,
+                        help_text="DB-backed reads/writes for quality and yield stages.",
+                        advanced=True,
+                        option_group="Quality & Yield",
+                    ),
+                    OptionSpec(
+                        "nutrition_sample",
+                        "Nutrition Sample",
+                        "integer",
+                        default=200,
+                        help_text="Quality-stage nutrition sample size (API mode only).",
+                        hidden_when={"key": "use_db", "value": True},
+                        advanced=True,
+                        option_group="Quality & Yield",
+                    ),
+                    OptionSpec(
                         "continue_on_error",
                         "Continue on Error",
                         "boolean",
                         default=False,
                         help_text="Keep running remaining stages if one fails.",
-                        advanced=True,
                     ),
                     OptionSpec(
                         "apply_cleanups",
@@ -781,10 +749,16 @@ class TaskRegistry:
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
                     OptionSpec(
+                        "max_recipes",
+                        "Max Recipes",
+                        "integer",
+                        help_text="Limit parsing to at most N recipes. Leave blank to parse all candidates.",
+                    ),
+                    OptionSpec(
                         "confidence_threshold",
                         "Confidence Threshold",
                         "integer",
-                        default=75,
+                        default=80,
                         help_text="Minimum confidence % (0–100) to accept an NLP parse result. Results below this threshold fall back to AI parsing.",
                         advanced=True,
                     ),
@@ -834,6 +808,32 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_cleanup_duplicates,
+            )
+        )
+
+        self._register(
+            TaskDefinition(
+                task_id="reimport-recipes",
+                title="Re-import Recipes",
+                group="Actions",
+                description="Re-scrape recipes from their original URLs. Overwrites content but preserves tags, categories, and favorites. Strips parsed ingredient links for re-parsing.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview which recipes would be reimported."),
+                    OptionSpec(
+                        "max_recipes",
+                        "Max Recipes",
+                        "integer",
+                        help_text="Limit reimport to at most N recipes. Leave blank for all.",
+                    ),
+                    OptionSpec(
+                        "slugs",
+                        "Specific Slugs",
+                        "string",
+                        help_text="Comma-separated list of recipe slugs to reimport. Leave blank for all eligible recipes.",
+                        advanced=True,
+                    ),
+                ],
+                build=_build_reimport_recipes,
             )
         )
 
@@ -1036,6 +1036,7 @@ class TaskRegistry:
                             "choices": option.choices,
                             "multi": option.multi,
                             "advanced": option.advanced,
+                            "option_group": option.option_group,
                         }
                         for option in task.options
                     ],

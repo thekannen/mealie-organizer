@@ -203,6 +203,7 @@ class RecipeDeduplicator:
             flush=True,
         )
         print("[summary] " + json.dumps({
+            "__title__": "Deduplicator",
             "Total Recipes": total,
             "Duplicate Groups": len(groups),
             "Duplicates Found": total_dupes,

@@ -435,6 +435,7 @@ def main() -> None:
         created, updated, deleted, skipped, failed = manager.sync_cookbooks(items, replace=args.replace)
         print(f"[done] cookbooks created={created} updated={updated} deleted={deleted} skipped={skipped} failed={failed}")
         summary = {
+            "__title__": "Cookbook Sync",
             "Cookbooks in Config": len(items),
             "Created": created,
             "Updated": updated,

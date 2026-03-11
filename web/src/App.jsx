@@ -269,8 +269,9 @@ function formatSummaryValue(value) {
 
 function isDataMaintenancePipelineSummary(data) {
   if (!data || typeof data !== "object") return false;
-  const keys = Object.keys(data);
-  return keys.some((key) => SUMMARY_PIPELINE_KEYS.has(key));
+  // Require "Stages Run" — the unique pipeline key — to avoid false positives
+  // from stage summaries that also contain generic keys like "Failed".
+  return "Stages Run" in data;
 }
 
 function summarizeExecutionEvents(events) {
@@ -675,7 +676,6 @@ export default function App() {
   const [taskValues, setTaskValues] = useState({});
   const [showAdvancedTaskOptions, setShowAdvancedTaskOptions] = useState(false);
   const [runSearch, setRunSearch] = useState("");
-  const [taskPickerSearch, setTaskPickerSearch] = useState("");
   const [runTypeFilter, setRunTypeFilter] = useState("all");
   const [logBuffer, setLogBuffer] = useState("");
   const [logMaximized, setLogMaximized] = useState(false);
@@ -814,6 +814,7 @@ export default function App() {
     "tag-categorize": "tag",
     "taxonomy-refresh": "refresh",
     "cookbook-sync": "book-open",
+    "reimport-recipes": "download",
     "health-check": "check-circle",
   };
 
@@ -842,6 +843,7 @@ export default function App() {
     "ingredient-parse": (o) => `Parse ingredients with NLP ${o.dry_run !== false ? "(preview)" : "(live)"}`,
     "yield-normalize": (o) => `${o.dry_run !== false ? "Preview" : "Normalize"} missing yield and servings data`,
     "cleanup-duplicates": (o) => `Find and ${o.dry_run !== false ? "preview" : "merge"} duplicate ${o.target || "food & unit"} entries`,
+    "reimport-recipes": (o) => `${o.dry_run !== false ? "Preview" : "Re-scrape"} recipes from their original URLs`,
     "tag-categorize": (o) => `Auto-categorize recipes using ${o.method === "rules" ? "rules only" : o.method === "ai" ? "AI only" : "rules + AI"}`,
     "taxonomy-refresh": (o) => `Sync taxonomy from config files ${o.dry_run !== false ? "(preview)" : "(live)"}`,
     "cookbook-sync": (o) => `${o.dry_run !== false ? "Preview" : "Sync"} cookbooks to match config`,
@@ -958,14 +960,6 @@ export default function App() {
     return map;
   }, [runs]);
 
-  const recentTaskIds = useMemo(() => {
-    const seen = [];
-    for (const run of runs) {
-      if (!seen.includes(run.task_id)) seen.push(run.task_id);
-      if (seen.length >= 3) break;
-    }
-    return seen;
-  }, [runs]);
 
   const filteredRuns = useMemo(() => {
     const source =
@@ -2621,17 +2615,7 @@ export default function App() {
 
   function renderTasksPage() {
     const selectedRun = runs.find((item) => item.run_id === selectedRunId) || null;
-    const taskPickerQuery = taskPickerSearch.trim().toLowerCase();
-    const visibleTaskGroups = taskGroups
-      .map(([groupName, groupTasks]) => [
-        groupName,
-        groupTasks.filter((task) => {
-          if (!taskPickerQuery) return true;
-          const haystack = `${task.title || ""} ${task.description || ""} ${task.task_id || ""}`.toLowerCase();
-          return haystack.includes(taskPickerQuery);
-        }),
-      ])
-      .filter(([, groupTasks]) => groupTasks.length > 0);
+    const visibleTaskGroups = taskGroups;
     const selectedTaskGroup = selectedTaskDef
       ? taskGroups.find(([, groupTasks]) => groupTasks.some((task) => task.task_id === selectedTaskDef.task_id))?.[0] || ""
       : "";
@@ -2664,33 +2648,6 @@ export default function App() {
             <div className="run-form">
               <div className="start-run-layout">
                 <div className="task-pill-picker">
-                  {recentTaskIds.length > 0 && (
-                    <div className="recent-tasks-row">
-                      <span className="recent-tasks-label">Recent</span>
-                      {recentTaskIds.map((tid) => (
-                        <button
-                          key={tid}
-                          type="button"
-                          className={`chip-btn small${selectedTask === tid ? " active" : ""}`}
-                          onClick={() => setSelectedTask(tid)}
-                        >
-                          <Icon name={TASK_ICONS[tid] || "zap"} />
-                          {taskTitleById.get(tid) || tid}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <label className="field task-picker-search-field">
-                    <span>Find Task</span>
-                    <input
-                      value={taskPickerSearch}
-                      onChange={(event) => setTaskPickerSearch(event.target.value)}
-                      placeholder="Search task name"
-                    />
-                  </label>
-                  {visibleTaskGroups.length === 0 ? (
-                    <p className="muted tiny task-picker-empty">No tasks match this search.</p>
-                  ) : (
                     <div className="task-pill-groups">
                       {visibleTaskGroups.map(([groupName, groupTasks]) => (
                         <section key={groupName} className="task-pill-group" data-group={TASK_GROUP_COLORS[groupName] || "default"}>
@@ -2734,7 +2691,6 @@ export default function App() {
                         </section>
                       ))}
                     </div>
-                  )}
                 </div>
 
                 <div className="start-run-main">
@@ -2799,6 +2755,16 @@ export default function App() {
                               </div>
                             )}
 
+                            {selectedTaskDef.task_id === "reimport-recipes" && (
+                              <div className="task-warning-banner">
+                                <Icon name="alertTriangle" />
+                                <div>
+                                  <strong>Overwrites recipe content</strong>
+                                  <p>Name, ingredients, instructions, nutrition, and times will be replaced with freshly scraped data. User edits will be lost. Parsed ingredient links are stripped for re-parsing. Tags, categories, and favorites are preserved.</p>
+                                </div>
+                              </div>
+                            )}
+
                             {filteredBasic.length > 0 ? (
                               <div className="option-grid">{renderOptionFields(filteredBasic)}</div>
                             ) : !hasDryRun && visibleOptions.length === 0 ? (
@@ -2818,11 +2784,36 @@ export default function App() {
                                   </button>
                                   <span className="muted tiny">{advancedOptions.length} advanced option(s)</span>
                                 </div>
-                                {showAdvancedTaskOptions ? (
-                                  <div className="option-grid option-grid-advanced">
-                                    {renderOptionFields(advancedOptions)}
-                                  </div>
-                                ) : (
+                                {showAdvancedTaskOptions ? (() => {
+                                  const groups = [];
+                                  const ungrouped = [];
+                                  const seen = new Set();
+                                  for (const opt of advancedOptions) {
+                                    const g = opt.option_group || "";
+                                    if (!g) { ungrouped.push(opt); continue; }
+                                    if (!seen.has(g)) { seen.add(g); groups.push([g, []]); }
+                                    groups.find(([name]) => name === g)[1].push(opt);
+                                  }
+                                  if (groups.length === 0) {
+                                    return <div className="option-grid option-grid-advanced">{renderOptionFields(ungrouped)}</div>;
+                                  }
+                                  return (
+                                    <div className="advanced-groups">
+                                      {groups.map(([groupName, groupOpts]) => (
+                                        <div key={groupName} className="advanced-group">
+                                          <span className="advanced-group-label">{groupName}</span>
+                                          <div className="option-grid option-grid-advanced">{renderOptionFields(groupOpts)}</div>
+                                        </div>
+                                      ))}
+                                      {ungrouped.length > 0 && (
+                                        <div className="advanced-group">
+                                          <span className="advanced-group-label">Other</span>
+                                          <div className="option-grid option-grid-advanced">{renderOptionFields(ungrouped)}</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })() : (
                                   <p className="muted tiny">Advanced options are hidden.</p>
                                 )}
                               </div>

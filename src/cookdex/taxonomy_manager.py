@@ -436,6 +436,7 @@ def main():
 
         print("[done] Refresh complete.")
         summary = {
+            "__title__": "Taxonomy Refresh",
             "Mode": args.mode,
             "Categories": len(categories),
             "Categories Created": cat_result["created"],

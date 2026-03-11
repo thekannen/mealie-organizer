@@ -697,10 +697,6 @@ textarea {
   padding: 0.55rem;
 }
 
-.task-picker-search-field input {
-  font-size: 0.82rem;
-}
-
 .start-run-main {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -776,11 +772,6 @@ textarea {
   border-color: var(--accent);
   background: color-mix(in oklab, var(--accent) 14%, var(--surface));
   color: var(--accent-strong);
-}
-
-.task-picker-empty {
-  margin: 0;
-  padding: 0.4rem 0.2rem 0.15rem;
 }
 
 .task-pill-groups {
@@ -948,10 +939,30 @@ textarea {
 }
 
 .option-grid.option-grid-advanced {
-  border: 1px solid color-mix(in srgb, var(--line) 80%, #000 20%);
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: none;
+}
+
+.advanced-groups {
+  display: grid;
+  gap: 0.5rem;
+}
+.advanced-group {
+  border: 1px solid color-mix(in srgb, var(--line) 70%, #000 30%);
   border-radius: 9px;
   padding: 0.5rem;
   background: color-mix(in srgb, var(--surface) 86%, #090706 14%);
+}
+.advanced-group-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
 }
 
 .schedule-toggle {
@@ -1093,6 +1104,41 @@ textarea {
 }
 :root[data-theme="dark"] .mode-toggle-btn.safe-mode.active { color: #7bb8f5; }
 :root[data-theme="dark"] .mode-toggle-btn.live-mode.active { color: var(--accent); }
+
+/* ── Task warning banner ── */
+.task-warning-banner {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.6rem 0.75rem;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, #e8a020 40%, var(--line));
+  background: color-mix(in srgb, #e8a020 8%, var(--surface));
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.task-warning-banner > .ui-icon {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: #d4870e;
+  margin-top: 0.1rem;
+}
+.task-warning-banner strong {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+  color: #c07a0a;
+}
+.task-warning-banner p {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+:root[data-theme="dark"] .task-warning-banner > .ui-icon { color: #e8a020; }
+:root[data-theme="dark"] .task-warning-banner strong { color: #f0b840; }
 
 /* ── Enhanced action button ── */
 .action-hero-btn {
@@ -1288,26 +1334,6 @@ textarea {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
-
-/* ── Recent tasks row ── */
-.recent-tasks-row {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding-bottom: 0.35rem;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 0.1rem;
-}
-.recent-tasks-label {
-  font-size: 0.66rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin-right: 0.15rem;
-}
-.chip-btn.small { padding: 0.16rem 0.4rem; font-size: 0.7rem; gap: 0.2rem; }
-.chip-btn.small .ui-icon { width: 0.7rem; height: 0.7rem; }
 
 /* ── Readiness ring ── */
 .readiness-ring {

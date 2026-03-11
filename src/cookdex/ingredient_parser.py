@@ -859,15 +859,6 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                 )
                 last_progress_ts = now
 
-    if summary.total_candidates > 0:
-        print(
-            f"[info] {summary.total_candidates}/{summary.total_candidates} scanned (100%) "
-            f"-- {summary.parsed_successfully} parsed, "
-            f"{len(reviews)} review, "
-            f"{summary.skipped_already_parsed} skipped",
-            flush=True,
-        )
-
     if successes:
         success_path = config.output_dir / config.success_log_filename
         success_path.write_text("\n".join(successes), encoding="utf-8")

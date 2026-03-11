@@ -190,6 +190,7 @@ def main():
         flush=True,
     )
     print("[summary] " + json.dumps({
+        "__title__": "Taxonomy Audit",
         "Recipes": report["summary"]["recipes"],
         "Categories": report["summary"]["categories"],
         "Tags": report["summary"]["tags"],

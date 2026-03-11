@@ -334,6 +334,7 @@ class ToolsSyncManager:
             flush=True,
         )
         summary = {
+            "__title__": "Tools Sync",
             "Tools in Config": len(desired),
             "Tools in Mealie": len(existing),
             "Created": created,
