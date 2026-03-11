@@ -42,6 +42,7 @@
     "max_recipes_per_run": 500,
     "strategies": [
       "nlp",
+      "brute",
       "openai"
     ],
     "page_size": 200,

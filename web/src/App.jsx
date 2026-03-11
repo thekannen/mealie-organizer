@@ -2675,7 +2675,15 @@ export default function App() {
                                     <Icon name={TASK_ICONS[task.task_id] || "zap"} className="task-pill-icon" />
                                   </span>
                                   <span className="task-pill-text">
-                                    <span className="task-pill-title">{task.title}</span>
+                                    <span className="task-pill-title">
+                                      {task.title}
+                                      {task.badges?.length > 0 && (
+                                        <span className="task-badges">
+                                          {task.badges.includes("ai") && <span className="task-badge badge-ai" title="Uses AI"><Icon name="wand" /></span>}
+                                          {task.badges.includes("db") && <span className="task-badge badge-db" title="Requires DB access"><Icon name="database" /></span>}
+                                        </span>
+                                      )}
+                                    </span>
                                     {task.description ? <span className="task-pill-desc">{task.description}</span> : null}
                                   </span>
                                   {lastRun ? (
@@ -2712,6 +2720,8 @@ export default function App() {
                           {selectedTaskAdvancedCount > 0 ? (
                             <span className="status-pill warning">{selectedTaskAdvancedCount} advanced</span>
                           ) : null}
+                          {selectedTaskDef.badges?.includes("ai") && <span className="status-pill badge-ai-pill"><Icon name="wand" /> AI</span>}
+                          {selectedTaskDef.badges?.includes("db") && <span className="status-pill badge-db-pill"><Icon name="database" /> DB</span>}
                         </div>
                       </div>
 

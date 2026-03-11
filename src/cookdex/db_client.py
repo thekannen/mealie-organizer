@@ -611,6 +611,49 @@ class MealieDBClient:
             )
 
 
+    # ------------------------------------------------------------------
+    # Recipe deletion (cascade)
+    # ------------------------------------------------------------------
+
+    _FK_TABLES: list[tuple[str, str]] = [
+        ("api_extras", "recipee_id"),
+        ("group_meal_plans", "recipe_id"),
+        ("notes", "recipe_id"),
+        ("recipe_assets", "recipe_id"),
+        ("recipe_instructions", "recipe_id"),
+        ("recipe_nutrition", "recipe_id"),
+        ("recipe_settings", "recipe_id"),
+        ("recipe_share_tokens", "recipe_id"),
+        ("recipes_to_categories", "recipe_id"),
+        ("recipes_to_tags", "recipe_id"),
+        ("recipes_to_tools", "recipe_id"),
+        ("shopping_list_recipe_reference", "recipe_id"),
+        ("recipe_comments", "recipe_id"),
+        ("recipes_ingredients", "recipe_id"),
+        ("recipes_ingredients", "referenced_recipe_id"),
+        ("shopping_list_item_recipe_reference", "recipe_id"),
+        ("recipe_timeline_events", "recipe_id"),
+        ("users_to_recipes", "recipe_id"),
+        ("households_to_recipes", "recipe_id"),
+    ]
+
+    def delete_recipe(self, slug: str) -> bool:
+        """Delete a recipe and all FK references by slug. Returns True if deleted."""
+        p = self._db.placeholder
+        row = self._db.execute(f"SELECT id FROM recipes WHERE slug = {p}", (slug,)).fetchone()
+        if not row:
+            return False
+        rid = str(row[0])
+        for table, col in self._FK_TABLES:
+            try:
+                self._db.execute(f"DELETE FROM {table} WHERE {col} = {p}", (rid,))
+            except Exception:
+                self._db.conn.rollback()
+        self._db.execute(f"DELETE FROM recipes WHERE id = {p}", (rid,))
+        self._db.commit()
+        return True
+
+
 # ---------------------------------------------------------------------------
 # Factory / connectivity check
 # ---------------------------------------------------------------------------

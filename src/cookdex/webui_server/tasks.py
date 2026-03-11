@@ -39,6 +39,7 @@ class TaskDefinition:
     group: str = ""
     options: list[OptionSpec] = field(default_factory=list)
     build: BuildFn | None = None
+    badges: list[str] = field(default_factory=list)  # e.g. ["ai"], ["db"], ["ai", "db"]
 
 
 def _py_module(module: str, *args: str) -> list[str]:
@@ -427,12 +428,13 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "run_dedup", "run_junk", "run_names", "reason", "force_all"})
+    _validate_allowed(options, {"dry_run", "run_dedup", "run_junk", "run_names", "reason", "force_all", "use_db"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     run_dedup = _bool_option(options, "run_dedup", True)
     run_junk = _bool_option(options, "run_junk", True)
     run_names = _bool_option(options, "run_names", True)
+    use_db = _bool_option(options, "use_db", False)
 
     if not any([run_dedup, run_junk, run_names]):
         raise ValueError("At least one operation must be selected.")
@@ -442,6 +444,8 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
         cmd = _py_module("cookdex.recipe_deduplicator")
         if not dry_run:
             cmd.append("--apply")
+        if use_db:
+            cmd.append("--use-db")
         return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
     if run_junk and not run_dedup and not run_names:
@@ -472,6 +476,8 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     cmd = _py_module("cookdex.data_maintenance", "--stages", stages)
     if not dry_run:
         cmd.append("--apply-cleanups")
+    if use_db:
+        cmd.append("--use-db")
     reason = _str_option(options, "reason", "")
     if reason and run_junk:
         cmd.extend(["--junk-reason", reason])
@@ -482,16 +488,19 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_reimport_recipes(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "max_recipes", "slugs"})
+    _validate_allowed(options, {"dry_run", "max_recipes", "slugs", "threads"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     max_recipes = _int_option(options, "max_recipes", 0)
+    threads = _int_option(options, "threads", 4)
     slugs = _str_option(options, "slugs", "")
     cmd = _py_module("cookdex.recipe_reimporter")
     if not dry_run:
         cmd.append("--apply")
     if max_recipes:
         cmd.extend(["--max", str(max_recipes)])
+    if threads and threads != 4:
+        cmd.extend(["--threads", str(min(threads, 8))])
     if slugs:
         cmd.extend(["--slugs", slugs])
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
@@ -665,6 +674,7 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_data_maintenance,
+                badges=["ai"],
             )
         )
 
@@ -716,6 +726,15 @@ class TaskRegistry:
                         hidden_when={"key": "run_names", "value": False},
                         advanced=True,
                     ),
+                    OptionSpec(
+                        "use_db",
+                        "DB Fallback for Corrupt Recipes",
+                        "boolean",
+                        default=False,
+                        help_text="Fall back to direct database delete when the API returns 500 on corrupted recipes. Requires DB access configured in .env.",
+                        hidden_when={"key": "run_dedup", "value": False},
+                        advanced=True,
+                    ),
                 ],
                 build=_build_clean_recipes,
             )
@@ -738,6 +757,7 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_slug_repair,
+                badges=["db"],
             )
         )
         self._register(
@@ -764,6 +784,7 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_ingredient_parse,
+                badges=["ai"],
             )
         )
         self._register(
@@ -826,6 +847,14 @@ class TaskRegistry:
                         help_text="Limit reimport to at most N recipes. Leave blank for all.",
                     ),
                     OptionSpec(
+                        "threads",
+                        "Scrape Threads",
+                        "integer",
+                        default=4,
+                        help_text="Number of parallel scrape threads (1–8). Higher is faster but may trigger rate limits on recipe sites.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
                         "slugs",
                         "Specific Slugs",
                         "string",
@@ -834,6 +863,7 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_reimport_recipes,
+                badges=["db"],
             )
         )
 
@@ -896,6 +926,7 @@ class TaskRegistry:
                     ),
                 ],
                 build=_build_tag_categorize,
+                badges=["ai"],
             )
         )
         self._register(
@@ -1040,6 +1071,7 @@ class TaskRegistry:
                         }
                         for option in task.options
                     ],
+                    "badges": list(task.badges),
                 }
             )
         return payload

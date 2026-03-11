@@ -896,6 +896,69 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.task-badges {
+  display: inline-flex;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.task-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 0.3rem;
+  opacity: 0.7;
+}
+.task-badge svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+.badge-ai {
+  background: color-mix(in srgb, #a855f7 18%, transparent);
+  color: #a855f7;
+}
+.badge-db {
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #3b82f6;
+}
+[data-theme="dark"] .badge-ai {
+  background: color-mix(in srgb, #a855f7 25%, transparent);
+}
+[data-theme="dark"] .badge-db {
+  background: color-mix(in srgb, #3b82f6 25%, transparent);
+}
+
+/* Hero-area badge pills */
+.badge-ai-pill {
+  background: color-mix(in srgb, #a855f7 15%, transparent) !important;
+  color: #a855f7 !important;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.25rem;
+}
+.badge-ai-pill svg { width: 0.75rem; height: 0.75rem; }
+.badge-db-pill {
+  background: color-mix(in srgb, #3b82f6 15%, transparent) !important;
+  color: #3b82f6 !important;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.25rem;
+}
+.badge-db-pill svg { width: 0.75rem; height: 0.75rem; }
+[data-theme="dark"] .badge-ai-pill {
+  background: color-mix(in srgb, #a855f7 22%, transparent) !important;
+  color: #c084fc !important;
+}
+[data-theme="dark"] .badge-db-pill {
+  background: color-mix(in srgb, #3b82f6 22%, transparent) !important;
+  color: #60a5fa !important;
 }
 
 .task-pill-desc {
