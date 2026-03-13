@@ -38,8 +38,12 @@ DEFAULT_REPORT = "reports/recipe_junk_filter_report.json"
 _HOW_TO_RE = re.compile(r"^how\s+to\s+(?:make|cook)\b", re.IGNORECASE)
 
 _LISTICLE_RE = re.compile(
-    r"\b(top|best)\b.*\b(recipes?|meals?|dishes?|desserts?|breakfasts?|lunches?|dinners?|snacks?|drinks?)\b"
-    r"|^\s*\d{1,3}\b.*\b(recipes?|meals?|dishes?)\b",
+    # "top/best" + number + food-plural → "Top 10 Desserts", "Best 25 Wines"
+    r"\b(top|best)\b\s+\d+\b.*\b(recipes?|meals?|dishes?|desserts?|breakfasts?|lunches?|dinners?"
+    r"|snacks?|drinks?|wines?|cocktails?|foods?|appetizers?|sides?|soups?|salads?)\b"
+    # Starts with 2-3 digit number + food-plural or "ways to" → "32 Wines...", "21 Ways to..."
+    r"|^\s*\d{2,3}\b.*\b(recipes?|meals?|dishes?|wines?|cocktails?|foods?|appetizers?"
+    r"|ways\s+to|entrees?|dips?)\b",
     re.IGNORECASE,
 )
 
@@ -77,8 +81,8 @@ _BAD_INSTRUCTIONS = frozenset({
 })
 
 
-def _classify(name: str, slug: str, instructions_text: str) -> tuple[str | None, str]:
-    """Return (reason_code, human_reason) or (None, '') if the recipe is clean."""
+def _classify_name(name: str, slug: str) -> tuple[str | None, str]:
+    """Fast name/slug-based classification (no API calls needed)."""
     name_lower = name.lower()
     slug_lower = slug.lower()
 
@@ -106,15 +110,17 @@ def _classify(name: str, slug: str, instructions_text: str) -> tuple[str | None,
         if util in slug_lower:
             return "utility", f"Utility page slug: '{util}'"
 
-    # 6. Bad instructions — only checked when instructions text is actually present.
-    # The listing API (/api/recipes) returns summary records without recipeInstructions,
-    # so an empty string here means "not fetched", not "recipe has no instructions".
-    if instructions_text:
-        inst_lower = instructions_text.lower().strip()
-        for bad in _BAD_INSTRUCTIONS:
-            if bad in inst_lower:
-                return "bad_instructions", f"Placeholder instruction text: '{bad}'"
+    return None, ""
 
+
+def _classify_instructions(instructions_text: str) -> tuple[str | None, str]:
+    """Check instruction content for placeholder/broken text."""
+    if not instructions_text:
+        return None, ""
+    inst_lower = instructions_text.lower().strip()
+    for bad in _BAD_INSTRUCTIONS:
+        if bad in inst_lower:
+            return "bad_instructions", f"Placeholder instruction text: '{bad}'"
     return None, ""
 
 
@@ -144,11 +150,11 @@ class JunkAction:
     reason: str
 
 
-def _analyze_recipe(recipe: dict[str, Any], *, filter_reason: str | None) -> JunkAction | None:
+def _analyze_recipe_name(recipe: dict[str, Any], *, filter_reason: str | None) -> JunkAction | None:
+    """Fast check using only name/slug (no API call needed)."""
     name = str(recipe.get("name") or "").strip()
     slug = str(recipe.get("slug") or "").strip()
-    instructions_text = _extract_instructions_text(recipe)
-    reason_code, reason = _classify(name, slug, instructions_text)
+    reason_code, reason = _classify_name(name, slug)
     if not reason_code:
         return None
     if filter_reason and reason_code != filter_reason:
@@ -179,11 +185,45 @@ class RecipeJunkFilter:
         recipes = self.client.get_recipes()
         total = len(recipes)
 
+        # Pass 1: fast name/slug checks (no extra API calls).
         actions: list[JunkAction] = []
+        flagged_slugs: set[str] = set()
         for r in recipes:
-            action = _analyze_recipe(r, filter_reason=self.filter_reason)
+            action = _analyze_recipe_name(r, filter_reason=self.filter_reason)
             if action:
                 actions.append(action)
+                flagged_slugs.add(action.slug)
+
+        # Pass 2: check instructions for recipes not already flagged.
+        # The listing API doesn't include recipeInstructions, so we fetch
+        # full recipes that look suspicious (few/no ingredients hint at junk).
+        if self.filter_reason in (None, "bad_instructions"):
+            suspect_slugs = [
+                str(r.get("slug", ""))
+                for r in recipes
+                if str(r.get("slug", "")) not in flagged_slugs
+            ]
+            if suspect_slugs:
+                print(f"[start] Checking {len(suspect_slugs)} recipes for bad instructions ...", flush=True)
+                checked = 0
+                found = 0
+                for slug in suspect_slugs:
+                    try:
+                        full = self.client.get_recipe(slug)
+                        inst_text = _extract_instructions_text(full)
+                        reason_code, reason = _classify_instructions(inst_text)
+                        if reason_code:
+                            name = str(full.get("name") or "").strip()
+                            if not self.filter_reason or self.filter_reason == reason_code:
+                                actions.append(JunkAction(slug=slug, name=name, reason_code=reason_code, reason=reason))
+                                found += 1
+                    except Exception:
+                        pass
+                    checked += 1
+                    if checked % 500 == 0:
+                        print(f"[info] checked {checked}/{len(suspect_slugs)} ({found} bad instructions found)", flush=True)
+                if found:
+                    print(f"[info] bad instructions scan: {found} additional junk recipes found", flush=True)
 
         by_reason: dict[str, int] = {}
         for a in actions:

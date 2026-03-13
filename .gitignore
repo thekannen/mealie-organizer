@@ -59,3 +59,7 @@ Thumbs.db
 
 # Local issue tracking state
 .beads/
+
+# CI/agent worktrees
+.ci-fix-worktree/
+%KEYDIR%/
