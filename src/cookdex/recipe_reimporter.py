@@ -11,7 +11,12 @@ Workflow per recipe:
   2. GET  /recipes/{slug}           → snapshot preserved metadata
   3. PATCH /recipes/{slug}          → merge scraped content + preserved metadata
 
-Scraping is parallelised with a thread pool (I/O-bound on external sites).
+Each recipe is fully processed (scrape → patch) before the next begins.
+A small thread pool (default 2 workers) overlaps scrape I/O without
+overwhelming Mealie.  Failed scrapes are retried with exponential backoff.
+
+Progress is saved incrementally — the run can be resumed from where it left
+off by passing --resume.
 
 Use DRY_RUN=true (the default) to preview without modifying anything.
 """
@@ -20,6 +25,8 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -29,7 +36,6 @@ from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, r
 from .db_client import resolve_db_client
 
 DEFAULT_REPORT = "reports/recipe_reimport_report.json"
-_MAX_WORKERS = 4
 
 _SOURCE_FIELDS = ("orgURL", "originalURL", "source")
 
@@ -45,6 +51,16 @@ _PRESERVE_FIELDS = (
     "notes",
     "dateAdded",
 )
+
+# Retry settings for transient errors (500, 408).
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 5.0  # seconds — doubles each retry (5, 10, 20)
+
+# Default delay between recipe processing to avoid overloading Mealie.
+_DEFAULT_DELAY = 0.5  # seconds
+
+# Default number of concurrent workers (scrape + patch per worker).
+_DEFAULT_WORKERS = 2
 
 
 def _extract_url(recipe: dict[str, Any]) -> str:
@@ -129,17 +145,58 @@ class RecipeReimporter:
         *,
         dry_run: bool = True,
         max_recipes: int = 0,
-        max_workers: int = _MAX_WORKERS,
+        workers: int = _DEFAULT_WORKERS,
         slugs_filter: list[str] | None = None,
+        delay: float = _DEFAULT_DELAY,
+        resume: bool = False,
         report_file: Path | str = DEFAULT_REPORT,
     ) -> None:
         self.client = client
         self.dry_run = dry_run
         self.max_recipes = max_recipes
-        self.max_workers = max_workers
+        self.workers = max(1, min(workers, 4))
         self.slugs_filter = set(slugs_filter) if slugs_filter else None
+        self.delay = delay
+        self.resume = resume
         self.report_file = Path(report_file)
         self._db = None
+        self._completed_slugs: set[str] = set()
+        self._lock = threading.Lock()
+        self._counter = 0
+
+    def _load_completed(self) -> set[str]:
+        """Load previously completed slugs from report file for resume."""
+        if not self.resume or not self.report_file.exists():
+            return set()
+        try:
+            data = json.loads(self.report_file.read_text(encoding="utf-8"))
+            return {
+                a["slug"]
+                for a in data.get("actions", [])
+                if a.get("status") == "reimported"
+            }
+        except Exception:
+            return set()
+
+    def _save_progress(
+        self, total: int, candidates: list, action_log: list,
+        reimported: int, failed: int, skipped: int,
+    ) -> None:
+        """Save current progress to report file (called after each recipe)."""
+        report = {
+            "summary": {
+                "total_recipes": total,
+                "candidates": len(candidates),
+                "reimported": reimported,
+                "failed": failed,
+                "skipped": skipped,
+                "mode": "apply",
+                "in_progress": True,
+            },
+            "actions": action_log,
+        }
+        self.report_file.parent.mkdir(parents=True, exist_ok=True)
+        self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def run(self) -> dict[str, Any]:
         print("[start] Fetching all recipes from API ...", flush=True)
@@ -160,9 +217,18 @@ class RecipeReimporter:
         if self.max_recipes > 0:
             candidates = candidates[: self.max_recipes]
 
+        # Resume: load previously completed slugs.
+        self._completed_slugs = self._load_completed()
+        resume_skipped = 0
+        if self._completed_slugs:
+            before = len(candidates)
+            candidates = [(s, n, u) for s, n, u in candidates if s not in self._completed_slugs]
+            resume_skipped = before - len(candidates)
+
         print(
             f"[start] {total} recipes scanned, {len(candidates)} eligible for reimport"
-            + (f" (capped at {self.max_recipes})" if self.max_recipes > 0 else ""),
+            + (f" (capped at {self.max_recipes})" if self.max_recipes > 0 else "")
+            + (f" ({resume_skipped} already done, skipped)" if resume_skipped else ""),
             flush=True,
         )
 
@@ -173,127 +239,120 @@ class RecipeReimporter:
                 action_log.append({"slug": slug, "name": name, "url": url, "status": "planned"})
             return self._finish(total, candidates, action_log, 0, 0, 0)
 
-        # Live mode: parallel scrape, sequential patch.
-        action_log: list[dict[str, Any]] = []
+        # Live mode: process recipes with a small thread pool.
+        # Each worker does the full scrape → patch cycle for one recipe at a time.
+        action_log: list[dict[str, Any]] = [None] * len(candidates)  # type: ignore[list-item]
         reimported = 0
         failed = 0
         skipped = 0
         n = len(candidates)
+        self._counter = 0
 
-        # Phase 1: Scrape all URLs in parallel (I/O-bound).
-        print(f"[start] Scraping {n} URLs with {self.max_workers} threads ...", flush=True)
-        scraped_data: dict[str, dict[str, Any] | Exception] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            future_to_slug = {
-                pool.submit(self._scrape_url, url): (slug, url)
-                for slug, _name, url in candidates
+        print(f"[start] Processing {n} recipes ({self.workers} workers, delay={self.delay}s) ...", flush=True)
+
+        def _worker(idx: int, slug: str, name: str, url: str) -> dict[str, Any]:
+            if self.delay > 0:
+                time.sleep(self.delay)
+            return self._process_one(idx, n, slug, name, url)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            future_to_idx = {
+                pool.submit(_worker, idx, slug, name, url): idx
+                for idx, (slug, name, url) in enumerate(candidates)
             }
-            done_count = 0
-            for future in concurrent.futures.as_completed(future_to_slug):
-                slug, url = future_to_slug[future]
-                done_count += 1
-                try:
-                    scraped_data[slug] = future.result()
-                    print(f"[info] scraped {done_count}/{n} {slug}", flush=True)
-                except Exception as exc:
-                    scraped_data[slug] = exc
-                    print(f"[error] scrape {done_count}/{n} {slug}: {exc}", flush=True)
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                result = future.result()
+                action_log[idx] = result
 
-        # Phase 2: Apply patches sequentially.
-        print(f"[start] Applying {n} patches ...", flush=True)
-        for idx, (slug, name, url) in enumerate(candidates, 1):
-            data = scraped_data.get(slug)
-            if isinstance(data, Exception):
-                action_log.append({"slug": slug, "name": name, "url": url, "status": "error", "error": str(data)})
-                failed += 1
-                continue
-            if data is None:
-                action_log.append({"slug": slug, "name": name, "url": url, "status": "skipped"})
-                skipped += 1
-                continue
-
-            result = self._apply_patch(idx, n, slug, name, url, data)
-            action_log.append(result)
-            if result["status"] == "reimported":
-                reimported += 1
-            elif result["status"] == "error":
-                failed += 1
-            else:
-                skipped += 1
+                with self._lock:
+                    if result["status"] == "reimported":
+                        reimported += 1
+                    elif result["status"] == "error":
+                        failed += 1
+                    else:
+                        skipped += 1
+                    done = reimported + failed + skipped
+                    if done % 25 == 0:
+                        self._save_progress(total, candidates, action_log, reimported, failed, skipped)
 
         return self._finish(total, candidates, action_log, reimported, failed, skipped)
 
-    def _scrape_url(self, url: str) -> dict[str, Any]:
-        """Scrape a URL using Mealie's test-scrape endpoint (no temp recipe)."""
-        return self.client.request_json(
-            "POST",
-            "/recipes/test-scrape-url",
-            json={"url": url, "useOpenAI": False},
-            timeout=120,
-        )
+    def _scrape_with_retry(self, slug: str, url: str) -> dict[str, Any]:
+        """Scrape a URL with retry + exponential backoff for transient errors."""
+        last_exc = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                return self.client.request_json(
+                    "POST",
+                    "/recipes/test-scrape-url",
+                    json={"url": url, "useOpenAI": False},
+                    timeout=120,
+                )
+            except Exception as exc:
+                last_exc = exc
+                status = getattr(getattr(exc, "response", None), "status_code", 0)
+                # Only retry on transient errors (500, 408, 502, 503, 504).
+                if status not in (408, 500, 502, 503, 504):
+                    raise
+                wait = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                if attempt < _MAX_RETRIES - 1:
+                    print(f"[retry] {slug}: {status} on attempt {attempt + 1}, waiting {wait:.0f}s ...", flush=True)
+                    time.sleep(wait)
+        raise last_exc  # type: ignore[misc]
 
-    def _apply_patch(
+    def _process_one(
         self, idx: int, total: int, slug: str, name: str, url: str,
-        scraped: dict[str, Any],
     ) -> dict[str, Any]:
+        """Scrape + patch a single recipe."""
         entry: dict[str, Any] = {"slug": slug, "name": name, "url": url}
         try:
-            # Fetch original to snapshot preserved metadata.
+            # Phase 1: Scrape.
+            scraped = self._scrape_with_retry(slug, url)
+
+            # Phase 2: Get original + patch.
             original = self.client.get_recipe(slug)
 
-            # Build patch from scraped JSON-LD data.
-            # Do NOT include name or slug — Mealie derives slug from name and
-            # rejects the PATCH with 403 if it doesn't match the URL slug.
+            # Build patch — do NOT include name or slug (causes 403 on mismatch).
             patch: dict[str, Any] = {}
 
             if scraped.get("description"):
                 patch["description"] = str(scraped["description"]).strip()
 
-            # Ingredients: convert raw strings to proper Mealie format.
             raw_ings = scraped.get("recipeIngredient", [])
             if raw_ings:
                 patch["recipeIngredient"] = _jsonld_to_ingredients(raw_ings)
 
-            # Instructions: convert JSON-LD to Mealie format.
             raw_steps = scraped.get("recipeInstructions", [])
             if raw_steps:
                 patch["recipeInstructions"] = _jsonld_to_instructions(raw_steps)
 
-            # Nutrition.
             nutrition = _extract_nutrition(scraped.get("nutrition"))
             if nutrition:
                 patch["nutrition"] = nutrition
 
-            # Times.
             for time_field in ("prepTime", "totalTime", "cookTime", "performTime"):
                 val = _extract_time(scraped.get(time_field))
                 if val:
                     patch[time_field] = val
 
-            # Yield.
             yield_val = _extract_yield(scraped.get("recipeYield"))
             if yield_val:
                 patch["recipeYield"] = yield_val
 
-            # Keep source URL.
             patch["orgURL"] = url
 
-            # Restore preserved metadata from original.
             for field in _PRESERVE_FIELDS:
                 if field in original:
                     patch[field] = original[field]
 
-            # PATCH using the listing slug (what Mealie's router expects).
+            # PATCH with 403 slug-repair fallback.
             try:
                 self.client.patch_recipe(slug, patch)
             except Exception as patch_exc:
-                # Mealie 403 = slug/name mismatch in DB.  Mealie's can_update()
-                # derives slug from name, but the DB slug may differ after a
-                # previous corrupted import.  Fix via direct DB update.
                 status_code = getattr(getattr(patch_exc, "response", None), "status_code", 0)
                 new_slug = self._repair_slug(slug, original) if status_code == 403 else None
                 if new_slug:
-                    # Slug repaired — retry the PATCH with the corrected slug.
                     self.client.patch_recipe(new_slug, patch)
                 else:
                     raise
@@ -310,14 +369,7 @@ class RecipeReimporter:
         return entry
 
     def _repair_slug(self, listing_slug: str, original: dict[str, Any]) -> str | None:
-        """Fix a slug/name mismatch in the DB so Mealie's can_update() passes.
-
-        Mealie derives slug from the recipe name.  If the DB slug doesn't match
-        the name-derived slug, can_update() finds zero rows and returns 403.
-        We update the DB slug to match the name-derived slug.
-
-        Returns the new slug on success, None on failure.
-        """
+        """Fix a slug/name mismatch in the DB so Mealie's can_update() passes."""
         try:
             if self._db is None:
                 self._db = resolve_db_client()
@@ -330,7 +382,7 @@ class RecipeReimporter:
             name_slug = slugify(current_name)
 
             if name_slug == listing_slug:
-                return None  # slug matches name — 403 is from something else
+                return None
 
             recipe_id = original.get("id")
             if not recipe_id:
@@ -390,7 +442,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="Apply reimports (default is dry-run).")
     parser.add_argument("--max", type=int, default=0, help="Max recipes to reimport (0 = all).")
     parser.add_argument("--slugs", type=str, default="", help="Comma-separated list of specific slugs.")
-    parser.add_argument("--threads", type=int, default=_MAX_WORKERS, help=f"Scrape thread count (default {_MAX_WORKERS}, max 8).")
+    parser.add_argument("--workers", type=int, default=_DEFAULT_WORKERS, help=f"Concurrent workers (default {_DEFAULT_WORKERS}, max 4).")
+    parser.add_argument("--delay", type=float, default=_DEFAULT_DELAY, help=f"Seconds between requests per worker (default {_DEFAULT_DELAY}).")
+    parser.add_argument("--resume", action="store_true", help="Resume from previous run (skip already-reimported).")
     return parser
 
 
@@ -412,8 +466,10 @@ def main() -> None:
         ),
         dry_run=dry_run,
         max_recipes=args.max,
-        max_workers=min(args.threads, 8),
+        workers=min(args.workers, 4),
         slugs_filter=slugs_filter,
+        delay=args.delay,
+        resume=args.resume,
         report_file=resolve_repo_path(DEFAULT_REPORT),
     )
     reimporter.run()

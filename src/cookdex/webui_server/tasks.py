@@ -488,19 +488,25 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
 
 
 def _build_reimport_recipes(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "max_recipes", "slugs", "threads"})
+    _validate_allowed(options, {"dry_run", "max_recipes", "slugs", "workers", "delay", "resume"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     max_recipes = _int_option(options, "max_recipes", 0)
-    threads = _int_option(options, "threads", 4)
+    workers = _int_option(options, "workers", 2)
+    delay = options.get("delay")
+    resume = _bool_option(options, "resume", False)
     slugs = _str_option(options, "slugs", "")
     cmd = _py_module("cookdex.recipe_reimporter")
     if not dry_run:
         cmd.append("--apply")
     if max_recipes:
         cmd.extend(["--max", str(max_recipes)])
-    if threads and threads != 4:
-        cmd.extend(["--threads", str(min(threads, 8))])
+    if workers and workers != 2:
+        cmd.extend(["--workers", str(min(workers, 4))])
+    if delay is not None:
+        cmd.extend(["--delay", str(float(delay))])
+    if resume:
+        cmd.append("--resume")
     if slugs:
         cmd.extend(["--slugs", slugs])
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
@@ -847,11 +853,27 @@ class TaskRegistry:
                         help_text="Limit reimport to at most N recipes. Leave blank for all.",
                     ),
                     OptionSpec(
-                        "threads",
-                        "Scrape Threads",
+                        "workers",
+                        "Workers",
                         "integer",
-                        default=4,
-                        help_text="Number of parallel scrape threads (1–8). Higher is faster but may trigger rate limits on recipe sites.",
+                        default=2,
+                        help_text="Concurrent scrape workers (1–4). More is faster but heavier on Mealie.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "delay",
+                        "Delay (seconds)",
+                        "number",
+                        default=0.5,
+                        help_text="Seconds between requests per worker. Lower is faster but risks overloading Mealie.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "resume",
+                        "Resume",
+                        "boolean",
+                        default=False,
+                        help_text="Skip recipes already reimported in the previous run.",
                         advanced=True,
                     ),
                     OptionSpec(
