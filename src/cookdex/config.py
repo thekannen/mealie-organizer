@@ -55,9 +55,8 @@ load_env_file(ENV_FILE)
 
 
 def _load_config():
-    if not CONFIG_FILE.exists():
-        return {}
-    return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    """Deprecated — config.json is no longer used for runtime settings."""
+    return {}
 
 
 _CONFIG = _load_config()
@@ -99,14 +98,20 @@ def require_mealie_url(value):
     return url.rstrip("/")
 
 
-def env_or_config(env_key, config_path, default=None, cast=None):
+def env_or_config(env_key, config_path=None, default=None, cast=None):
+    """Resolve a setting from env var, falling back to *default*.
+
+    The *config_path* parameter is accepted for backward compatibility but
+    is **ignored** — all runtime configuration comes from the UI / env vars,
+    never from config files.
+    """
     raw_env = os.environ.get(env_key)
     if raw_env is not None and raw_env != "":
         raw = raw_env
         source = f"env '{env_key}'"
     else:
-        raw = config_value(config_path, default)
-        source = f"config '{config_path}'"
+        raw = default
+        source = "default"
 
     if raw is None:
         return None
@@ -142,8 +147,7 @@ def resolve_mealie_url():
     if legacy and legacy.strip():
         print("[warn] MEALIE_BASE_URL is deprecated; prefer MEALIE_URL.", flush=True)
         return require_mealie_url(legacy)
-    fallback = config_value("mealie.url", MEALIE_URL_PLACEHOLDER)
-    return require_mealie_url(fallback)
+    return require_mealie_url(MEALIE_URL_PLACEHOLDER)
 
 
 def resolve_mealie_api_key(required=True):

@@ -55,7 +55,7 @@ from typing import Any, Callable, Optional
 
 import requests as _requests
 
-from .config import REPO_ROOT, config_value, resolve_mealie_api_key, resolve_mealie_url
+from .config import REPO_ROOT, resolve_mealie_api_key, resolve_mealie_url
 from .db_client import MealieDBClient, is_db_enabled
 from .tag_rules_generation import build_default_tag_rules
 
@@ -130,15 +130,9 @@ class RecipeRuleTagger:
         missing_targets: str = "skip",
     ) -> "RecipeRuleTagger":
         """Create a tagger with rules derived at runtime from taxonomy files."""
-        tags_path = REPO_ROOT / str(
-            config_value("taxonomy.tags_file", "configs/taxonomy/tags.json")
-        )
-        cats_path = REPO_ROOT / str(
-            config_value("taxonomy.categories_file", "configs/taxonomy/categories.json")
-        )
-        tools_path = REPO_ROOT / str(
-            config_value("tools.file", "configs/taxonomy/tools.json")
-        )
+        tags_path = REPO_ROOT / "configs/taxonomy/tags.json"
+        cats_path = REPO_ROOT / "configs/taxonomy/categories.json"
+        tools_path = REPO_ROOT / "configs/taxonomy/tools.json"
 
         def _read_json_list(path: Path) -> list[dict[str, Any]]:
             if not path.exists():
