@@ -154,7 +154,9 @@ def test_from_taxonomy_derives_rules(tmp_path: Path, monkeypatch) -> None:
     (taxonomy_dir / "categories.json").write_text(json.dumps([{"name": "Dinner"}]))
     (taxonomy_dir / "tools.json").write_text(json.dumps([{"name": "Air Fryer"}]))
 
-    monkeypatch.setattr("cookdex.rule_tagger.REPO_ROOT", tmp_path)
+    db_path = tmp_path / "cache" / "webui" / "state.db"
+    monkeypatch.setattr("cookdex.taxonomy_store._DEFAULT_DB_PATH", db_path)
+    monkeypatch.setattr("cookdex.taxonomy_store._TAXONOMY_DIR", taxonomy_dir)
 
     tagger = RecipeRuleTagger.from_taxonomy(dry_run=True)
     assert tagger._preloaded_rules is not None
@@ -165,7 +167,9 @@ def test_from_taxonomy_derives_rules(tmp_path: Path, monkeypatch) -> None:
 
 def test_from_taxonomy_empty_when_no_files(tmp_path: Path, monkeypatch) -> None:
     """from_taxonomy with missing files produces zero rules without crashing."""
-    monkeypatch.setattr("cookdex.rule_tagger.REPO_ROOT", tmp_path)
+    db_path = tmp_path / "cache" / "webui" / "state.db"
+    monkeypatch.setattr("cookdex.taxonomy_store._DEFAULT_DB_PATH", db_path)
+    monkeypatch.setattr("cookdex.taxonomy_store._TAXONOMY_DIR", tmp_path / "configs" / "taxonomy")
     tagger = RecipeRuleTagger.from_taxonomy(dry_run=True)
     assert tagger._preloaded_rules is not None
     for section in tagger._preloaded_rules.values():

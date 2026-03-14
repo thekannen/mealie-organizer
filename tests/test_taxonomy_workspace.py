@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from cookdex.webui_server.config_files import ConfigFilesManager
+from cookdex.webui_server.state import StateStore
 from cookdex.webui_server.taxonomy_workspace import TaxonomyWorkspaceService
 
 
@@ -16,36 +17,49 @@ def _write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+_TAXONOMY_DATA: dict[str, list] = {
+    "categories": [{"name": "Existing Category"}],
+    "tags": [{"name": "Existing Tag"}],
+    "cookbooks": [{"name": "Existing", "description": "", "queryFilterString": "", "public": False, "position": 1}],
+    "labels": [{"name": "Existing Label", "color": "#111111"}],
+    "tools": [{"name": "Existing Tool", "onHand": False}],
+    "units_aliases": [{"name": "Cup", "abbreviation": "c", "aliases": ["cups"], "fraction": True, "useAbbreviation": True}],
+}
+
+_TAG_RULES = {
+    "ingredient_tags": [
+        {"tag": "Existing Tag", "pattern": "existing"},
+        {"tag": "Ghost Tag", "pattern": "ghost"},
+    ],
+    "text_tags": [],
+    "text_categories": [
+        {"category": "Existing Category", "pattern": "existing"},
+        {"category": "Ghost Category", "pattern": "ghost"},
+    ],
+    "ingredient_categories": [],
+    "tool_tags": [
+        {"tool": "Existing Tool", "pattern": "existing"},
+        {"tool": "Ghost Tool", "pattern": "ghost"},
+    ],
+}
+
+
 def _seed_config_root(root: Path) -> None:
     _write_json(root / "configs" / "config.json", {"providers": {}, "parser": {}})
-    _write_json(root / "configs" / "taxonomy" / "categories.json", [{"name": "Existing Category"}])
-    _write_json(root / "configs" / "taxonomy" / "tags.json", [{"name": "Existing Tag"}])
-    _write_json(root / "configs" / "taxonomy" / "cookbooks.json", [{"name": "Existing", "description": "", "queryFilterString": "", "public": False, "position": 1}])
-    _write_json(root / "configs" / "taxonomy" / "labels.json", [{"name": "Existing Label", "color": "#111111"}])
-    _write_json(root / "configs" / "taxonomy" / "tools.json", [{"name": "Existing Tool", "onHand": False}])
-    _write_json(
-        root / "configs" / "taxonomy" / "units_aliases.json",
-        [{"name": "Cup", "abbreviation": "c", "aliases": ["cups"], "fraction": True, "useAbbreviation": True}],
-    )
-    _write_json(
-        root / "configs" / "taxonomy" / "tag_rules.json",
-        {
-            "ingredient_tags": [
-                {"tag": "Existing Tag", "pattern": "existing"},
-                {"tag": "Ghost Tag", "pattern": "ghost"},
-            ],
-            "text_tags": [],
-            "text_categories": [
-                {"category": "Existing Category", "pattern": "existing"},
-                {"category": "Ghost Category", "pattern": "ghost"},
-            ],
-            "ingredient_categories": [],
-            "tool_tags": [
-                {"tool": "Existing Tool", "pattern": "existing"},
-                {"tool": "Ghost Tool", "pattern": "ghost"},
-            ],
-        },
-    )
+    for name, data in _TAXONOMY_DATA.items():
+        # Write to both locations: configs/taxonomy/ (for tag_rules and repo_root-relative
+        # paths) and taxonomy/ (for create_app() seeding which uses config_root/taxonomy/).
+        _write_json(root / "configs" / "taxonomy" / f"{name}.json", data)
+        _write_json(root / "taxonomy" / f"{name}.json", data)
+    _write_json(root / "configs" / "taxonomy" / "tag_rules.json", _TAG_RULES)
+
+
+def _make_state(base_path: Path) -> StateStore:
+    state = StateStore(base_path / "unit_state.db")
+    state.initialize(task_ids=[])
+    for collection, entries in _TAXONOMY_DATA.items():
+        state.taxonomy_set(collection, entries)
+    return state
 
 
 _CSRF = {"X-Requested-With": "XMLHttpRequest"}
@@ -88,7 +102,8 @@ class _FakeMealieClient:
 def test_taxonomy_workspace_initialize_from_mealie_replace(tmp_path: Path) -> None:
     config_root = tmp_path / "repo"
     _seed_config_root(config_root)
-    manager = ConfigFilesManager(config_root)
+    state = _make_state(tmp_path)
+    manager = ConfigFilesManager(config_root, state=state)
     workspace = TaxonomyWorkspaceService(repo_root=config_root, config_files=manager)
 
     payload = workspace.initialize_from_mealie(
@@ -114,7 +129,8 @@ def test_taxonomy_workspace_initialize_from_mealie_replace(tmp_path: Path) -> No
 def test_taxonomy_workspace_import_starter_pack_merge(tmp_path: Path) -> None:
     config_root = tmp_path / "repo"
     _seed_config_root(config_root)
-    manager = ConfigFilesManager(config_root)
+    state = _make_state(tmp_path)
+    manager = ConfigFilesManager(config_root, state=state)
     workspace = TaxonomyWorkspaceService(repo_root=config_root, config_files=manager)
 
     def fake_fetcher(url: str):
@@ -212,7 +228,8 @@ def test_tag_rules_noop_when_missing(tmp_path: Path) -> None:
     rules_path = config_root / "configs" / "taxonomy" / "tag_rules.json"
     rules_path.unlink()
 
-    manager = ConfigFilesManager(config_root)
+    state = _make_state(tmp_path)
+    manager = ConfigFilesManager(config_root, state=state)
     workspace = TaxonomyWorkspaceService(repo_root=config_root, config_files=manager)
     result = workspace.sync_tag_rules_targets()
 
