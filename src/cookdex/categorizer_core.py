@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
-from .config import config_value, env_or_config
+from .config import env_or_config
 
 
 def require_int(value: object, field: str) -> int:
@@ -592,10 +592,7 @@ Recipes:
 
     def filter_tag_candidates(self, tags, recipes):
         usage = self.build_tag_usage(recipes)
-        noisy_phrases = config_value(
-            "categorizer.tag_noisy_phrases",
-            ["how to make", "recipe", "without drippings", "from drippings", "from scratch"],
-        )
+        noisy_phrases = ["how to make", "recipe", "without drippings", "from drippings", "from scratch"]
         if isinstance(noisy_phrases, str):
             noisy_phrases = [p.strip() for p in noisy_phrases.split(",") if p.strip()]
         candidate_names = []
