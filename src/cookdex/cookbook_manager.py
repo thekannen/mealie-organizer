@@ -8,6 +8,7 @@ import re
 import requests
 
 from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .taxonomy_store import read_collection
 
 DEFAULT_COOKBOOKS_FILE = env_or_config("COOKBOOKS_FILE", "taxonomy.cookbooks_file", "configs/taxonomy/cookbooks.json")
 
@@ -396,6 +397,15 @@ def load_cookbook_items(path_value: str) -> tuple[Path, list[dict]]:
     return path, items
 
 
+def load_cookbooks(path_value: str) -> tuple[Path | None, list[dict]]:
+    """Load cookbooks from the taxonomy store, or from a JSON file if explicitly provided."""
+    if path_value:
+        return load_cookbook_items(path_value)
+    entries = read_collection("cookbooks")
+    items = normalize_cookbook_items(entries)
+    return None, items
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Mealie cookbook manager.")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds.")
@@ -405,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser = subparsers.add_parser("sync", help="Create/update cookbooks from JSON file.")
     sync_parser.add_argument(
         "--file",
-        default=DEFAULT_COOKBOOKS_FILE,
+        default="",
         help="Path to cookbooks JSON file.",
     )
     sync_parser.add_argument(
@@ -430,8 +440,9 @@ def main() -> None:
     manager = MealieCookbookManager(mealie_url, mealie_api_key, timeout=args.timeout, dry_run=dry_run)
 
     if args.command == "sync":
-        file_path, items = load_cookbook_items(args.file)
-        print(f"[start] Syncing {len(items)} cookbook(s) from {file_path.relative_to(REPO_ROOT)}")
+        file_path, items = load_cookbooks(args.file)
+        source = file_path.relative_to(REPO_ROOT) if file_path else "taxonomy store"
+        print(f"[start] Syncing {len(items)} cookbook(s) from {source}")
         created, updated, deleted, skipped, failed = manager.sync_cookbooks(items, replace=args.replace)
         print(f"[done] cookbooks created={created} updated={updated} deleted={deleted} skipped={skipped} failed={failed}")
         summary = {

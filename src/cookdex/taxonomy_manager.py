@@ -6,6 +6,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import requests
 
 from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .taxonomy_store import read_collection
 
 DEFAULT_CATEGORIES_FILE = env_or_config(
     "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
@@ -279,6 +280,15 @@ def load_json_items(file_value):
     return file_path, items
 
 
+def load_items(file_value, collection):
+    """Load taxonomy items from the taxonomy store, or from a JSON file if explicitly provided."""
+    if file_value:
+        return load_json_items(file_value)
+    entries = read_collection(collection)
+    items = normalize_payload_items(entries)
+    return None, items
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Mealie taxonomy manager.")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds.")
@@ -286,14 +296,14 @@ def build_parser():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     reset_parser = subparsers.add_parser("reset", help="Reset and seed categories/tags.")
-    reset_parser.add_argument("--categories-file", default=DEFAULT_CATEGORIES_FILE, help="Category JSON input file.")
+    reset_parser.add_argument("--categories-file", default="", help="Category JSON input file.")
     reset_parser.add_argument("--tags-file", default="", help="Tag JSON input file (optional).")
     reset_parser.add_argument("--skip-tags", action="store_true", help="Only reset categories, skip tags.")
 
     import_parser = subparsers.add_parser("import", help="Import categories or tags from JSON.")
     import_parser.add_argument(
         "--file",
-        default=DEFAULT_CATEGORIES_FILE,
+        default="",
         help="Path to JSON file containing names or organizer objects.",
     )
     import_parser.add_argument(
@@ -323,8 +333,8 @@ def build_parser():
         "refresh",
         help="Streamlined taxonomy lifecycle: reset/import + optional cleanup.",
     )
-    refresh_parser.add_argument("--categories-file", default=DEFAULT_CATEGORIES_FILE, help="Category JSON input file.")
-    refresh_parser.add_argument("--tags-file", default=DEFAULT_TAGS_FILE, help="Tag JSON input file (optional).")
+    refresh_parser.add_argument("--categories-file", default="", help="Category JSON input file.")
+    refresh_parser.add_argument("--tags-file", default="", help="Tag JSON input file (optional).")
     refresh_parser.add_argument(
         "--mode",
         choices=["merge", "replace"],
@@ -371,8 +381,9 @@ def main():
     manager = MealieTaxonomyManager(mealie_url, mealie_api_key, timeout=args.timeout, dry_run=dry_run)
 
     if args.command == "import":
-        file_path, items = load_json_items(args.file)
-        print(f"[start] Importing {len(items)} item(s) into {args.endpoint} from {file_path.relative_to(REPO_ROOT)}")
+        file_path, items = load_items(args.file, args.endpoint)
+        source = file_path.relative_to(REPO_ROOT) if file_path else "taxonomy store"
+        print(f"[start] Importing {len(items)} item(s) into {args.endpoint} from {source}")
         manager.import_items(args.endpoint, items, replace=args.replace)
         return
 
@@ -387,20 +398,22 @@ def main():
         return
 
     if args.command == "reset":
-        categories_file, categories = load_json_items(args.categories_file)
-        print(f"[start] Reset categories using {categories_file.relative_to(REPO_ROOT)}")
+        categories_file, categories = load_items(args.categories_file, "categories")
+        source = categories_file.relative_to(REPO_ROOT) if categories_file else "taxonomy store"
+        print(f"[start] Reset categories using {source}")
         manager.import_items("categories", categories, replace=True)
 
         if args.skip_tags:
             print("[done] Categories reset complete (tags skipped).")
             return
 
-        if args.tags_file:
-            tags_file, tags = load_json_items(args.tags_file)
-            print(f"[start] Reset tags using {tags_file.relative_to(REPO_ROOT)}")
+        tags_file, tags = load_items(args.tags_file, "tags")
+        if tags:
+            source = tags_file.relative_to(REPO_ROOT) if tags_file else "taxonomy store"
+            print(f"[start] Reset tags using {source}")
             manager.import_items("tags", tags, replace=True)
         else:
-            print("[warn] --tags-file not provided; tags were not reset.")
+            print("[warn] No tags found; tags were not reset.")
 
         print("[done] Reset complete.")
         return
@@ -413,17 +426,19 @@ def main():
         )
         print(f"[start] Refresh mode: {args.mode}")
 
-        categories_file, categories = load_json_items(args.categories_file)
-        print(f"[start] Import categories from {categories_file.relative_to(REPO_ROOT)}")
+        categories_file, categories = load_items(args.categories_file, "categories")
+        source = categories_file.relative_to(REPO_ROOT) if categories_file else "taxonomy store"
+        print(f"[start] Import categories from {source}")
         cat_result = manager.import_items("categories", categories, replace=replace_categories)
 
         tag_result = {"endpoint": "tags", "created": 0, "skipped": 0, "failed": 0}
-        if args.tags_file:
-            tags_file, tags = load_json_items(args.tags_file)
-            print(f"[start] Import tags from {tags_file.relative_to(REPO_ROOT)}")
+        tags_file, tags = load_items(args.tags_file, "tags")
+        if tags:
+            source = tags_file.relative_to(REPO_ROOT) if tags_file else "taxonomy store"
+            print(f"[start] Import tags from {source}")
             tag_result = manager.import_items("tags", tags, replace=replace_tags)
         else:
-            print("[warn] No --tags-file provided; skipping tag import.")
+            print("[warn] No tags found; skipping tag import.")
 
         if args.cleanup:
             manager.cleanup_tags(

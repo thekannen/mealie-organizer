@@ -17,6 +17,7 @@ from .config import (
     resolve_repo_path,
     to_bool,
 )
+from .taxonomy_store import read_collection
 
 
 def normalize_name(name: str) -> str:
@@ -65,6 +66,28 @@ def load_tool_entries(file_path: Path) -> list[ToolEntry]:
 def load_tool_names(file_path: Path) -> list[str]:
     """Backward-compatible wrapper that returns just names."""
     return [entry.name for entry in load_tool_entries(file_path)]
+
+
+def _entries_from_store() -> list[ToolEntry]:
+    """Load tool entries from the taxonomy store."""
+    raw = read_collection("tools")
+    entries: list[ToolEntry] = []
+    for item in raw:
+        name = str(item.get("name") or "").strip()
+        on_hand = bool(item.get("onHand", False))
+        if name:
+            entries.append(ToolEntry(name=name, on_hand=on_hand))
+    if not entries:
+        raise ValueError("Taxonomy store 'tools' collection contains no valid entries.")
+    deduped: list[ToolEntry] = []
+    seen: set[str] = set()
+    for entry in entries:
+        norm = normalize_name(entry.name)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        deduped.append(entry)
+    return deduped
 
 
 @dataclass
@@ -159,8 +182,13 @@ class ToolsSyncManager:
         return sorted(actions, key=lambda action: (action.source_name, action.source_id))
 
     def run(self) -> dict[str, Any]:
-        desired = load_tool_names(self.file_path)
-        print(f"[start] Syncing {len(desired)} tool(s) from {self.file_path}", flush=True)
+        if self.file_path and str(self.file_path) != ".":
+            desired = load_tool_names(self.file_path)
+            source = str(self.file_path)
+        else:
+            desired = [entry.name for entry in _entries_from_store()]
+            source = "taxonomy store"
+        print(f"[start] Syncing {len(desired)} tool(s) from {source}", flush=True)
         try:
             existing = self.client.list_tools(per_page=1000)
         except Exception as exc:
@@ -374,7 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--file",
-        default=str(env_or_config("TOOLS_FILE", "tools.file", "configs/taxonomy/tools.json")),
+        default="",
         help="Path to tools JSON file.",
     )
     parser.add_argument(
@@ -400,7 +428,7 @@ def main() -> None:
         dry_run=dry_run,
         apply=bool(args.apply),
         max_actions=require_int(args.max_actions, "--max-actions"),
-        file_path=resolve_repo_path(args.file),
+        file_path=resolve_repo_path(args.file) if args.file else "",
         checkpoint_dir=resolve_repo_path(args.checkpoint_dir),
     )
     manager.run()
