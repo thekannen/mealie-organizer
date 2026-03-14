@@ -8,11 +8,6 @@ import requests
 from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 from .taxonomy_store import read_collection
 
-DEFAULT_CATEGORIES_FILE = env_or_config(
-    "TAXONOMY_CATEGORIES_FILE", "taxonomy.categories_file", "configs/taxonomy/categories.json"
-)
-DEFAULT_TAGS_FILE = env_or_config("TAXONOMY_TAGS_FILE", "taxonomy.tags_file", "configs/taxonomy/tags.json")
-
 
 class MealieTaxonomyManager:
     def __init__(self, base_url: str, api_key: str, timeout: int = 60, dry_run: bool = False):

@@ -16,12 +16,18 @@ def _write_json(path: Path, payload) -> None:
 
 def _seed_config_root(root: Path) -> None:
     _write_json(root / "configs" / "config.json", {"providers": {}, "parser": {}})
-    _write_json(root / "configs" / "taxonomy" / "categories.json", [{"name": "Dinner"}])
-    _write_json(root / "configs" / "taxonomy" / "tags.json", [{"name": "Italian"}])
-    _write_json(root / "configs" / "taxonomy" / "cookbooks.json", [])
-    _write_json(root / "configs" / "taxonomy" / "labels.json", [])
-    _write_json(root / "configs" / "taxonomy" / "tools.json", [])
-    _write_json(root / "configs" / "taxonomy" / "units_aliases.json", [])
+    _taxonomy = {
+        "categories": [{"name": "Dinner"}],
+        "tags": [{"name": "Italian"}],
+        "cookbooks": [],
+        "labels": [],
+        "tools": [],
+        "units_aliases": [],
+    }
+    for name, data in _taxonomy.items():
+        # Write to both configs/taxonomy/ (legacy) and taxonomy/ (for create_app() seeding).
+        _write_json(root / "configs" / "taxonomy" / f"{name}.json", data)
+        _write_json(root / "taxonomy" / f"{name}.json", data)
 
 
 _CSRF = {"X-Requested-With": "XMLHttpRequest"}

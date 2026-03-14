@@ -4,53 +4,72 @@ import json
 from pathlib import Path
 
 from cookdex.webui_server.config_files import ConfigFilesManager
+from cookdex.webui_server.state import StateStore
 
 
-def test_write_file_creates_backup(tmp_path: Path):
+def _make_state(tmp_path: Path) -> StateStore:
+    state = StateStore(tmp_path / "state.db")
+    state.initialize(task_ids=[])
+    return state
+
+
+def test_write_and_read_via_state(tmp_path: Path):
     root = tmp_path / "repo"
-    (root / "configs" / "taxonomy").mkdir(parents=True)
-    cats = root / "configs" / "taxonomy" / "categories.json"
-    cats.write_text(json.dumps([{"name": "Original"}]), encoding="utf-8")
+    root.mkdir()
+    state = _make_state(tmp_path)
 
-    mgr = ConfigFilesManager(root)
+    mgr = ConfigFilesManager(root, state=state)
     mgr.write_file("categories", [{"name": "Updated"}])
 
-    history = root / "configs" / ".history"
-    assert history.exists()
-    backups = list(history.glob("categories.*.json"))
-    assert len(backups) == 1
-    backup_content = json.loads(backups[0].read_text(encoding="utf-8"))
-    assert backup_content == [{"name": "Original"}]
+    result = mgr.read_file("categories")
+    assert result["content"] == [{"name": "Updated"}]
 
 
-def test_write_file_rotates_old_backups(tmp_path: Path):
+def test_write_replaces_collection(tmp_path: Path):
     root = tmp_path / "repo"
-    (root / "configs" / "taxonomy").mkdir(parents=True)
-    cats = root / "configs" / "taxonomy" / "categories.json"
-    cats.write_text(json.dumps([{"name": "v0"}]), encoding="utf-8")
+    root.mkdir()
+    state = _make_state(tmp_path)
 
-    history = root / "configs" / ".history"
-    history.mkdir(parents=True)
+    mgr = ConfigFilesManager(root, state=state)
+    mgr.write_file("categories", [{"name": "v1"}])
+    mgr.write_file("categories", [{"name": "v2"}, {"name": "v3"}])
 
-    # Create 25 fake backups
-    for i in range(25):
-        fake = history / f"categories.2026{i:04d}T000000Z.json"
-        fake.write_text(json.dumps([{"name": f"v{i}"}]), encoding="utf-8")
-
-    mgr = ConfigFilesManager(root)
-    mgr.write_file("categories", [{"name": "Latest"}])
-
-    remaining = sorted(history.glob("categories.*.json"))
-    # 25 old + 1 new = 26, rotated to keep 20
-    assert len(remaining) == 20
+    result = mgr.read_file("categories")
+    assert result["content"] == [{"name": "v2"}, {"name": "v3"}]
 
 
 def test_read_file_returns_content(tmp_path: Path):
     root = tmp_path / "repo"
-    (root / "configs" / "taxonomy").mkdir(parents=True)
-    cats = root / "configs" / "taxonomy" / "categories.json"
-    cats.write_text(json.dumps([{"name": "Dinner"}]), encoding="utf-8")
+    root.mkdir()
+    state = _make_state(tmp_path)
 
-    mgr = ConfigFilesManager(root)
+    state.taxonomy_set("categories", [{"name": "Dinner"}])
+    mgr = ConfigFilesManager(root, state=state)
     result = mgr.read_file("categories")
     assert result["content"] == [{"name": "Dinner"}]
+
+
+def test_list_files_shows_existence(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    state = _make_state(tmp_path)
+
+    mgr = ConfigFilesManager(root, state=state)
+    files = mgr.list_files()
+    assert all(f["exists"] is False for f in files)
+
+    state.taxonomy_set("categories", [{"name": "Test"}])
+    files = mgr.list_files()
+    cats = next(f for f in files if f["name"] == "categories")
+    assert cats["exists"] is True
+
+
+def test_write_requires_state(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    mgr = ConfigFilesManager(root)
+    try:
+        mgr.write_file("categories", [{"name": "x"}])
+        assert False, "Expected RuntimeError"
+    except RuntimeError:
+        pass

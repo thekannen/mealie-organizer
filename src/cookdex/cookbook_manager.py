@@ -10,8 +10,6 @@ import requests
 from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 from .taxonomy_store import read_collection
 
-DEFAULT_COOKBOOKS_FILE = env_or_config("COOKBOOKS_FILE", "taxonomy.cookbooks_file", "configs/taxonomy/cookbooks.json")
-
 
 def require_str(value: object, field: str) -> str:
     if isinstance(value, str):
