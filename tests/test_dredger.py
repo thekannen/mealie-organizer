@@ -167,12 +167,12 @@ class TestDredgerStoreSites:
         assert store.sites_count() == 0
 
     def test_get_enabled_sites(self, store):
-        store.add_site("https://enabled.com")
-        disabled_id = store.add_site("https://disabled.com")
+        store.add_site("https://enabled.example.com")
+        disabled_id = store.add_site("https://disabled.example.com")
         store.update_site(disabled_id, enabled=False)
         enabled = store.get_enabled_sites()
         assert len(enabled) == 1
-        assert "https://enabled.com" in enabled
+        assert enabled[0] == "https://enabled.example.com"
 
     def test_seed_defaults(self, store):
         defaults = [
@@ -190,12 +190,11 @@ class TestDredgerStoreSites:
         assert store.sites_count() == 1
 
     def test_seed_force_replaces(self, store):
-        store.add_site("https://existing.com")
-        inserted = store.seed_defaults([{"url": "https://new.com"}], force=True)
+        store.add_site("https://existing.example.com")
+        inserted = store.seed_defaults([{"url": "https://new.example.com"}], force=True)
         assert inserted == 1
         sites = store.get_enabled_sites()
-        assert "https://new.com" in sites
-        assert "https://existing.com" not in sites
+        assert sites == ["https://new.example.com"]
 
 
 # ---------------------------------------------------------------------------
