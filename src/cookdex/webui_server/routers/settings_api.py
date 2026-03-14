@@ -1134,13 +1134,13 @@ def _validate_dredger_site_url(url: str) -> dict[str, Any]:
     """Check if a site URL is reachable and has a crawlable sitemap."""
     result: dict[str, Any] = {"reachable": False, "sitemap_found": False, "error": ""}
     try:
-        _validate_service_url(url)
+        validated_url = _validate_service_url(url)
     except ValueError as exc:
         result["error"] = str(exc)
         return result
 
     try:
-        resp = requests.head(url, timeout=10, allow_redirects=True)
+        resp = requests.head(validated_url, timeout=10, allow_redirects=True)
         result["reachable"] = resp.status_code < 400
         if not result["reachable"]:
             result["error"] = f"HTTP {resp.status_code}"
@@ -1151,9 +1151,9 @@ def _validate_dredger_site_url(url: str) -> dict[str, Any]:
 
     # Check for sitemap
     sitemap_candidates = [
-        f"{url}/sitemap.xml",
-        f"{url}/sitemap_index.xml",
-        f"{url}/wp-sitemap.xml",
+        f"{validated_url}/sitemap.xml",
+        f"{validated_url}/sitemap_index.xml",
+        f"{validated_url}/wp-sitemap.xml",
     ]
     for sitemap_url in sitemap_candidates:
         try:
