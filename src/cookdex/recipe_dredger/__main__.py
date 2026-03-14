@@ -13,6 +13,7 @@ import os
 import random
 import sys
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 from .crawler import SitemapCrawler
 from .importer import ImportManager
@@ -26,29 +27,27 @@ logger = logging.getLogger("dredger")
 
 
 # ---------------------------------------------------------------------------
-# JSON log formatter
+# Logging setup — silence library noise, keep dredger at DEBUG for internal
+# use but route all user-facing output through _log() / print().
 # ---------------------------------------------------------------------------
 
-class _JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        return json.dumps({
-            "ts": self.formatTime(record, datefmt="%Y-%m-%dT%H:%M:%S"),
-            "level": record.levelname,
-            "msg": record.getMessage(),
-        })
-
-
 def _configure_logging() -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(_JsonFormatter())
     root = logging.getLogger()
     root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
-    # Silence noisy library loggers
+    root.setLevel(logging.WARNING)
     logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
     logging.getLogger("chardet").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def _log(tag: str, msg: str) -> None:
+    """Print a CookDex-format log line."""
+    print(f"[{tag}] {msg}", flush=True)
+
+
+def _site_label(url: str) -> str:
+    """Extract a short label from a site URL."""
+    return urlparse(url).hostname or url
 
 
 # ---------------------------------------------------------------------------
@@ -61,12 +60,13 @@ def _process_retry_queue(
     importer: ImportManager,
     rate_limiter: RateLimiter,
     max_retry_attempts: int,
-) -> None:
+) -> int:
     pending = store.get_retry_queue()
     if not pending:
-        return
+        return 0
 
-    logger.info(f"Processing retry queue: {len(pending)} URL(s)")
+    _log("info", f"Processing retry queue: {len(pending)} URL(s)")
+    retried = 0
 
     for entry in pending:
         url = entry["url"]
@@ -74,7 +74,6 @@ def _process_retry_queue(
         attempts = entry["attempts"]
 
         if attempts >= max_retry_attempts:
-            logger.warning(f"Giving up after {attempts} attempts: {url}")
             store.remove_retry(url_key)
             store.add_reject(url_key, "Max retries exceeded")
             continue
@@ -86,11 +85,8 @@ def _process_retry_queue(
             if verify_transient:
                 new_attempts = store.add_retry(url_key, verify_error or "Transient verification failure", increment=True)
                 if new_attempts >= max_retry_attempts:
-                    logger.warning(f"Max retries reached [verify], rejecting: {url}")
                     store.remove_retry(url_key)
                     store.add_reject(url_key, verify_error or "Max retries exceeded (verify)")
-                else:
-                    logger.warning(f"Retry queued ({new_attempts}/{max_retry_attempts}) [verify]: {url}")
             else:
                 store.remove_retry(url_key)
                 store.add_reject(url_key, verify_error or "Verification failed")
@@ -99,19 +95,19 @@ def _process_retry_queue(
         imported, import_error, import_transient = importer.import_recipe(url)
         if imported:
             store.add_imported(url_key)
+            retried += 1
             continue
 
         if import_transient:
             new_attempts = store.add_retry(url_key, import_error or "Transient import failure", increment=True)
             if new_attempts >= max_retry_attempts:
-                logger.warning(f"Max retries reached [import], rejecting: {url}")
                 store.remove_retry(url_key)
                 store.add_reject(url_key, import_error or "Max retries exceeded (import)")
-            else:
-                logger.warning(f"Retry queued ({new_attempts}/{max_retry_attempts}) [import]: {url}")
         else:
             store.remove_retry(url_key)
             store.add_reject(url_key, import_error or "Import failed")
+
+    return retried
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +119,10 @@ def run(args: argparse.Namespace) -> int:
     mealie_api_key = os.environ.get("MEALIE_API_KEY", "").strip()
 
     if not mealie_url:
-        logger.error("MEALIE_URL is not configured. Set it in Settings > Connection.")
+        _log("error", "MEALIE_URL is not configured. Set it in Settings > Connection.")
         return 1
     if not mealie_api_key:
-        logger.error("MEALIE_API_KEY is not configured. Set it in Settings > Connection.")
+        _log("error", "MEALIE_API_KEY is not configured. Set it in Settings > Connection.")
         return 1
 
     target_language = os.environ.get("DREDGER_TARGET_LANGUAGE", "en").strip().lower()
@@ -166,45 +162,56 @@ def run(args: argparse.Namespace) -> int:
     if not sites_list:
         seeded = store.seed_defaults(DEFAULT_SITES)
         if seeded:
-            logger.info(f"Seeded {seeded} default recipe sites")
+            _log("info", f"Seeded {seeded} default recipe sites")
         sites_list = store.get_enabled_sites()
 
     if not sites_list:
-        logger.error("No recipe sites configured. Add sites in Settings > Recipe Sources.")
+        _log("error", "No recipe sites configured. Add sites in Settings > Recipe Sources.")
         return 1
 
-    logger.info(f"Recipe Dredger started")
-    logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE IMPORT'}")
-    logger.info(f"Sites: {len(sites_list)}, Limit: {target_count}/site, Depth: {scan_depth}")
-    logger.info(f"Workers: {import_workers}, Language: {target_language if language_filter else 'disabled'}")
+    mode_label = "DRY RUN" if dry_run else "LIVE"
+    lang_label = target_language if language_filter else "off"
+    _log("start", f"Recipe Dredger — {mode_label}, {len(sites_list)} sites, limit {target_count}/site, lang={lang_label}")
 
     # Process retry queue first
-    _process_retry_queue(store, verifier, importer, rate_limiter, max_retry_attempts)
+    retried = _process_retry_queue(store, verifier, importer, rate_limiter, max_retry_attempts)
+    if retried:
+        _log("ok", f"Retry queue: {retried} recovered")
 
     # Set up concurrent import executor
     import_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
     if import_workers > 1 and not dry_run:
         import_executor = concurrent.futures.ThreadPoolExecutor(max_workers=import_workers)
 
+    total_sites = len(sites_list)
+    grand_imported = 0
+    grand_rejected = 0
+    grand_errors = 0
+
     try:
         random.shuffle(sites_list)
 
-        for site in sites_list:
-            logger.info(f"Processing site: {site}")
+        for site_idx, site in enumerate(sites_list, 1):
+            label = _site_label(site)
             site_stats = {"imported": 0, "rejected": 0, "errors": 0}
 
             raw_candidates = crawler.get_urls_for_site(site, force_refresh=force_refresh)
             if not raw_candidates:
-                logger.info(f"No URLs found for {site}")
+                _log("skip", f"[{site_idx}/{total_sites}] {label} — no URLs in sitemap")
                 continue
 
             candidates = raw_candidates[:scan_depth]
             random.shuffle(candidates)
 
+            _log("info", f"[{site_idx}/{total_sites}] {label} — scanning {len(candidates)} URLs")
+
             imported_count = 0
+            checked_count = 0
+            skipped_count = 0
             site_failure_streak = 0
             abort_site = False
             pending_imports: dict[concurrent.futures.Future[Tuple[bool, Optional[str], bool]], tuple[str, str]] = {}
+            progress_interval = 25
 
             def drain_imports(block: bool = False) -> None:
                 nonlocal imported_count, site_failure_streak, abort_site
@@ -235,16 +242,14 @@ def run(args: argparse.Namespace) -> int:
                     site_stats["errors"] += 1
                     if import_transient:
                         store.add_retry(url_key, import_error or "Transient import failure", increment=True)
-                        logger.warning(f"Retry queued [import]: {url}")
                     else:
                         store.add_reject(url_key, import_error or "Import failed")
-                        logger.debug(f"Import failed ({import_error}): {url}")
 
                     if import_error and import_error.startswith("HTTP 5"):
                         site_failure_streak += 1
                         if site_failure_threshold > 0 and site_failure_streak >= site_failure_threshold:
                             if not abort_site:
-                                logger.warning(f"Aborting site due to repeated HTTP 5xx errors (streak={site_failure_streak}): {site}")
+                                _log("warn", f"{label} — aborting, repeated HTTP 5xx errors")
                             abort_site = True
                     else:
                         site_failure_streak = 0
@@ -257,10 +262,15 @@ def run(args: argparse.Namespace) -> int:
                 url_key = canonicalize_url(url) or url
 
                 if store.is_known(url_key):
+                    skipped_count += 1
                     continue
 
                 rate_limiter.wait_if_needed(url)
                 is_recipe, error, is_transient = verifier.verify_recipe(url)
+                checked_count += 1
+
+                if checked_count % progress_interval == 0:
+                    _log("info", f"[{site_idx}/{total_sites}] {label} — checked {checked_count}, {imported_count} {'found' if dry_run else 'imported'}, {skipped_count} known")
 
                 if is_recipe:
                     if import_executor is None:
@@ -279,7 +289,7 @@ def run(args: argparse.Namespace) -> int:
                             if import_error and import_error.startswith("HTTP 5"):
                                 site_failure_streak += 1
                                 if site_failure_threshold > 0 and site_failure_streak >= site_failure_threshold:
-                                    logger.warning(f"Aborting site due to repeated HTTP 5xx errors: {site}")
+                                    _log("warn", f"{label} — aborting, repeated HTTP 5xx errors")
                                     abort_site = True
                             else:
                                 site_failure_streak = 0
@@ -297,7 +307,6 @@ def run(args: argparse.Namespace) -> int:
                 else:
                     if is_transient:
                         store.add_retry(url_key, error or "Transient verification failure", increment=True)
-                        logger.warning(f"Retry queued [verify]: {url}")
                     else:
                         store.add_reject(url_key, error or "Not a recipe")
                         site_stats["rejected"] += 1
@@ -309,23 +318,35 @@ def run(args: argparse.Namespace) -> int:
                 future.cancel()
                 pending_imports.pop(future, None)
 
-            logger.info(
-                f"Site results: {site_stats['imported']} imported, "
-                f"{site_stats['rejected']} rejected, {site_stats['errors']} errors"
-            )
+            grand_imported += site_stats["imported"]
+            grand_rejected += site_stats["rejected"]
+            grand_errors += site_stats["errors"]
+
+            parts = []
+            if site_stats["imported"]:
+                parts.append(f"{site_stats['imported']} {'found' if dry_run else 'imported'}")
+            if site_stats["rejected"]:
+                parts.append(f"{site_stats['rejected']} rejected")
+            if site_stats["errors"]:
+                parts.append(f"{site_stats['errors']} errors")
+            status = ", ".join(parts) if parts else "nothing new"
+            _log("ok", f"[{site_idx}/{total_sites}] {label} — {status}")
 
     finally:
         if import_executor is not None:
             import_executor.shutdown(wait=False, cancel_futures=True)
 
-    # Summary
-    logger.info("=" * 50)
-    logger.info("Session Summary:")
-    logger.info(f"  Total Imported: {store.imported_count()}")
-    logger.info(f"  Total Rejected: {store.rejected_count()}")
-    logger.info(f"  In Retry Queue: {store.retry_count()}")
-    logger.info("=" * 50)
-    logger.info("Dredge cycle complete")
+    _log("done", f"Dredge complete — {grand_imported} {'found' if dry_run else 'imported'}, {grand_rejected} rejected, {grand_errors} errors")
+    print("[summary] " + json.dumps({
+        "__title__": "Recipe Dredger",
+        "Mode": "Dry Run" if dry_run else "Live Import",
+        "Sites Scanned": total_sites,
+        "Recipes Found" if dry_run else "Recipes Imported": grand_imported,
+        "Rejected": grand_rejected,
+        "Errors": grand_errors,
+        "Retry Queue": store.retry_count(),
+        "Language": lang_label,
+    }), flush=True)
     return 0
 
 
