@@ -151,3 +151,24 @@ class TaxonomyWorkspaceDraftUpdateRequest(BaseModel):
 
 class TaxonomyWorkspaceVersionRequest(BaseModel):
     version: str = Field(min_length=1)
+
+
+class DredgerSiteCreateRequest(BaseModel):
+    url: str = Field(min_length=1)
+    label: str = ""
+    region: str = ""
+
+
+class DredgerSiteUpdateRequest(BaseModel):
+    url: str | None = None
+    label: str | None = None
+    region: str | None = None
+    enabled: bool | None = None
+
+
+class DredgerSitesSeedRequest(BaseModel):
+    force: bool = False
+
+
+class DredgerSitesValidateRequest(BaseModel):
+    site_ids: list[int] | None = None

@@ -4176,3 +4176,252 @@ button.danger {
   }
 }
 
+/* ── Recipe Sources (Dredger Sites) ─────────────────────────────── */
+
+.dredger-sites-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.dredger-add-form {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex: 1;
+  min-width: 280px;
+}
+
+.dredger-add-form input[type="text"] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.dredger-add-form select {
+  max-width: 10rem;
+}
+
+.dredger-filter {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.dredger-filter input {
+  width: 10rem;
+}
+
+.dredger-sites-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}
+
+.dredger-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+}
+
+.dredger-bulk-bar span {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.dredger-dead-bar,
+.dredger-ok-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+}
+
+.dredger-dead-bar {
+  background: color-mix(in srgb, var(--danger, #e74c3c) 10%, transparent);
+}
+
+.dredger-dead-bar > .ui-icon:first-child {
+  color: var(--danger, #e74c3c);
+  flex-shrink: 0;
+}
+
+.dredger-dead-bar span {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.dredger-ok-bar {
+  background: color-mix(in srgb, var(--success, #27ae60) 10%, transparent);
+}
+
+.dredger-ok-bar > .ui-icon:first-child {
+  color: var(--success, #27ae60);
+  flex-shrink: 0;
+}
+
+.dredger-ok-bar span {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.dredger-region-group {
+  margin-bottom: 0.75rem;
+}
+
+.dredger-region-group:last-child {
+  margin-bottom: 0;
+}
+
+.dredger-region-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.dredger-region-select {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.dredger-region-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.dredger-site-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: calc(var(--radius) * 0.6);
+  transition: background 0.15s;
+}
+
+.dredger-site-row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.dredger-site-row.disabled {
+  opacity: 0.45;
+}
+
+.dredger-site-row.unreachable {
+  background: color-mix(in srgb, var(--danger, #e74c3c) 8%, transparent);
+}
+
+.dredger-site-row.selected {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.dredger-site-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.dredger-site-url {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dredger-site-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.dredger-edit-form {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  flex: 1;
+}
+
+.dredger-edit-form input {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+}
+
+button.compact {
+  padding: 0.2rem 0.4rem;
+  min-height: unset;
+  font-size: 0.8rem;
+}
+
+button.compact svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  width: 32px;
+  height: 18px;
+  background: var(--muted);
+  border-radius: 9px;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(14px);
+}
+

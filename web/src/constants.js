@@ -1,6 +1,7 @@
 export const NAV_ITEMS = [
   { id: "overview", label: "Overview", icon: "home" },
   { id: "tasks", label: "Tasks", icon: "folder" },
+  { id: "recipe-sources", label: "Recipe Sources", icon: "globe" },
   { id: "recipe-organization", label: "Recipe Organization", icon: "book-open" },
   { id: "users", label: "Users", icon: "user" },
   { id: "settings", label: "Settings", icon: "settings" },
@@ -20,6 +21,10 @@ export const PAGE_META = {
   settings: {
     title: "Settings",
     subtitle: "Configure Mealie, AI provider, and runtime behavior from one place.",
+  },
+  "recipe-sources": {
+    title: "Recipe Sources",
+    subtitle: "Manage the sites the Recipe Dredger crawls for new recipes.",
   },
   "recipe-organization": {
     title: "Recipe Organization",
@@ -213,6 +218,21 @@ export const HELP_TROUBLESHOOTING = [
 ];
 
 export const HELP_TASK_GUIDES = [
+  {
+    id: "recipe-dredger",
+    title: "Recipe Dredger",
+    icon: "globe",
+    group: "Data Pipeline",
+    what: "Discovers and imports recipes from curated recipe sites. Crawls sitemaps, verifies pages contain real recipes via JSON-LD schema, filters by language, and imports verified URLs into Mealie. Manage source sites from the Recipe Sources page.",
+    steps: [
+      "Go to Recipe Sources to review, add, or remove sites the dredger will crawl.",
+      "Run with Dry Run enabled (the default) to preview which recipes would be imported without writing anything.",
+      "Set Recipes Per Site to control how many new recipes to import from each site per run.",
+      "Disable Dry Run to import recipes into Mealie (requires policy unlock).",
+      "Use Validate All on the Recipe Sources page to find and remove dead links before running.",
+    ],
+    tip: "Schedule the dredger weekly to continuously discover new recipes. The sitemap cache and duplicate precheck ensure it only processes new content each run.",
+  },
   {
     id: "data-maintenance",
     title: "Data Maintenance Pipeline",

@@ -26,6 +26,7 @@ ALL_TASK_IDS = [
     "data-maintenance",
     "health-check",
     "ingredient-parse",
+    "recipe-dredger",
     "reimport-recipes",
     "slug-repair",
     "tag-categorize",
