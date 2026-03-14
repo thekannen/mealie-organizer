@@ -240,7 +240,7 @@ def parser_run_config() -> ParserRunConfig:
             env_or_config("REQUEST_BACKOFF_SECONDS", "parser.request_backoff_seconds", 0.4, float),
             "parser.request_backoff_seconds",
         ),
-        max_recipes=_int_or_none(env_or_config("MAX_RECIPES", "parser.max_recipes_per_run", None)),
+        max_recipes=None,  # only set via CLI --max or UI; no config fallback
         after_slug=_str_or_none(env_or_config("AFTER_SLUG", "parser.after_slug", None)),
         dry_run=bool(env_or_config("DRY_RUN", "runtime.dry_run", False, to_bool)),
         output_dir=Path(str(env_or_config("OUTPUT_DIR", "parser.output_dir", "reports"))),

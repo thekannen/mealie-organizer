@@ -39,7 +39,6 @@
   },
   "parser": {
     "confidence_threshold": 0.8,
-    "max_recipes_per_run": null,
     "strategies": [
       "nlp",
       "brute",
