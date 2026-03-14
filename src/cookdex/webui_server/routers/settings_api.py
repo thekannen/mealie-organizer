@@ -8,7 +8,7 @@ import socket
 import subprocess
 import tempfile
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -67,7 +67,8 @@ def _validate_service_url(url: str, *, allow_private: bool = False) -> str:
         if not allow_private and (ip.is_private or ip.is_loopback or ip.is_reserved):
             raise ValueError("Requests to private/internal addresses are not allowed.")
 
-    return url
+    # Reconstruct URL from parsed components to break taint propagation
+    return urlunparse(parsed)
 
 
 def _safe_request_error(exc: requests.RequestException) -> str:
