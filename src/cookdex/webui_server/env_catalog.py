@@ -120,7 +120,12 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         group="Dredger",
         default="en",
         secret=False,
-        description="Two-letter ISO language code. Recipes in other languages are rejected during dredging.",
+        description="Recipes in other languages are rejected during dredging.",
+        choices=(
+            "en", "es", "fr", "de", "it", "pt", "nl", "pl", "sv", "da",
+            "no", "fi", "ru", "uk", "ja", "ko", "zh", "th", "vi", "id",
+            "tr", "ar", "he", "hi", "el", "cs", "ro", "hu", "hr", "bg",
+        ),
     ),
     EnvVarSpec(
         key="DREDGER_CRAWL_DELAY",

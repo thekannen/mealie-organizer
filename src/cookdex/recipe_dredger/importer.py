@@ -112,7 +112,7 @@ class ImportManager:
 
             self._known_source_urls = source_urls
             self._source_index_loaded = True
-            logger.info(f"Duplicate precheck index loaded: {len(source_urls)} entries")
+            logger.debug(f"Duplicate precheck index loaded: {len(source_urls)} entries")
         except Exception as exc:
             logger.warning(f"Duplicate precheck unavailable: {exc}")
             self._source_index_failed = True
@@ -126,7 +126,7 @@ class ImportManager:
                 return False
             canonical = canonicalize_url(url)
             if canonical and canonical in self._known_source_urls:
-                logger.info(f"Duplicate source URL, skipping: {url}")
+                logger.debug(f"Duplicate source URL, skipping: {url}")
                 return True
         return False
 
@@ -136,7 +136,7 @@ class ImportManager:
         Returns (success, error_message, is_transient_error).
         """
         if self.dry_run:
-            logger.info(f"[DRY RUN] Would import: {url}")
+            logger.debug(f"[DRY RUN] Would import: {url}")
             return True, None, False
 
         try:
@@ -165,7 +165,7 @@ class ImportManager:
                     if canonical:
                         with self._source_lock:
                             self._known_source_urls.add(canonical)
-                    logger.info(f"Imported: {url}")
+                    logger.debug(f"Imported: {url}")
                     return True, None, False
 
                 if response.status_code == 409:
@@ -175,7 +175,7 @@ class ImportManager:
                     if canonical:
                         with self._source_lock:
                             self._known_source_urls.add(canonical)
-                    logger.info(f"Duplicate (already in Mealie): {url}")
+                    logger.debug(f"Duplicate (already in Mealie): {url}")
                     return True, None, False
 
                 if response.status_code in [404, 405]:
