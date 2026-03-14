@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..taxonomy_store import COLLECTION_FILES
+
 if TYPE_CHECKING:
     from .state import StateStore
 
@@ -17,13 +19,9 @@ class ManagedConfigFile:
 
 # Taxonomy collections — stored in state.db, not JSON files.
 # The relative_path is retained for backward compatibility in API responses.
-MANAGED_CONFIG_FILES: tuple[ManagedConfigFile, ...] = (
-    ManagedConfigFile("categories", "configs/taxonomy/categories.json", "array"),
-    ManagedConfigFile("tags", "configs/taxonomy/tags.json", "array"),
-    ManagedConfigFile("cookbooks", "configs/taxonomy/cookbooks.json", "array"),
-    ManagedConfigFile("labels", "configs/taxonomy/labels.json", "array"),
-    ManagedConfigFile("tools", "configs/taxonomy/tools.json", "array"),
-    ManagedConfigFile("units_aliases", "configs/taxonomy/units_aliases.json", "array"),
+MANAGED_CONFIG_FILES: tuple[ManagedConfigFile, ...] = tuple(
+    ManagedConfigFile(name, f"configs/taxonomy/{filename}", "array")
+    for name, filename in COLLECTION_FILES.items()
 )
 
 

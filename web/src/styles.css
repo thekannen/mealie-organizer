@@ -656,11 +656,6 @@ textarea {
   align-items: start;
 }
 
-.recipe-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(350px, 430px);
-  align-items: start;
-}
-
 .users-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   align-items: start;
@@ -1026,12 +1021,6 @@ textarea {
   letter-spacing: 0.06em;
   color: var(--muted);
   margin-bottom: 0.3rem;
-}
-
-.schedule-toggle {
-  border-top: 1px solid var(--line);
-  padding-top: 0.6rem;
-  margin-top: 0.2rem;
 }
 
 .schedule-inline {
@@ -1824,25 +1813,6 @@ tbody tr:hover {
   border-bottom: none;
 }
 
-.log-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.log-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 0.28rem 0.75rem;
-  border-bottom: 1px solid #2e2622;
-  gap: 0.75rem;
-}
-
-.log-summary-row:nth-child(odd)  { background: #232120; }
-.log-summary-row:nth-child(even) { background: #201e1c; }
-.log-summary-row:last-child,
-.log-summary-row:nth-last-child(2):nth-child(odd) { border-bottom: none; }
-
 .log-summary-key {
   font-size: 0.71rem;
   color: #8a7d73;
@@ -2114,8 +2084,6 @@ tbody tr:hover {
 }
 
 .log-progress-item-done .ui-icon { color: #7ecb95; }
-.log-progress-item-live .ui-icon  { color: var(--accent); animation: log-spin 1s linear infinite; }
-.log-progress-item-pending .ui-icon { color: #8a7d73; }
 
 .log-progress-slug {
   flex: 1;
@@ -2182,26 +2150,12 @@ details[open] > summary .log-progress-chevron {
 
 .ai-task-list,
 .schedule-list ul,
-.kv-list,
-.config-shortcuts,
-.policy-list {
+.kv-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 0.42rem;
-}
-
-.config-shortcuts li,
-.policy-list li {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-soft);
-  padding: 0.48rem 0.56rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.55rem;
 }
 
 .taxonomy-setup-files {
@@ -2591,99 +2545,6 @@ details[open] > summary .log-progress-chevron {
   background: linear-gradient(180deg, transparent 0%, var(--surface) 25%);
 }
 
-.cookbooks-split {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 0.65rem;
-}
-
-.cookbook-list-panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-soft);
-  padding: 0.45rem;
-  display: grid;
-  gap: 0.45rem;
-  align-content: start;
-}
-
-.cookbook-workspace-head {
-  display: grid;
-  gap: 0.22rem;
-}
-
-.cookbook-workspace-head h4 {
-  margin: 0;
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.cookbook-list-head {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.cookbook-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.3rem;
-  max-height: 520px;
-  overflow: auto;
-}
-
-.cookbook-list-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.32rem;
-  align-items: stretch;
-}
-
-.cookbook-list-row.active {
-  border-radius: 8px;
-}
-
-.cookbook-list-item {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 0.42rem 0.5rem;
-  display: grid;
-  gap: 0.22rem;
-  text-align: left;
-}
-
-.cookbook-list-item.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-.cookbook-list-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  font-weight: 700;
-}
-
-.cookbook-list-subtitle {
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.2;
-}
-
-.cookbook-list-meta {
-  font-variant-numeric: tabular-nums;
-}
-
-.cookbook-list-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.28rem;
-}
-
 .cookbook-drag-handle {
   width: 1.8rem;
   min-width: 1.8rem;
@@ -2706,58 +2567,6 @@ details[open] > summary .log-progress-chevron {
   width: 0.95rem;
   height: 0.95rem;
   stroke-width: 2.1;
-}
-
-.cookbook-editor-panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.55rem;
-  display: grid;
-  gap: 0.6rem;
-}
-
-.cookbook-editor-head {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.cookbook-editor-head h4 {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-}
-
-.cookbook-editor-grid {
-  display: grid;
-  gap: 0.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-}
-
-.cookbook-public-toggle {
-  align-self: end;
-}
-
-.cookbook-rules {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.cookbook-rules-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.cookbook-rule-row {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.4rem;
-  background: var(--surface-soft);
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1.8fr auto;
-  gap: 0.35rem;
-  align-items: center;
 }
 
 .validation-results {
@@ -2874,24 +2683,7 @@ details[open] > summary .log-progress-chevron {
   text-align: left;
 }
 
-.policy-list .field-inline {
-  margin-left: auto;
-  justify-content: flex-end;
-  min-height: auto;
-}
 
-.tiny-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.34rem;
-  white-space: nowrap;
-}
-
-.tiny-toggle span {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.76rem;
-}
 
 .kv-list li {
   display: flex;
@@ -3052,10 +2844,6 @@ button.danger {
   padding-right: 0.25rem;
 }
 
-.nowrap {
-  white-space: nowrap;
-}
-
 .overview-grid {
   grid-template-columns: 2fr 1fr;
 }
@@ -3143,30 +2931,6 @@ button.danger {
   justify-content: center;
   font-size: 0.85rem;
   font-weight: 800;
-}
-
-.tone-accent {
-  --tone-color: var(--accent);
-}
-
-.tone-olive {
-  --tone-color: #5d7f57;
-}
-
-.tone-terracotta {
-  --tone-color: #b0562f;
-}
-
-.tone-gold {
-  --tone-color: #f5c842;
-}
-
-.tone-silver {
-  --tone-color: #aab0bb;
-}
-
-.tone-bronze {
-  --tone-color: #cd7f32;
 }
 
 .status-row {
@@ -3364,26 +3128,6 @@ button.danger {
 .settings-groups {
   display: grid;
   gap: 1.1rem;
-}
-
-.settings-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.48rem;
-}
-
-.settings-overview-stat {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.46rem 0.52rem;
-  background: var(--surface-soft);
-  display: grid;
-  gap: 0.16rem;
-}
-
-.settings-overview-stat strong {
-  font-size: 1rem;
-  line-height: 1.1;
 }
 
 .settings-jump-nav {
@@ -3957,69 +3701,6 @@ button.danger {
   white-space: nowrap;
 }
 
-.markdown-preview {
-  display: grid;
-  gap: 0.48rem;
-  color: var(--text);
-  font-size: 0.82rem;
-  line-height: 1.48;
-}
-
-.markdown-preview h4,
-.markdown-preview h5 {
-  margin: 0;
-  font-size: 0.88rem;
-}
-
-.markdown-preview p,
-.markdown-preview ul,
-.markdown-preview ol {
-  margin: 0;
-  padding: 0;
-  color: var(--text);
-  white-space: normal;
-  word-break: normal;
-}
-
-.markdown-preview ul,
-.markdown-preview ol {
-  padding-left: 1.05rem;
-}
-
-.markdown-preview .md-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-soft);
-}
-
-.markdown-preview .md-table {
-  width: 100%;
-  min-width: 460px;
-  border-collapse: collapse;
-  font-size: 0.77rem;
-}
-
-.markdown-preview .md-table th,
-.markdown-preview .md-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--line);
-}
-
-.markdown-preview .md-table th {
-  font-size: 0.72rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: color-mix(in oklab, var(--surface-soft) 82%, #000 18%);
-}
-
-.markdown-preview .md-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
 .doc-code {
   margin: 0;
   padding: 0.5rem;
@@ -4225,8 +3906,7 @@ button.danger {
   gap: 0.72rem;
 }
 
-.split-actions,
-.about-actions {
+.split-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4297,7 +3977,6 @@ button.danger {
   .overview-grid,
   .tasks-grid,
   .settings-grid,
-  .recipe-grid,
   .users-grid,
   .help-grid,
   .about-grid,
@@ -4357,7 +4036,6 @@ button.danger {
   .structured-item-grid.unit-fields,
   .metric-grid,
   .overview-stats,
-  .settings-overview,
   .settings-row,
   .password-row,
   .user-row-body .password-row {
@@ -4381,8 +4059,7 @@ button.danger {
   }
 
   .card-head.split,
-  .split-actions,
-  .about-actions {
+  .split-actions {
     flex-direction: column;
     align-items: stretch;
   }

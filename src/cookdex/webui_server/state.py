@@ -8,6 +8,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Iterator
 
+from ..taxonomy_store import COLLECTION_FILES
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -641,9 +643,7 @@ class StateStore:
 
     # ── Taxonomy ──────────────────────────────────────────────────────
 
-    TAXONOMY_COLLECTIONS = frozenset({
-        "categories", "tags", "cookbooks", "labels", "tools", "units_aliases",
-    })
+    TAXONOMY_COLLECTIONS = frozenset(COLLECTION_FILES)
 
     def taxonomy_get(self, collection: str) -> list[dict[str, Any]]:
         """Return all entries for a taxonomy collection, ordered by position."""

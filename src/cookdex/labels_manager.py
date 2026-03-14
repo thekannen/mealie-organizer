@@ -55,10 +55,6 @@ def load_label_entries(file_path: Path) -> list[LabelEntry]:
     return deduped
 
 
-def load_label_names(file_path: Path) -> list[str]:
-    """Backward-compatible wrapper that returns just names."""
-    return [entry.name for entry in load_label_entries(file_path)]
-
 
 def _entries_from_store() -> list[LabelEntry]:
     """Load label entries from the taxonomy store."""
