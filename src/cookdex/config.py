@@ -1,10 +1,9 @@
-import json
 import os
 from pathlib import Path
 
 
 def _looks_like_repo_root(path: Path) -> bool:
-    return (path / "configs" / "config.json").exists() or (path / "configs" / "taxonomy").exists()
+    return (path / "configs" / "taxonomy").exists()
 
 
 def _discover_repo_root() -> Path:
@@ -23,7 +22,6 @@ def _discover_repo_root() -> Path:
 
 REPO_ROOT = _discover_repo_root()
 ENV_FILE = REPO_ROOT / ".env"
-CONFIG_FILE = REPO_ROOT / "configs" / "config.json"
 MEALIE_URL_PLACEHOLDER = "http://your.server.ip.address:9000/api"
 
 
@@ -52,23 +50,6 @@ def load_env_file(path):
 
 
 load_env_file(ENV_FILE)
-
-
-def _load_config():
-    """Deprecated — config.json is no longer used for runtime settings."""
-    return {}
-
-
-_CONFIG = _load_config()
-
-
-def config_value(path, default=None):
-    current = _CONFIG
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return default
-        current = current[part]
-    return current
 
 
 def to_bool(value):
