@@ -73,6 +73,22 @@ def create_app() -> FastAPI:
     state = StateStore(settings.state_db_path)
     registry = TaskRegistry()
     state.initialize(registry.task_ids)
+
+    # Seed taxonomy tables from JSON files on first boot.
+    taxonomy_dir = settings.config_root / "taxonomy"
+    _TAXONOMY_FILES = {
+        "categories": "categories.json",
+        "tags": "tags.json",
+        "cookbooks": "cookbooks.json",
+        "labels": "labels.json",
+        "tools": "tools.json",
+        "units_aliases": "units_aliases.json",
+    }
+    for collection, filename in _TAXONOMY_FILES.items():
+        seeded = state.taxonomy_seed_from_json(collection, taxonomy_dir / filename)
+        if seeded:
+            print(f"[webui] seeded taxonomy '{collection}' with {seeded} entries from {filename}", flush=True)
+
     cipher = SecretCipher(settings.fernet_key)
 
     if not state.has_users():
@@ -82,7 +98,7 @@ def create_app() -> FastAPI:
         else:
             print("[webui] no users found. First-time setup is required.", flush=True)
 
-    config_files = ConfigFilesManager(settings.config_root)
+    config_files = ConfigFilesManager(settings.config_root, state=state)
     runner = RunQueueManager(
         state=state,
         registry=registry,

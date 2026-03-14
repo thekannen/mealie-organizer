@@ -15,6 +15,7 @@ from .config import (
     resolve_repo_path,
     to_bool,
 )
+from .taxonomy_store import read_collection
 
 
 @dataclass
@@ -53,6 +54,19 @@ class UnitsCleanupManager:
         text = " ".join(text.strip().casefold().split())
         return text
 
+    def _load_raw_entries(self) -> list[dict[str, Any]]:
+        """Load raw unit entries from the taxonomy store or a JSON file."""
+        if self.alias_file and str(self.alias_file) != ".":
+            if not self.alias_file.exists():
+                raise FileNotFoundError(f"Units alias file not found: {self.alias_file}")
+            raw = json.loads(self.alias_file.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                return [{"canonical": canonical, "aliases": aliases} for canonical, aliases in raw.items()]
+            if isinstance(raw, list):
+                return [item for item in raw if isinstance(item, dict)]
+            raise ValueError("Units alias file must be an object or array of objects.")
+        return read_collection("units_aliases")
+
     def load_aliases(self) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
         """Load unit entries and return (canonical_display, alias_to_canonical, unit_metadata).
 
@@ -60,21 +74,10 @@ class UnitsCleanupManager:
         format (``{name, pluralName, abbreviation, ...}``).  The ``name`` field is used
         as the canonical name when present; falls back to ``canonical``.
         """
-        if not self.alias_file.exists():
-            raise FileNotFoundError(f"Units alias file not found: {self.alias_file}")
-        raw = json.loads(self.alias_file.read_text(encoding="utf-8"))
+        entries = self._load_raw_entries()
         canonical_display: dict[str, str] = {}
         alias_to_canonical: dict[str, str] = {}
         unit_metadata: dict[str, dict[str, Any]] = {}
-
-        entries: list[dict[str, Any]] = []
-        if isinstance(raw, dict):
-            for canonical, aliases in raw.items():
-                entries.append({"canonical": canonical, "aliases": aliases})
-        elif isinstance(raw, list):
-            entries = [item for item in raw if isinstance(item, dict)]
-        else:
-            raise ValueError("Units alias file must be an object or array of objects.")
 
         for entry in entries:
             # Support both "name" (new) and "canonical" (legacy) as the primary key
@@ -378,7 +381,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cleanup.add_argument(
         "--alias-file",
-        default=str(env_or_config("UNITS_ALIAS_FILE", "units.alias_file", "configs/taxonomy/units_aliases.json")),
+        default="",
     )
     cleanup.add_argument(
         "--report-file",
@@ -412,7 +415,7 @@ def main() -> None:
         dry_run=dry_run,
         apply=bool(args.apply),
         max_actions=require_int(args.max_actions, "--max-actions"),
-        alias_file=resolve_repo_path(args.alias_file),
+        alias_file=resolve_repo_path(args.alias_file) if args.alias_file else "",
         report_file=resolve_repo_path(args.report_file),
         checkpoint_dir=resolve_repo_path(args.checkpoint_dir),
     )

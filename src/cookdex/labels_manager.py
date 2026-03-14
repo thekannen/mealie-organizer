@@ -9,6 +9,7 @@ from typing import Any
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .taxonomy_store import read_collection
 
 
 def normalize_name(name: str) -> str:
@@ -59,6 +60,28 @@ def load_label_names(file_path: Path) -> list[str]:
     return [entry.name for entry in load_label_entries(file_path)]
 
 
+def _entries_from_store() -> list[LabelEntry]:
+    """Load label entries from the taxonomy store."""
+    raw = read_collection("labels")
+    entries: list[LabelEntry] = []
+    for item in raw:
+        name = str(item.get("name") or "").strip()
+        color = str(item.get("color") or "#959595").strip()
+        if name:
+            entries.append(LabelEntry(name=name, color=color))
+    if not entries:
+        raise ValueError("Taxonomy store 'labels' collection contains no valid entries.")
+    deduped: list[LabelEntry] = []
+    seen: set[str] = set()
+    for entry in entries:
+        norm = normalize_name(entry.name)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        deduped.append(entry)
+    return deduped
+
+
 class LabelsSyncManager:
     def __init__(
         self,
@@ -76,7 +99,10 @@ class LabelsSyncManager:
         self.file_path = Path(file_path)
 
     def run(self) -> dict[str, Any]:
-        desired = load_label_entries(self.file_path)
+        if self.file_path and str(self.file_path) != ".":
+            desired = load_label_entries(self.file_path)
+        else:
+            desired = _entries_from_store()
         desired_names = [entry.name for entry in desired]
         existing = self.client.list_labels(per_page=1000)
         existing_by_norm = {
@@ -175,7 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--replace", action="store_true", help="Delete labels not present in source file.")
     parser.add_argument(
         "--file",
-        default=str(env_or_config("LABELS_FILE", "labels.file", "configs/taxonomy/labels.json")),
+        default="",
         help="Path to labels JSON file.",
     )
     return parser
@@ -197,7 +223,7 @@ def main() -> None:
         dry_run=dry_run,
         apply=bool(args.apply),
         replace=bool(args.replace),
-        file_path=resolve_repo_path(args.file),
+        file_path=resolve_repo_path(args.file) if args.file else "",
     )
     manager.run()
 

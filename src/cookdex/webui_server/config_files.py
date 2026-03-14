@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .state import StateStore
 
 
 @dataclass(frozen=True)
@@ -14,8 +15,9 @@ class ManagedConfigFile:
     expected_type: str
 
 
+# Taxonomy collections — stored in state.db, not JSON files.
+# The relative_path is retained for backward compatibility in API responses.
 MANAGED_CONFIG_FILES: tuple[ManagedConfigFile, ...] = (
-    ManagedConfigFile("config", "configs/config.json", "object"),
     ManagedConfigFile("categories", "configs/taxonomy/categories.json", "array"),
     ManagedConfigFile("tags", "configs/taxonomy/tags.json", "array"),
     ManagedConfigFile("cookbooks", "configs/taxonomy/cookbooks.json", "array"),
@@ -25,68 +27,41 @@ MANAGED_CONFIG_FILES: tuple[ManagedConfigFile, ...] = (
 )
 
 
-def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-
 class ConfigFilesManager:
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, state: StateStore | None = None):
         self.repo_root = repo_root
+        self._state = state
         self._index: dict[str, ManagedConfigFile] = {item.name: item for item in MANAGED_CONFIG_FILES}
 
+    def _require_state(self) -> StateStore:
+        if self._state is None:
+            raise RuntimeError("StateStore not configured")
+        return self._state
+
     def list_files(self) -> list[dict[str, Any]]:
-        payload: list[dict[str, Any]] = []
-        for item in MANAGED_CONFIG_FILES:
-            path = (self.repo_root / item.relative_path).resolve()
-            payload.append(
-                {
-                    "name": item.name,
-                    "path": item.relative_path,
-                    "exists": path.exists(),
-                    "expected_type": item.expected_type,
-                }
-            )
-        return payload
+        state = self._require_state()
+        return [
+            {
+                "name": item.name,
+                "path": item.relative_path,
+                "exists": not state.taxonomy_is_empty(item.name),
+                "expected_type": item.expected_type,
+            }
+            for item in MANAGED_CONFIG_FILES
+        ]
 
     def read_file(self, name: str) -> dict[str, Any]:
         item = self._resolve(name)
-        path = (self.repo_root / item.relative_path).resolve()
-        if not path.exists():
-            raise FileNotFoundError(item.relative_path)
-        content = json.loads(path.read_text(encoding="utf-8"))
-        self._validate_type(item, content)
+        state = self._require_state()
+        content = state.taxonomy_get(item.name)
         return {"name": item.name, "path": item.relative_path, "content": content}
 
     def write_file(self, name: str, content: Any) -> dict[str, Any]:
         item = self._resolve(name)
-        self._validate_type(item, content)
-
-        path = (self.repo_root / item.relative_path).resolve()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        history_dir = (self.repo_root / "configs" / ".history").resolve()
-        history_dir.mkdir(parents=True, exist_ok=True)
-
-        if path.exists():
-            backup_name = f"{item.name}.{_utc_stamp()}.json"
-            backup_path = history_dir / backup_name
-            backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
-
-            # Rotate old backups — keep the most recent 20 per config name.
-            prefix = f"{item.name}."
-            backups = sorted(
-                (p for p in history_dir.iterdir() if p.name.startswith(prefix) and p.name.endswith(".json")),
-                key=lambda p: p.name,
-            )
-            for old in backups[:-20]:
-                try:
-                    old.unlink()
-                except OSError:
-                    pass
-
-        temp_path = path.with_suffix(path.suffix + ".tmp")
-        serialized = json.dumps(content, indent=2, ensure_ascii=True) + "\n"
-        temp_path.write_text(serialized, encoding="utf-8")
-        temp_path.replace(path)
+        if not isinstance(content, list):
+            raise ValueError(f"{item.name} requires a JSON array payload.")
+        state = self._require_state()
+        state.taxonomy_set(item.name, content)
         return {"name": item.name, "path": item.relative_path, "content": content}
 
     def _resolve(self, name: str) -> ManagedConfigFile:
@@ -94,10 +69,3 @@ class ConfigFilesManager:
         if item is None:
             raise KeyError(name)
         return item
-
-    @staticmethod
-    def _validate_type(item: ManagedConfigFile, content: Any) -> None:
-        if item.expected_type == "object" and not isinstance(content, dict):
-            raise ValueError(f"{item.name} requires a JSON object payload.")
-        if item.expected_type == "array" and not isinstance(content, list):
-            raise ValueError(f"{item.name} requires a JSON array payload.")

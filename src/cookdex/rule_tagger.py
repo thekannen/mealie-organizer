@@ -58,6 +58,7 @@ import requests as _requests
 from .config import REPO_ROOT, resolve_mealie_api_key, resolve_mealie_url
 from .db_client import MealieDBClient, is_db_enabled
 from .tag_rules_generation import build_default_tag_rules
+from .taxonomy_store import read_collection
 
 DEFAULT_RULES_FILE = str(REPO_ROOT / "configs" / "taxonomy" / "tag_rules.json")
 _MISSING_TARGET_CHOICES = {"skip", "create"}
@@ -129,27 +130,14 @@ class RecipeRuleTagger:
         use_db: bool = False,
         missing_targets: str = "skip",
     ) -> "RecipeRuleTagger":
-        """Create a tagger with rules derived at runtime from taxonomy files."""
-        tags_path = REPO_ROOT / "configs/taxonomy/tags.json"
-        cats_path = REPO_ROOT / "configs/taxonomy/categories.json"
-        tools_path = REPO_ROOT / "configs/taxonomy/tools.json"
-
-        def _read_json_list(path: Path) -> list[dict[str, Any]]:
-            if not path.exists():
-                return []
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                return data if isinstance(data, list) else []
-            except (json.JSONDecodeError, OSError):
-                return []
-
-        tags = _read_json_list(tags_path)
-        categories = _read_json_list(cats_path)
-        tools = _read_json_list(tools_path)
+        """Create a tagger with rules derived at runtime from taxonomy data."""
+        tags = read_collection("tags")
+        categories = read_collection("categories")
+        tools = read_collection("tools")
 
         if not tags and not categories and not tools:
             print(
-                "[warn] No taxonomy files found — rule tagger will have zero rules.\n"
+                "[warn] No taxonomy data found — rule tagger will have zero rules.\n"
                 "  Run taxonomy-refresh first, or provide a --config file.",
                 flush=True,
             )

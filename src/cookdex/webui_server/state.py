@@ -140,6 +140,24 @@ class StateStore:
                     );
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS taxonomy (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      collection TEXT NOT NULL,
+                      name TEXT NOT NULL,
+                      data_json TEXT NOT NULL DEFAULT '{}',
+                      position INTEGER NOT NULL DEFAULT 0,
+                      updated_at TEXT NOT NULL
+                    );
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_taxonomy_collection_name
+                    ON taxonomy(collection, name);
+                    """
+                )
                 now = utc_now_iso()
                 for task_id in task_ids:
                     conn.execute(
@@ -620,3 +638,73 @@ class StateStore:
             "schedule_id": row["schedule_id"],
             "log_path": str(row["log_path"]),
         }
+
+    # ── Taxonomy ──────────────────────────────────────────────────────
+
+    TAXONOMY_COLLECTIONS = frozenset({
+        "categories", "tags", "cookbooks", "labels", "tools", "units_aliases",
+    })
+
+    def taxonomy_get(self, collection: str) -> list[dict[str, Any]]:
+        """Return all entries for a taxonomy collection, ordered by position."""
+        with self._connect(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT name, data_json, position FROM taxonomy WHERE collection = ? ORDER BY position, id;",
+                (collection,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            entry = json.loads(row["data_json"])
+            entry["name"] = row["name"]
+            result.append(entry)
+        return result
+
+    def taxonomy_set(self, collection: str, entries: list[dict[str, Any]]) -> None:
+        """Replace all entries for a taxonomy collection (full overwrite)."""
+        now = utc_now_iso()
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM taxonomy WHERE collection = ?;", (collection,))
+                for pos, entry in enumerate(entries):
+                    name = entry.get("name", "")
+                    data = {k: v for k, v in entry.items() if k != "name"}
+                    conn.execute(
+                        """
+                        INSERT INTO taxonomy(collection, name, data_json, position, updated_at)
+                        VALUES(?, ?, ?, ?, ?);
+                        """,
+                        (collection, name, json.dumps(data, ensure_ascii=False), pos, now),
+                    )
+
+    def taxonomy_is_empty(self, collection: str) -> bool:
+        """Check if a taxonomy collection has no entries."""
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM taxonomy WHERE collection = ? LIMIT 1;", (collection,),
+            ).fetchone()
+            return row is None
+
+    def taxonomy_seed_from_json(self, collection: str, json_path: Path) -> int:
+        """Seed a taxonomy collection from a JSON file if the collection is empty.
+        Returns the number of entries seeded (0 if already populated or file missing).
+        """
+        if not self.taxonomy_is_empty(collection):
+            return 0
+        if not json_path.exists():
+            return 0
+        try:
+            entries = json.loads(json_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return 0
+        if not isinstance(entries, list):
+            return 0
+        # Normalize: strings become {"name": str}
+        normalized: list[dict[str, Any]] = []
+        for item in entries:
+            if isinstance(item, str):
+                normalized.append({"name": item})
+            elif isinstance(item, dict) and item.get("name"):
+                normalized.append(item)
+        if normalized:
+            self.taxonomy_set(collection, normalized)
+        return len(normalized)
