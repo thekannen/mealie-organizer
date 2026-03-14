@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import shlex
+import socket
 import subprocess
 import tempfile
 from typing import Any
@@ -33,16 +35,38 @@ from ..schemas import (
 router = APIRouter(tags=["settings"])
 
 
-def _validate_service_url(url: str) -> str:
-    """Validate that a URL uses http/https and is not a cloud metadata endpoint."""
+def _validate_service_url(url: str, *, allow_private: bool = False) -> str:
+    """Validate that a URL is safe for server-side requests (SSRF protection).
+
+    Checks scheme, resolves DNS, and blocks private/link-local/loopback IPs
+    unless *allow_private* is True (e.g. for user-configured Mealie/Ollama on LAN).
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("URL must use http or https.")
     host = (parsed.hostname or "").lower()
-    # Block cloud metadata endpoints (AWS, GCP, Azure)
-    _blocked = {"169.254.169.254", "metadata.google.internal"}
-    if host in _blocked:
+    if not host:
+        raise ValueError("URL must include a hostname.")
+
+    # Block well-known cloud metadata hostnames
+    _blocked_hosts = {"metadata.google.internal"}
+    if host in _blocked_hosts:
         raise ValueError("Requests to cloud metadata endpoints are not allowed.")
+
+    # Resolve hostname and check IP
+    try:
+        addr_info = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise ValueError(f"Could not resolve hostname: {host}")
+
+    for family, _, _, _, sockaddr in addr_info:
+        ip = ipaddress.ip_address(sockaddr[0])
+        # Always block link-local (169.254.x.x / fe80::) — covers AWS/Azure metadata
+        if ip.is_link_local:
+            raise ValueError("Requests to link-local addresses are not allowed.")
+        if not allow_private and (ip.is_private or ip.is_loopback or ip.is_reserved):
+            raise ValueError("Requests to private/internal addresses are not allowed.")
+
     return url
 
 
@@ -55,7 +79,7 @@ def _safe_request_error(exc: requests.RequestException) -> str:
 
 
 def _test_mealie_connection(url: str, api_key: str) -> tuple[bool, str]:
-    base_url = _validate_service_url(url.rstrip("/"))
+    base_url = _validate_service_url(url.rstrip("/"), allow_private=True)
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
     try:
         response = requests.get(f"{base_url}/users/self", headers=headers, timeout=12)
@@ -109,7 +133,7 @@ def _test_anthropic_connection(api_key: str, model: str) -> tuple[bool, str]:
 
 
 def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
-    base_url = _validate_service_url(url.strip().rstrip("/"))
+    base_url = _validate_service_url(url.strip().rstrip("/"), allow_private=True)
     if not base_url:
         return False, "Ollama URL is required."
 
@@ -254,7 +278,7 @@ def _list_ollama_models(url: str) -> list[str]:
     if not base_url:
         return []
     try:
-        _validate_service_url(base_url)
+        _validate_service_url(base_url, allow_private=True)
     except ValueError:
         return []
     if base_url.endswith("/api"):

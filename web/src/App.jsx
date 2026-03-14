@@ -4183,9 +4183,6 @@ export default function App() {
                           />
                           <h4 className="dredger-region-label">{region} <span className="chip-count">{sites.length}</span></h4>
                         </label>
-                        <button className="ghost compact danger" onClick={() => deleteRegionDredgerSites(sites)} title={`Remove all ${region} sites`}>
-                          <Icon name="trash" />
-                        </button>
                       </div>
                       {sites.map((site) => {
                         const vr = dredgerValidationResults[site.id];
