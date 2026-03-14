@@ -16,7 +16,7 @@ from .config import REPO_ROOT
 _DEFAULT_DB_PATH = REPO_ROOT / "cache" / "webui" / "state.db"
 _TAXONOMY_DIR = REPO_ROOT / "configs" / "taxonomy"
 
-_COLLECTIONS = {
+COLLECTION_FILES: dict[str, str] = {
     "categories": "categories.json",
     "tags": "tags.json",
     "cookbooks": "cookbooks.json",
@@ -84,7 +84,7 @@ def read_collection(collection: str, *, db_path: Path | None = None) -> list[dic
         return result
 
     # Empty collection — try seeding from legacy JSON file.
-    json_file = _TAXONOMY_DIR / _COLLECTIONS.get(collection, "")
+    json_file = _TAXONOMY_DIR / COLLECTION_FILES.get(collection, "")
     if not json_file.exists():
         return []
     try:

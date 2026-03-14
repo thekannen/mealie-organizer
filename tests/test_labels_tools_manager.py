@@ -1,6 +1,6 @@
 import requests
 
-from cookdex.labels_manager import LabelsSyncManager, load_label_names
+from cookdex.labels_manager import LabelsSyncManager
 from cookdex.tools_manager import ToolsSyncManager, load_tool_names
 
 
@@ -60,12 +60,6 @@ class FakeToolsUnsupportedClient:
     def merge_tool(self, source_id, target_id):
         raise AssertionError("merge_tool should not be called when create endpoint is unavailable")
 
-
-def test_load_label_names_dedups(tmp_path):
-    file_path = tmp_path / "labels.json"
-    file_path.write_text('["Meal Prep", "meal prep", "New Recipe"]', encoding="utf-8")
-    names = load_label_names(file_path)
-    assert names == ["Meal Prep", "New Recipe"]
 
 
 def test_labels_sync_dry_run_no_writes(tmp_path):

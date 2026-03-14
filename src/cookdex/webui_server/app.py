@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
+from ..taxonomy_store import COLLECTION_FILES
 from .config_files import ConfigFilesManager
 from .deps import Services, build_runtime_env, require_services
 from .routers import auth, config, meta, runs, schedules, settings_api, users
@@ -76,15 +77,7 @@ def create_app() -> FastAPI:
 
     # Seed taxonomy tables from JSON files on first boot.
     taxonomy_dir = settings.config_root / "taxonomy"
-    _TAXONOMY_FILES = {
-        "categories": "categories.json",
-        "tags": "tags.json",
-        "cookbooks": "cookbooks.json",
-        "labels": "labels.json",
-        "tools": "tools.json",
-        "units_aliases": "units_aliases.json",
-    }
-    for collection, filename in _TAXONOMY_FILES.items():
+    for collection, filename in COLLECTION_FILES.items():
         seeded = state.taxonomy_seed_from_json(collection, taxonomy_dir / filename)
         if seeded:
             print(f"[webui] seeded taxonomy '{collection}' with {seeded} entries from {filename}", flush=True)
