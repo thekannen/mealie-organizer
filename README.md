@@ -21,6 +21,7 @@ No `.env` file is required — configuration is managed through the web UI.
 |---|---|
 | Task runner | Queue one-off tasks with dry-run safety defaults |
 | Scheduler | Interval and cron schedules managed in the UI |
+| Recipe dredger | Discover and import recipes from curated sites via sitemap crawling |
 | Taxonomy editing | Categories, tags, cookbooks, labels, tools, and units |
 | Ingredient parsing | Multi-parser pipeline with confidence thresholds |
 | Data maintenance | Staged cleanup pipeline across foods, units, and taxonomy |
@@ -33,6 +34,7 @@ No `.env` file is required — configuration is managed through the web UI.
 | Task ID | Purpose |
 |---|---|
 | `data-maintenance` | Run the full staged pipeline: dedup → junk filter → name normalize → ingredient parse → foods/units cleanup → labels/tools sync → taxonomy refresh → categorize → cookbook sync → yield normalize → quality audit → taxonomy audit |
+| `recipe-dredger` | Discover and import recipes from curated sites — crawls sitemaps, verifies JSON-LD recipe schema, filters by language, and imports to Mealie |
 
 **Actions**
 | Task ID | Purpose |
@@ -82,6 +84,9 @@ All endpoints are under `/cookdex/api/v1`. Authentication is cookie-based.
 **Settings**
 - `GET /settings` / `PUT /settings` — env vars and encrypted secrets
 - `POST /settings/test/mealie` / `POST /settings/test/openai` / `POST /settings/test/ollama`
+- `GET /settings/dredger-sites` / `POST /settings/dredger-sites` — list and add recipe sources
+- `PUT /settings/dredger-sites/{id}` / `DELETE /settings/dredger-sites/{id}` — update and remove
+- `POST /settings/dredger-sites/seed` / `POST /settings/dredger-sites/validate` — seed defaults and validate reachability
 
 **Users**
 - `GET /users` / `POST /users`
@@ -117,6 +122,14 @@ For headless or automated deployments:
 | `MO_WEBUI_MASTER_KEY` | Override the auto-generated encryption key |
 | `MEALIE_URL` | Pre-seed Mealie URL (can also be set in UI) |
 | `MEALIE_API_KEY` | Pre-seed Mealie API key (can also be set in UI) |
+
+The Recipe Dredger reads these from Settings:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DREDGER_TARGET_LANGUAGE` | `en` | ISO language code — recipes in other languages are rejected |
+| `DREDGER_CRAWL_DELAY` | `2.0` | Seconds between requests to the same domain |
+| `DREDGER_CACHE_EXPIRY_DAYS` | `7` | Days before cached sitemaps are re-crawled |
 
 After first login, all provider settings are managed from the Settings page.
 

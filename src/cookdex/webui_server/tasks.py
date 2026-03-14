@@ -538,6 +538,38 @@ def _build_yield_normalize(options: dict[str, Any]) -> TaskExecution:
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
 
+def _build_recipe_dredger(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(
+        options,
+        {"dry_run", "limit", "depth", "no_cache", "import_workers",
+         "precheck_duplicates", "language_filter", "max_retry_attempts"},
+    )
+    env, dangerous = _common_env(options)
+    cmd = _py_module("cookdex.recipe_dredger")
+    dry_run = _bool_option(options, "dry_run", True)
+    if dry_run:
+        cmd.append("--dry-run")
+    limit = _int_option(options, "limit", 50)
+    if limit is not None and limit != 50:
+        cmd.extend(["--limit", str(limit)])
+    depth = _int_option(options, "depth", 1000)
+    if depth is not None and depth != 1000:
+        cmd.extend(["--depth", str(depth)])
+    if _bool_option(options, "no_cache", False):
+        cmd.append("--no-cache")
+    workers = _int_option(options, "import_workers", 2)
+    if workers is not None and workers != 2:
+        cmd.extend(["--workers", str(min(workers, 4))])
+    if not _bool_option(options, "precheck_duplicates", True):
+        cmd.append("--no-precheck")
+    if not _bool_option(options, "language_filter", True):
+        cmd.append("--no-language-filter")
+    max_retries = _int_option(options, "max_retry_attempts", 3)
+    if max_retries is not None and max_retries != 3:
+        cmd.extend(["--max-retries", str(max_retries)])
+    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -681,6 +713,73 @@ class TaskRegistry:
                 ],
                 build=_build_data_maintenance,
                 badges=["ai"],
+            )
+        )
+        self._register(
+            TaskDefinition(
+                task_id="recipe-dredger",
+                title="Recipe Dredger",
+                group="Data Pipeline",
+                description="Discover and import recipes from curated sites. Crawls sitemaps, verifies JSON-LD recipe schema, filters by language, and imports to Mealie. Manage source sites in Settings.",
+                options=[
+                    OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview what would be imported without writing anything."),
+                    OptionSpec(
+                        "limit",
+                        "Recipes Per Site",
+                        "integer",
+                        default=50,
+                        help_text="Maximum number of recipes to import from each site.",
+                    ),
+                    OptionSpec(
+                        "depth",
+                        "Scan Depth",
+                        "integer",
+                        default=1000,
+                        help_text="Maximum URLs to scan per site sitemap.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "no_cache",
+                        "Force Fresh Crawl",
+                        "boolean",
+                        default=False,
+                        help_text="Ignore cached sitemaps and re-crawl everything.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "import_workers",
+                        "Import Workers",
+                        "integer",
+                        default=2,
+                        help_text="Concurrent import threads (1-4). More is faster but heavier on Mealie.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "precheck_duplicates",
+                        "Pre-check Duplicates",
+                        "boolean",
+                        default=True,
+                        help_text="Fetch existing Mealie recipes first to skip duplicates before importing.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "language_filter",
+                        "Language Filter",
+                        "boolean",
+                        default=True,
+                        help_text="Skip recipes that don't match the configured target language.",
+                        advanced=True,
+                    ),
+                    OptionSpec(
+                        "max_retry_attempts",
+                        "Max Retries",
+                        "integer",
+                        default=3,
+                        help_text="Retry transient failures up to this many times before permanently rejecting.",
+                        advanced=True,
+                    ),
+                ],
+                build=_build_recipe_dredger,
             )
         )
 

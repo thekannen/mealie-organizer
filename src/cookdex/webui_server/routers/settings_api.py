@@ -20,7 +20,15 @@ from ..deps import (
     require_session,
 )
 from ..env_catalog import ENV_SPEC_BY_KEY
-from ..schemas import DbDetectRequest, ProviderConnectionTestRequest, SettingsUpdateRequest
+from ..schemas import (
+    DbDetectRequest,
+    DredgerSiteCreateRequest,
+    DredgerSitesSeedRequest,
+    DredgerSitesValidateRequest,
+    DredgerSiteUpdateRequest,
+    ProviderConnectionTestRequest,
+    SettingsUpdateRequest,
+)
 
 router = APIRouter(tags=["settings"])
 
@@ -993,3 +1001,173 @@ async def detect_db_settings(
         return {"ok": ok, "detail": detail, "detected": detected}
     except Exception:
         return {"ok": False, "detail": "Detection failed unexpectedly.", "detected": {}}
+
+
+# ------------------------------------------------------------------
+# Dredger Sites CRUD
+# ------------------------------------------------------------------
+
+def _get_dredger_store():
+    from cookdex.recipe_dredger.storage import DredgerStore
+    return DredgerStore()
+
+
+@router.get("/settings/dredger-sites")
+async def list_dredger_sites(
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    store = _get_dredger_store()
+    sites = store.get_all_sites()
+    # Auto-seed defaults on first access if table is empty
+    if not sites:
+        from cookdex.recipe_dredger.sites import DEFAULT_SITES
+        store.seed_defaults(DEFAULT_SITES)
+        sites = store.get_all_sites()
+    return {"sites": sites}
+
+
+@router.post("/settings/dredger-sites")
+async def add_dredger_site(
+    payload: DredgerSiteCreateRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    import sqlite3 as _sqlite3
+
+    url = payload.url.strip().rstrip("/")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        raise HTTPException(status_code=422, detail="URL must start with http:// or https://")
+
+    # Validate URL is reachable
+    validation = _validate_dredger_site_url(url)
+
+    store = _get_dredger_store()
+    try:
+        site_id = store.add_site(url, label=payload.label, region=payload.region)
+    except _sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="This site URL already exists.")
+
+    return {
+        "id": site_id,
+        "url": url,
+        "validation": validation,
+    }
+
+
+@router.put("/settings/dredger-sites/{site_id}")
+async def update_dredger_site(
+    site_id: int,
+    payload: DredgerSiteUpdateRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    if payload.url is not None:
+        url = payload.url.strip().rstrip("/")
+        if not url.startswith("http://") and not url.startswith("https://"):
+            raise HTTPException(status_code=422, detail="URL must start with http:// or https://")
+        payload.url = url
+
+    store = _get_dredger_store()
+    updated = store.update_site(
+        site_id,
+        url=payload.url,
+        label=payload.label,
+        region=payload.region,
+        enabled=payload.enabled,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Site not found.")
+    return {"ok": True}
+
+
+@router.delete("/settings/dredger-sites/{site_id}")
+async def delete_dredger_site(
+    site_id: int,
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    store = _get_dredger_store()
+    deleted = store.delete_site(site_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Site not found.")
+    return {"ok": True}
+
+
+@router.post("/settings/dredger-sites/seed")
+async def seed_dredger_sites(
+    payload: DredgerSitesSeedRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    from cookdex.recipe_dredger.sites import DEFAULT_SITES
+    store = _get_dredger_store()
+    inserted = store.seed_defaults(DEFAULT_SITES, force=payload.force)
+    return {"ok": True, "inserted": inserted}
+
+
+def _validate_dredger_site_url(url: str) -> dict[str, Any]:
+    """Check if a site URL is reachable and has a crawlable sitemap."""
+    result: dict[str, Any] = {"reachable": False, "sitemap_found": False, "error": ""}
+    try:
+        _validate_service_url(url)
+    except ValueError as exc:
+        result["error"] = str(exc)
+        return result
+
+    try:
+        resp = requests.head(url, timeout=10, allow_redirects=True)
+        result["reachable"] = resp.status_code < 400
+        if not result["reachable"]:
+            result["error"] = f"HTTP {resp.status_code}"
+            return result
+    except requests.RequestException as exc:
+        result["error"] = _safe_request_error(exc)
+        return result
+
+    # Check for sitemap
+    sitemap_candidates = [
+        f"{url}/sitemap.xml",
+        f"{url}/sitemap_index.xml",
+        f"{url}/wp-sitemap.xml",
+    ]
+    for sitemap_url in sitemap_candidates:
+        try:
+            resp = requests.head(sitemap_url, timeout=5, allow_redirects=True)
+            if resp.status_code == 200:
+                result["sitemap_found"] = True
+                break
+        except requests.RequestException:
+            continue
+
+    return result
+
+
+@router.post("/settings/dredger-sites/validate")
+async def validate_dredger_sites(
+    payload: DredgerSitesValidateRequest,
+    _session: dict[str, Any] = Depends(require_session),
+    _services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    store = _get_dredger_store()
+    all_sites = store.get_all_sites()
+
+    if payload.site_ids:
+        target_ids = set(payload.site_ids)
+        sites_to_check = [s for s in all_sites if s["id"] in target_ids]
+    else:
+        sites_to_check = all_sites
+
+    def _check_one(site: dict[str, Any]) -> dict[str, Any]:
+        validation = _validate_dredger_site_url(site["url"])
+        return {"id": site["id"], "url": site["url"], **validation}
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [loop.run_in_executor(pool, _check_one, s) for s in sites_to_check]
+        results = await asyncio.gather(*futures)
+
+    return {"results": list(results)}

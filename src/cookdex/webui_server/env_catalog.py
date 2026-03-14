@@ -111,6 +111,33 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         secret=False,
         description="Default taxonomy refresh mode (merge or replace).",
     ),
+    # ------------------------------------------------------------------
+    # Dredger
+    # ------------------------------------------------------------------
+    EnvVarSpec(
+        key="DREDGER_TARGET_LANGUAGE",
+        label="Target Language",
+        group="Dredger",
+        default="en",
+        secret=False,
+        description="Two-letter ISO language code. Recipes in other languages are rejected during dredging.",
+    ),
+    EnvVarSpec(
+        key="DREDGER_CRAWL_DELAY",
+        label="Crawl Delay (seconds)",
+        group="Dredger",
+        default="2.0",
+        secret=False,
+        description="Base delay between requests to the same domain. Respects robots.txt crawl-delay when higher.",
+    ),
+    EnvVarSpec(
+        key="DREDGER_CACHE_EXPIRY_DAYS",
+        label="Sitemap Cache Expiry (days)",
+        group="Dredger",
+        default="7",
+        secret=False,
+        description="Days before a cached sitemap is considered stale and re-crawled.",
+    ),
     EnvVarSpec(
         key="WEB_BIND_PORT",
         label="Web UI Port",

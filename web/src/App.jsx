@@ -747,6 +747,15 @@ export default function App() {
   const settingsGroupRefs = useRef({});
   const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState(new Set());
 
+  const [dredgerSites, setDredgerSites] = useState([]);
+  const [dredgerSitesDraft, setDredgerSitesDraft] = useState({ url: "", label: "", region: "" });
+  const [dredgerSitesLoading, setDredgerSitesLoading] = useState(false);
+  const [dredgerValidating, setDredgerValidating] = useState(false);
+  const [dredgerValidationResults, setDredgerValidationResults] = useState({});
+  const [dredgerSitesFilter, setDredgerSitesFilter] = useState("");
+  const [dredgerEditId, setDredgerEditId] = useState(null);
+  const [dredgerSelected, setDredgerSelected] = useState(new Set());
+
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserRole, setNewUserRole] = useState("Editor");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -1903,6 +1912,150 @@ export default function App() {
 
       await loadData();
       showNotice("Settings updated.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function loadDredgerSites() {
+    setDredgerSitesLoading(true);
+    try {
+      const data = await api("/settings/dredger-sites");
+      setDredgerSites(data.sites || []);
+    } catch (exc) {
+      handleError(exc);
+    } finally {
+      setDredgerSitesLoading(false);
+    }
+  }
+
+  async function addDredgerSite() {
+    const url = dredgerSitesDraft.url.trim();
+    if (!url) return;
+    try {
+      await api("/settings/dredger-sites", {
+        method: "POST",
+        body: { url, label: dredgerSitesDraft.label, region: dredgerSitesDraft.region },
+      });
+      setDredgerSitesDraft({ url: "", label: "", region: "" });
+      await loadDredgerSites();
+      showNotice("Site added.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function toggleDredgerSite(id, enabled) {
+    try {
+      await api(`/settings/dredger-sites/${id}`, { method: "PUT", body: { enabled } });
+      setDredgerSites((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: enabled ? 1 : 0 } : s)));
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function deleteDredgerSite(id) {
+    try {
+      await api(`/settings/dredger-sites/${id}`, { method: "DELETE" });
+      setDredgerSites((prev) => prev.filter((s) => s.id !== id));
+      showNotice("Site removed.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function saveDredgerSiteEdit(id, updates) {
+    try {
+      await api(`/settings/dredger-sites/${id}`, { method: "PUT", body: updates });
+      setDredgerEditId(null);
+      await loadDredgerSites();
+      showNotice("Site updated.");
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function seedDredgerSites(force) {
+    try {
+      const data = await api("/settings/dredger-sites/seed", { method: "POST", body: { force } });
+      await loadDredgerSites();
+      showNotice(`Seeded ${data.inserted} default sites.`);
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function validateDredgerSites() {
+    setDredgerValidating(true);
+    setDredgerValidationResults({});
+    try {
+      const data = await api("/settings/dredger-sites/validate", { method: "POST", body: {} });
+      const results = {};
+      for (const r of data.results || []) {
+        results[r.id] = r;
+      }
+      setDredgerValidationResults(results);
+    } catch (exc) {
+      handleError(exc);
+    } finally {
+      setDredgerValidating(false);
+    }
+  }
+
+  function toggleDredgerSelect(id) {
+    setDredgerSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectDredgerRegion(sites, selected) {
+    setDredgerSelected((prev) => {
+      const next = new Set(prev);
+      const allSelected = sites.every((s) => prev.has(s.id));
+      for (const s of sites) {
+        if (allSelected) next.delete(s.id); else next.add(s.id);
+      }
+      return next;
+    });
+  }
+
+  async function bulkDeleteDredgerSites() {
+    if (dredgerSelected.size === 0) return;
+    try {
+      for (const id of dredgerSelected) {
+        await api(`/settings/dredger-sites/${id}`, { method: "DELETE" });
+      }
+      setDredgerSelected(new Set());
+      await loadDredgerSites();
+      showNotice(`Removed ${dredgerSelected.size} site(s).`);
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function bulkToggleDredgerSites(enabled) {
+    if (dredgerSelected.size === 0) return;
+    try {
+      for (const id of dredgerSelected) {
+        await api(`/settings/dredger-sites/${id}`, { method: "PUT", body: { enabled } });
+      }
+      setDredgerSelected(new Set());
+      await loadDredgerSites();
+      showNotice(`${enabled ? "Enabled" : "Disabled"} ${dredgerSelected.size} site(s).`);
+    } catch (exc) {
+      handleError(exc);
+    }
+  }
+
+  async function deleteRegionDredgerSites(regionSites) {
+    try {
+      for (const s of regionSites) {
+        await api(`/settings/dredger-sites/${s.id}`, { method: "DELETE" });
+      }
+      await loadDredgerSites();
+      showNotice(`Removed ${regionSites.length} site(s).`);
     } catch (exc) {
       handleError(exc);
     }
@@ -3882,6 +4035,224 @@ export default function App() {
     );
   }
 
+  function renderRecipeSourcesPage() {
+    if (dredgerSites.length === 0 && !dredgerSitesLoading) {
+      loadDredgerSites();
+    }
+    const filter = dredgerSitesFilter.toLowerCase();
+    const grouped = {};
+    for (const site of dredgerSites) {
+      if (filter && !site.url.toLowerCase().includes(filter) && !(site.region || "").toLowerCase().includes(filter)) continue;
+      const region = site.region || "Uncategorized";
+      if (!grouped[region]) grouped[region] = [];
+      grouped[region].push(site);
+    }
+    const regionEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+    const enabledCount = dredgerSites.filter((s) => s.enabled).length;
+    const regions = [...new Set(dredgerSites.map((s) => s.region).filter(Boolean))].sort();
+    const hasSelection = dredgerSelected.size > 0;
+    const hasValidation = Object.keys(dredgerValidationResults).length > 0;
+    const deadLinks = hasValidation ? dredgerSites.filter((s) => dredgerValidationResults[s.id] && !dredgerValidationResults[s.id].reachable) : [];
+
+    return (
+      <section className="page-content">
+        <article className="card">
+          <div className="card-head split">
+            <div>
+              <h3><Icon name="globe" /> Recipe Sources</h3>
+              <p>Sites the Recipe Dredger crawls for new recipes.</p>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <button className="ghost" onClick={validateDredgerSites} disabled={dredgerValidating}>
+                <Icon name={dredgerValidating ? "refresh" : "check-circle"} />
+                {dredgerValidating ? "Validating\u2026" : "Validate All"}
+              </button>
+              <button className="ghost" onClick={loadDredgerSites} disabled={dredgerSitesLoading}>
+                <Icon name="refresh" />
+              </button>
+            </div>
+          </div>
+
+          {dredgerSites.length === 0 && !dredgerSitesLoading ? (
+            <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+              <p className="muted" style={{ marginBottom: "1rem" }}>No recipe sources configured yet.</p>
+              <button className="primary" onClick={() => seedDredgerSites(false)}>
+                <Icon name="plus" /> Load Default Sites
+              </button>
+              <p className="tiny muted" style={{ marginTop: "0.5rem" }}>Seeds ~90 curated recipe blogs organized by cuisine region.</p>
+            </div>
+          ) : (
+            <>
+              <div className="dredger-sites-toolbar">
+                <div className="dredger-add-form">
+                  <input
+                    type="text"
+                    placeholder="https://example.com"
+                    value={dredgerSitesDraft.url}
+                    onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, url: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && addDredgerSite()}
+                  />
+                  <input
+                    type="text"
+                    list="dredger-region-list"
+                    placeholder="Region"
+                    value={dredgerSitesDraft.region}
+                    onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, region: e.target.value }))}
+                    style={{ maxWidth: "10rem" }}
+                  />
+                  <datalist id="dredger-region-list">
+                    {regions.map((r) => (
+                      <option key={r} value={r} />
+                    ))}
+                  </datalist>
+                  <button className="primary compact" onClick={addDredgerSite} disabled={!dredgerSitesDraft.url.trim()}>
+                    <Icon name="plus" /> Add
+                  </button>
+                </div>
+                <div className="dredger-filter">
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={dredgerSitesFilter}
+                    onChange={(e) => setDredgerSitesFilter(e.target.value)}
+                  />
+                  <span className="chip-count">{enabledCount}/{dredgerSites.length}</span>
+                </div>
+              </div>
+
+              {hasSelection ? (
+                <div className="dredger-bulk-bar">
+                  <span>{dredgerSelected.size} selected</span>
+                  <button className="ghost compact" onClick={() => bulkToggleDredgerSites(true)}><Icon name="check-circle" /> Enable</button>
+                  <button className="ghost compact" onClick={() => bulkToggleDredgerSites(false)}><Icon name="x" /> Disable</button>
+                  <button className="ghost compact danger" onClick={bulkDeleteDredgerSites}><Icon name="trash" /> Delete</button>
+                  <button className="ghost compact" onClick={() => setDredgerSelected(new Set())}>Clear</button>
+                </div>
+              ) : null}
+
+              {hasValidation && deadLinks.length > 0 ? (
+                <div className="dredger-dead-bar">
+                  <Icon name="alertTriangle" />
+                  <span>{deadLinks.length} unreachable site{deadLinks.length !== 1 ? "s" : ""} found</span>
+                  <button className="ghost compact" onClick={() => {
+                    setDredgerSelected(new Set(deadLinks.map((s) => s.id)));
+                  }}>Select</button>
+                  <button className="ghost compact" onClick={async () => {
+                    for (const s of deadLinks) {
+                      await api(`/settings/dredger-sites/${s.id}`, { method: "PUT", body: { enabled: false } });
+                    }
+                    setDredgerValidationResults({});
+                    await loadDredgerSites();
+                    showNotice(`Disabled ${deadLinks.length} dead link(s).`);
+                  }}>
+                    <Icon name="x" /> Disable
+                  </button>
+                  <button className="ghost compact danger" onClick={async () => {
+                    for (const s of deadLinks) {
+                      await api(`/settings/dredger-sites/${s.id}`, { method: "DELETE" });
+                    }
+                    setDredgerValidationResults({});
+                    await loadDredgerSites();
+                    showNotice(`Removed ${deadLinks.length} dead link(s).`);
+                  }}>
+                    <Icon name="trash" /> Delete
+                  </button>
+                  <button className="ghost compact" onClick={() => setDredgerValidationResults({})}>Dismiss</button>
+                </div>
+              ) : hasValidation && deadLinks.length === 0 ? (
+                <div className="dredger-ok-bar">
+                  <Icon name="check-circle" />
+                  <span>All sites reachable</span>
+                  <button className="ghost compact" onClick={() => setDredgerValidationResults({})}>Dismiss</button>
+                </div>
+              ) : null}
+
+              <div className="dredger-sites-list">
+                {regionEntries.map(([region, sites]) => {
+                  const allRegionSelected = sites.every((s) => dredgerSelected.has(s.id));
+                  const someRegionSelected = sites.some((s) => dredgerSelected.has(s.id));
+                  return (
+                    <div key={region} className="dredger-region-group">
+                      <div className="dredger-region-header">
+                        <label className="dredger-region-select">
+                          <input
+                            type="checkbox"
+                            checked={allRegionSelected}
+                            ref={(el) => { if (el) el.indeterminate = someRegionSelected && !allRegionSelected; }}
+                            onChange={() => selectDredgerRegion(sites)}
+                          />
+                          <h4 className="dredger-region-label">{region} <span className="chip-count">{sites.length}</span></h4>
+                        </label>
+                        <button className="ghost compact danger" onClick={() => deleteRegionDredgerSites(sites)} title={`Remove all ${region} sites`}>
+                          <Icon name="trash" />
+                        </button>
+                      </div>
+                      {sites.map((site) => {
+                        const vr = dredgerValidationResults[site.id];
+                        const isEditing = dredgerEditId === site.id;
+                        const isSelected = dredgerSelected.has(site.id);
+                        return (
+                          <div key={site.id} className={`dredger-site-row${site.enabled ? "" : " disabled"}${vr && !vr.reachable ? " unreachable" : ""}${isSelected ? " selected" : ""}`}>
+                            {isEditing ? (
+                              <form className="dredger-edit-form" onSubmit={(e) => {
+                                e.preventDefault();
+                                const fd = new FormData(e.target);
+                                saveDredgerSiteEdit(site.id, { url: fd.get("url"), region: fd.get("region") });
+                              }}>
+                                <input name="url" defaultValue={site.url} autoFocus />
+                                <input name="region" defaultValue={site.region} placeholder="Region" list="dredger-region-list" style={{ maxWidth: "10rem" }} />
+                                <button type="submit" className="ghost compact"><Icon name="check" /></button>
+                                <button type="button" className="ghost compact" onClick={() => setDredgerEditId(null)}><Icon name="x" /></button>
+                              </form>
+                            ) : (
+                              <>
+                                <div className="dredger-site-left">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleDredgerSelect(site.id)}
+                                  />
+                                  <span className="dredger-site-url">{site.url.replace(/^https?:\/\//, "")}</span>
+                                </div>
+                                <div className="dredger-site-actions">
+                                  {vr ? (
+                                    <span className={`tiny ${vr.reachable ? "success-text" : "danger-text"}`}>
+                                      {vr.reachable ? (vr.sitemap_found ? "OK" : "No sitemap") : vr.error || "Unreachable"}
+                                    </span>
+                                  ) : null}
+                                  <label className="toggle-switch" title={site.enabled ? "Enabled" : "Disabled"}>
+                                    <input
+                                      type="checkbox"
+                                      checked={!!site.enabled}
+                                      onChange={(e) => toggleDredgerSite(site.id, e.target.checked)}
+                                    />
+                                    <span className="toggle-track" />
+                                  </label>
+                                  <button className="ghost compact" onClick={() => setDredgerEditId(site.id)} title="Edit"><Icon name="edit" /></button>
+                                  <button className="ghost compact danger" onClick={() => deleteDredgerSite(site.id)} title="Remove"><Icon name="trash" /></button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem", gap: "0.5rem" }}>
+                <button className="ghost" onClick={() => seedDredgerSites(true)}>
+                  <Icon name="refresh" /> Reset to Defaults
+                </button>
+              </div>
+            </>
+          )}
+        </article>
+      </section>
+    );
+  }
+
   function renderRecipeOrganizationPage() {
     return (
       <RecipeWorkspacePage
@@ -5164,6 +5535,7 @@ export default function App() {
   function renderPage() {
     if (activePage === "tasks") return renderTasksPage();
     if (activePage === "settings") return renderSettingsPage();
+    if (activePage === "recipe-sources") return renderRecipeSourcesPage();
     if (activePage === "recipe-organization") return renderRecipeOrganizationPage();
     if (activePage === "users") return renderUsersPage();
     if (activePage === "help") return renderHelpPage();
