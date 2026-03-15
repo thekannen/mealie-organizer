@@ -5,12 +5,14 @@ listicles, how-to articles, digest posts, utility pages, and recipes with
 placeholder or missing instructions.
 
 Detection logic (per recipe, applied in order):
+  0. Failed scrapes   – empty name, "No Recipe Name Found", or GUID as name
   1. How-to articles  – name/slug starts with "how to make/cook"
   2. Listicles        – "top 10 recipes", "best X desserts", numbered collections
   3. Digest posts     – "friday finds", "weekly roundup", "monthly report", etc.
   4. High-risk keywords – cleaning, storing, review, giveaway, beauty, detox, etc.
   5. Utility pages    – slug contains privacy-policy, about-us, contact, login, etc.
   6. Bad instructions – placeholder text ("could not detect", "unavailable") or empty
+  7. No ingredients   – recipe has an empty ingredient list
 
 In dry-run mode (default) the tool reports what would be deleted without touching
 anything.  Pass --apply to actually delete.
@@ -80,11 +82,32 @@ _BAD_INSTRUCTIONS = frozenset({
     "unable to extract instructions",
 })
 
+_FAILED_SCRAPE_NAMES = frozenset({
+    "no recipe name found",
+    "untitled recipe",
+    "untitled",
+    "recipe",
+})
+
+# Matches UUIDs / GUIDs used as recipe names (e.g. "a1b2c3d4-e5f6-...")
+_GUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
 
 def _classify_name(name: str, slug: str) -> tuple[str | None, str]:
     """Fast name/slug-based classification (no API calls needed)."""
-    name_lower = name.lower()
+    name_lower = name.lower().strip()
     slug_lower = slug.lower()
+
+    # 0. Failed scrapes — placeholder names or GUIDs
+    if not name_lower:
+        return "failed_scrape", "Empty recipe name"
+    if name_lower in _FAILED_SCRAPE_NAMES:
+        return "failed_scrape", f"Placeholder name: '{name}'"
+    if _GUID_RE.match(name_lower):
+        return "failed_scrape", f"GUID as recipe name: '{name}'"
 
     # 1. How-to — match on name only; slug may retain the prefix after name
     #    normalization (e.g. slug "how-to-make-lemon-tea" for recipe "Lemon Tea"),
@@ -194,24 +217,32 @@ class RecipeJunkFilter:
                 actions.append(action)
                 flagged_slugs.add(action.slug)
 
-        # Pass 2: check instructions for recipes not already flagged.
-        # The listing API doesn't include recipeInstructions, so we fetch
-        # full recipes that look suspicious (few/no ingredients hint at junk).
-        if self.filter_reason in (None, "bad_instructions"):
+        # Pass 2: check instructions and ingredients for recipes not already flagged.
+        # The listing API doesn't include recipeInstructions or full ingredient
+        # data, so we fetch full recipes for deeper inspection.
+        deep_reasons = {None, "bad_instructions", "no_ingredients"}
+        if self.filter_reason in deep_reasons:
             suspect_slugs = [
                 str(r.get("slug", ""))
                 for r in recipes
                 if str(r.get("slug", "")) not in flagged_slugs
             ]
             if suspect_slugs:
-                print(f"[start] Checking {len(suspect_slugs)} recipes for bad instructions ...", flush=True)
+                print(f"[start] Checking {len(suspect_slugs)} recipes for bad instructions / missing ingredients ...", flush=True)
                 checked = 0
                 found = 0
                 for slug in suspect_slugs:
                     try:
                         full = self.client.get_recipe(slug)
+                        # Check instructions
                         inst_text = _extract_instructions_text(full)
                         reason_code, reason = _classify_instructions(inst_text)
+                        # Check for no ingredients
+                        if not reason_code and self.filter_reason in (None, "no_ingredients"):
+                            ingredients = full.get("recipeIngredient") or []
+                            if not ingredients:
+                                reason_code = "no_ingredients"
+                                reason = "Recipe has no ingredients"
                         if reason_code:
                             name = str(full.get("name") or "").strip()
                             if not self.filter_reason or self.filter_reason == reason_code:
@@ -223,7 +254,7 @@ class RecipeJunkFilter:
                     if checked % 500 == 0:
                         print(f"[info] checked {checked}/{len(suspect_slugs)} ({found} bad instructions found)", flush=True)
                 if found:
-                    print(f"[info] bad instructions scan: {found} additional junk recipes found", flush=True)
+                    print(f"[info] deep scan: {found} additional junk recipes found", flush=True)
 
         by_reason: dict[str, int] = {}
         for a in actions:
@@ -301,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="Delete junk recipes from Mealie.")
     parser.add_argument(
         "--reason",
-        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions"],
+        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions", "failed_scrape", "no_ingredients"],
         default=None,
         help="Only process recipes matching this specific junk category.",
     )
