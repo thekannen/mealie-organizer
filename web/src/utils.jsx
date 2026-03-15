@@ -558,13 +558,22 @@ function errorMessageFromPayload(payload, status) {
   return `Request failed (${status})`;
 }
 
+// ETag cache: stores { etag, data } per GET path for 304 handling.
+const _etagCache = new Map();
+
 export async function api(path, options = {}) {
   const headers = { "X-Requested-With": "XMLHttpRequest", ...(options.headers || {}) };
   let body = options.body;
+  const method = (options.method || "GET").toUpperCase();
 
   if (body && typeof body !== "string") {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(body);
+  }
+
+  // Send If-None-Match for GET requests that have a cached ETag.
+  if (method === "GET" && _etagCache.has(path)) {
+    headers["If-None-Match"] = _etagCache.get(path).etag;
   }
 
   const externalSignal = options.signal;
@@ -589,6 +598,11 @@ export async function api(path, options = {}) {
       signal: controller.signal,
     });
 
+    // 304 Not Modified — return cached data without parsing.
+    if (response.status === 304 && _etagCache.has(path)) {
+      return _etagCache.get(path).data;
+    }
+
     const contentType = response.headers.get("content-type") || "";
     let jsonPayload = null;
     let textPayload = "";
@@ -608,6 +622,13 @@ export async function api(path, options = {}) {
         throw new Error(errorMessageFromPayload(jsonPayload, response.status));
       }
       throw new Error(textPayload || `Request failed (${response.status})`);
+    }
+
+    // Cache ETag for future conditional requests.
+    const etag = response.headers.get("etag");
+    if (method === "GET" && etag) {
+      const data = jsonPayload !== null ? jsonPayload : textPayload;
+      _etagCache.set(path, { etag, data });
     }
 
     if (jsonPayload !== null) {
