@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import wordmark from "./assets/CookDex_wordmark.png";
 import emblem from "./assets/CookDex_light.png";
 
-import { NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING, HELP_TASK_GUIDES, HELP_SETUP_GUIDES } from "./constants";
+import { BASE_PATH, NAV_ITEMS, PAGE_META, CONFIG_LABELS, TAXONOMY_FILE_NAMES, HELP_FAQ, HELP_TROUBLESHOOTING, HELP_TASK_GUIDES, HELP_SETUP_GUIDES } from "./constants";
 import {
   api,
   buildDefaultOptionValues,
@@ -663,6 +663,14 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("cookdex_sidebar") === "collapsed");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePage, setActivePage] = useState(() => {
+    // Derive initial page from URL pathname (e.g. /cookdex/tasks → "tasks").
+    const path = window.location.pathname.replace(/\/+$/, "");
+    const base = BASE_PATH.replace(/\/+$/, "");
+    const relative = base ? path.replace(base, "") : path;
+    const segment = relative.replace(/^\/+/, "").split("/")[0] || "";
+    const validIds = NAV_ITEMS.map((item) => item.id);
+    if (segment && validIds.includes(segment)) return segment;
+    // Fall back to localStorage for root URL visits.
     const stored = window.localStorage.getItem("cookdex_page");
     return stored || "overview";
   });
@@ -1134,7 +1142,42 @@ export default function App() {
 
   useEffect(() => {
     window.localStorage.setItem("cookdex_page", activePage);
+    // Keep URL in sync when activePage changes (e.g. from popstate).
+    const base = BASE_PATH.replace(/\/+$/, "");
+    const target = activePage === "overview"
+      ? (base || "/")
+      : `${base}/${activePage}`;
+    if (window.location.pathname.replace(/\/+$/, "") !== target.replace(/\/+$/, "")) {
+      window.history.replaceState({ page: activePage }, "", target);
+    }
   }, [activePage]);
+
+  function navigateTo(pageId) {
+    const base = BASE_PATH.replace(/\/+$/, "");
+    const url = pageId === "overview" ? (base || "/") : `${base}/${pageId}`;
+    window.history.pushState({ page: pageId }, "", url);
+    setActivePage(pageId);
+  }
+
+  useEffect(() => {
+    function onPopState(event) {
+      if (event.state?.page) {
+        setActivePage(event.state.page);
+        return;
+      }
+      // Parse page from URL for manually typed URLs or external links.
+      const path = window.location.pathname.replace(/\/+$/, "");
+      const base = BASE_PATH.replace(/\/+$/, "");
+      const relative = base ? path.replace(base, "") : path;
+      const segment = relative.replace(/^\/+/, "").split("/")[0] || "";
+      const validIds = NAV_ITEMS.map((item) => item.id);
+      setActivePage(segment && validIds.includes(segment) ? segment : "overview");
+    }
+    // Set initial state so the first page has history state for back navigation.
+    window.history.replaceState({ page: activePage }, "");
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     if (activePage !== "tasks" || !taskHandoff?.task_id) {
@@ -2628,7 +2671,7 @@ export default function App() {
             <span>
               <strong>Mealie connection not configured.</strong>{" "}
               Go to{" "}
-              <button className="link-inline" onClick={() => setActivePage("settings")}>Settings</button>
+              <button className="link-inline" onClick={() => navigateTo("settings")}>Settings</button>
               {" "}to add your Mealie URL and API key before running tasks.
             </span>
           </p>
@@ -2730,7 +2773,7 @@ export default function App() {
                 <button
                   className="ghost small"
                   onClick={() => {
-                    setActivePage("tasks");
+                    navigateTo("tasks");
                     setSelectedTask("health-check");
                   }}
                 >
@@ -4277,7 +4320,7 @@ export default function App() {
         onError={handleError}
         onOpenTasks={(taskId) => {
           setTaskHandoff({ task_id: taskId });
-          setActivePage("tasks");
+          navigateTo("tasks");
         }}
         taxonomyFileNames={TAXONOMY_FILE_NAMES}
         configLabels={CONFIG_LABELS}
@@ -5693,7 +5736,7 @@ export default function App() {
             <button
               key={item.id}
               className={`nav-item ${activePage === item.id ? "active" : ""}`}
-              onClick={() => { setActivePage(item.id); setMobileSidebarOpen(false); }}
+              onClick={() => { navigateTo(item.id); setMobileSidebarOpen(false); }}
               title={item.label}
             >
               <Icon name={item.icon} />
