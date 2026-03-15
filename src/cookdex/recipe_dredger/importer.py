@@ -29,6 +29,10 @@ class ImportManager:
         import_timeout: int = 20,
     ) -> None:
         self.mealie_url = mealie_url.rstrip("/")
+        # MEALIE_URL may include /api suffix (e.g. http://host:9000/api);
+        # strip it since this class prepends /api/ to all paths.
+        if self.mealie_url.endswith("/api"):
+            self.mealie_url = self.mealie_url[:-4]
         self.mealie_api_key = mealie_api_key
         self.store = store
         self.rate_limiter = rate_limiter
