@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 
+
 # Virtual environments
 .venv/
 venv/
@@ -63,3 +64,4 @@ Thumbs.db
 # CI/agent worktrees
 .ci-fix-worktree/
 %KEYDIR%/
+cookdex.code-workspace
