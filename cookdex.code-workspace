@@ -6,6 +6,9 @@
 		{
 			"name": "mealie",
 			"path": "../mealie"
+		},
+		{
+			"path": "../mealie-recipe-dredger"
 		}
 	],
 	"settings": {}
