@@ -117,7 +117,7 @@ This requires Playwright browsers to be installed (`cd web && npx playwright ins
 | 401 on login (cookie not sticking) | Set `WEB_COOKIE_SECURE=false` in `.env` |
 | UI shows "build missing" | Run `cd web && npm run build` |
 | Port already in use | Set `WEB_BIND_PORT=4821` in `.env` |
-| `configs/config.json` not found | Create it: `mkdir -p configs && echo '{"providers":{},"parser":{}}' > configs/config.json` |
+| Tasks page shows no tasks | Ensure the server started without errors; check terminal output |
 
 ## Workspace cleanup
 

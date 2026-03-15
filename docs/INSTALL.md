@@ -35,12 +35,11 @@ Open `https://localhost:4820/cookdex` in your browser. Accept the self-signed ce
 
 | Host path | Container path | Purpose |
 |---|---|---|
-| `./configs` | `/app/configs` | Taxonomy JSON config files |
 | `./cache` | `/app/cache` | SQLite state database, encryption key, and TLS certificate |
 | `./logs` | `/app/logs` | Task run log files |
 | `./reports` | `/app/reports` | Audit and maintenance reports |
 
-The `./cache` volume stores the state database, the auto-generated encryption key, and the TLS certificate. Keep this volume persistent.
+The `./cache` volume stores the state database (taxonomy, settings, run history, schedules), the auto-generated encryption key, and the TLS certificate. Keep this volume persistent.
 
 ## Updating
 

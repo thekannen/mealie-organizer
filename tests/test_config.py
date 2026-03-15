@@ -90,7 +90,6 @@ def test_resolve_mealie_api_key_uses_legacy_alias(monkeypatch):
 def test_repo_root_uses_env_override(monkeypatch, tmp_path):
     custom_root = tmp_path / "custom-root"
     (custom_root / "configs" / "taxonomy").mkdir(parents=True)
-    (custom_root / "configs" / "config.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setenv("COOKDEX_ROOT", str(custom_root))
     reloaded = importlib.reload(config_module)

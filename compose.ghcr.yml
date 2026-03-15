@@ -11,7 +11,6 @@ services:
       TAXONOMY_REFRESH_MODE: ${TAXONOMY_REFRESH_MODE:-merge}
       WEB_BIND_PORT: ${WEB_BIND_PORT:-4820}
     volumes:
-      - ./configs:/app/configs
       - ./cache:/app/cache
       - ./logs:/app/logs
       - ./reports:/app/reports
