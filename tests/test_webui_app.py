@@ -15,7 +15,6 @@ def _write_json(path: Path, payload) -> None:
 
 
 def _seed_config_root(root: Path) -> None:
-    _write_json(root / "configs" / "config.json", {"providers": {}, "parser": {}})
     _taxonomy = {
         "categories": [{"name": "Dinner"}],
         "tags": [{"name": "Italian"}],

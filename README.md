@@ -48,7 +48,7 @@ No `.env` file is required — configuration is managed through the web UI.
 | Task ID | Purpose |
 |---|---|
 | `tag-categorize` | Tag and categorize recipes — AI semantic classification or fast regex rule-based (no LLM) |
-| `taxonomy-refresh` | Sync categories, tags, labels, and tools from config files into Mealie |
+| `taxonomy-refresh` | Sync managed categories, tags, labels, and tools into Mealie |
 | `cookbook-sync` | Create and update cookbooks from cookbook configuration rules |
 
 **Audits**
@@ -160,7 +160,6 @@ See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including 
 
 | Host path | Container path | Purpose |
 |---|---|---|
-| `./configs` | `/app/configs` | Taxonomy JSON files |
 | `./cache` | `/app/cache` | SQLite state database, encryption key, and TLS certificate |
 | `./logs` | `/app/logs` | Task run logs |
 | `./reports` | `/app/reports` | Audit/maintenance reports |

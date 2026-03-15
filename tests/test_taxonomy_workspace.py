@@ -45,7 +45,6 @@ _TAG_RULES = {
 
 
 def _seed_config_root(root: Path) -> None:
-    _write_json(root / "configs" / "config.json", {"providers": {}, "parser": {}})
     for name, data in _TAXONOMY_DATA.items():
         # Write to both locations: configs/taxonomy/ (for tag_rules and repo_root-relative
         # paths) and taxonomy/ (for create_app() seeding which uses config_root/taxonomy/).
