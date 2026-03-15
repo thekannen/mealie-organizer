@@ -302,6 +302,18 @@ export default function RecipeWorkspacePage({
     }
   };
 
+  // Wrap parent callbacks to reset workspace draft after managed files change.
+  const handleInitializeFromMealie = async (files) => {
+    await onInitializeFromMealie?.(files);
+    await api("/config/workspace/reset", { method: "POST" }).catch(() => {});
+    await loadWorkspace({ quiet: true });
+  };
+  const handleImportStarterPack = async (files) => {
+    await onImportStarterPack?.(files);
+    await api("/config/workspace/reset", { method: "POST" }).catch(() => {});
+    await loadWorkspace({ quiet: true });
+  };
+
   useEffect(() => {
     loadWorkspace({ quiet: true });
     loadLookups();
@@ -766,7 +778,7 @@ export default function RecipeWorkspacePage({
                 <button
                   className="primary"
                   type="button"
-                  onClick={() => onInitializeFromMealie?.(taxonomySetupFiles)}
+                  onClick={() => handleInitializeFromMealie(taxonomySetupFiles)}
                   disabled={taxonomyActionLoading === "mealie"}
                 >
                   <Icon name="download" />
@@ -785,7 +797,7 @@ export default function RecipeWorkspacePage({
                 <button
                   className="ghost"
                   type="button"
-                  onClick={() => onImportStarterPack?.(taxonomySetupFiles)}
+                  onClick={() => handleImportStarterPack(taxonomySetupFiles)}
                   disabled={taxonomyActionLoading === "starter-pack"}
                 >
                   <Icon name="upload" />

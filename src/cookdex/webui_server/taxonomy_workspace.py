@@ -701,6 +701,17 @@ class TaxonomyWorkspaceDraftService:
         self._write_state(state)
         return result
 
+    def reset_draft_to_managed(self) -> dict[str, Any]:
+        """Replace the draft with current managed state, clearing any diff."""
+        now_iso = _utc_now_iso()
+        managed = self._read_managed()
+        state = self._load_state()
+        state["draft"] = managed
+        state["meta"]["updated_at"] = now_iso
+        state["meta"]["last_validation"] = None
+        self._write_state(state)
+        return self._build_snapshot(state)
+
     def publish_draft(self, *, expected_version: str, published_by: str | None = None) -> dict[str, Any]:
         state = self._load_state()
         snapshot = self._build_snapshot(state)
