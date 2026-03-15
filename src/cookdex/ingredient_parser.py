@@ -615,7 +615,7 @@ def _build_candidate_slugs(
         cache_updated_at = _str_or_none(entry.get("updated_at"))
         status = _str_or_none(entry.get("status")) or ""
         if cache_updated_at and cache_updated_at == updated_at:
-            if status in {"already_parsed", "empty", "parsed"}:
+            if status in {"already_parsed", "empty", "parsed", "planned_parse"}:
                 skipped_cached += 1
                 continue
             if status == "needs_review" and not recheck_review:
@@ -843,10 +843,13 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
                 time.sleep(config.delay_seconds)
         finally:
             now = time.monotonic()
-            quarter = max(1, summary.total_candidates // 4)
+            # Save cache every 100 recipes so progress survives crashes
+            if idx % 100 == 0:
+                _save_scan_cache(cache_path, scan_cache)
+            # Progress every 200 recipes or at the end
             should_emit = (
                 idx == summary.total_candidates
-                or (idx % quarter == 0 and idx != summary.total_candidates)
+                or idx % 200 == 0
             )
             if should_emit:
                 pct = round(100 * idx / summary.total_candidates)
