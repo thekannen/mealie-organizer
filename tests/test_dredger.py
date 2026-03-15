@@ -363,3 +363,36 @@ class TestDredgerTaskRegistration:
         assert dredger is not None
         assert dredger["group"] == "Data Pipeline"
         assert len(dredger["options"]) == 8
+
+
+# ---------------------------------------------------------------------------
+# ImportManager URL normalization
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock
+from cookdex.recipe_dredger.importer import ImportManager
+
+
+class TestImportManagerUrlNormalization:
+    def _make_manager(self, url: str) -> ImportManager:
+        store = MagicMock()
+        rate_limiter = MagicMock()
+        return ImportManager(
+            mealie_url=url,
+            mealie_api_key="test-key",
+            store=store,
+            rate_limiter=rate_limiter,
+            dry_run=True,
+        )
+
+    def test_strips_api_suffix(self):
+        mgr = self._make_manager("http://host:9000/api")
+        assert mgr.mealie_url == "http://host:9000"
+
+    def test_strips_api_suffix_with_trailing_slash(self):
+        mgr = self._make_manager("http://host:9000/api/")
+        assert mgr.mealie_url == "http://host:9000"
+
+    def test_no_api_suffix_unchanged(self):
+        mgr = self._make_manager("http://host:9000")
+        assert mgr.mealie_url == "http://host:9000"
