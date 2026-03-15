@@ -3839,9 +3839,9 @@ export default function App() {
                     <div className="settings-rows">
                   {items.map((item) => {
                     const key = String(item.key);
-                    if (provider !== "chatgpt" && (key === "OPENAI_MODEL" || key === "OPENAI_API_KEY")) return null;
-                    if (provider !== "anthropic" && (key === "ANTHROPIC_MODEL" || key === "ANTHROPIC_API_KEY")) return null;
-                    if (provider !== "ollama" && (key === "OLLAMA_URL" || key === "OLLAMA_MODEL")) return null;
+                    if (provider !== "chatgpt" && key.startsWith("OPENAI_")) return null;
+                    if (provider !== "anthropic" && key.startsWith("ANTHROPIC_")) return null;
+                    if (provider !== "ollama" && key.startsWith("OLLAMA_")) return null;
                     const hasValue = Boolean(item.has_value);
                     const source = String(item.source || "unset");
                     const draftValue = envDraft[key] ?? "";
