@@ -87,7 +87,7 @@ h1 {
 }
 
 h2 {
-  font-size: 1.625rem;
+  font-size: clamp(1.25rem, 2.5vw, 1.625rem);
   line-height: 1.2;
 }
 
@@ -269,10 +269,12 @@ a {
   font-size: 0.84rem;
 }
 
-.nav-item:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+@media (hover: hover) {
+  .nav-item:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
 }
 
 .nav-item.active {
@@ -400,7 +402,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button.primary:hover {
+@media (hover: hover) {
+  button.primary:hover {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+  }
+}
+
+button.primary:active {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
 }
@@ -413,8 +422,17 @@ a.ghost {
   text-decoration: none;
 }
 
-button.ghost:hover,
-a.ghost:hover {
+@media (hover: hover) {
+  button.ghost:hover,
+  a.ghost:hover {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+  }
+}
+
+button.ghost:active,
+a.ghost:active {
   border-color: var(--accent);
   color: var(--accent-strong);
   background: var(--accent-soft);
@@ -834,9 +852,15 @@ textarea {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.task-pill:hover {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 76%, var(--surface));
+@media (hover: hover) {
+  .task-pill:hover {
+    border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+    background: color-mix(in srgb, var(--accent-soft) 76%, var(--surface));
+  }
+}
+
+.task-pill:active {
+  transform: scale(0.97);
 }
 
 .task-pill:active {
@@ -1579,8 +1603,10 @@ th {
   background: rgba(244, 122, 42, 0.08);
 }
 
-tbody tr:hover {
-  background: rgba(244, 122, 42, 0.06);
+@media (hover: hover) {
+  tbody tr:hover {
+    background: rgba(244, 122, 42, 0.06);
+  }
 }
 
 .status-pill {
@@ -2455,8 +2481,10 @@ details[open] > summary .log-progress-chevron {
   background: color-mix(in srgb, var(--surface-soft) 66%, transparent);
 }
 
-.workspace-row:hover {
-  background: color-mix(in srgb, var(--surface-soft) 92%, var(--accent) 8%);
+@media (hover: hover) {
+  .workspace-row:hover {
+    background: color-mix(in srgb, var(--surface-soft) 92%, var(--accent) 8%);
+  }
 }
 
 .workspace-row.invalid {
@@ -2735,8 +2763,10 @@ details[open] > summary .log-progress-chevron {
   box-sizing: border-box;
 }
 
-.user-row-header:hover {
-  background: var(--surface-soft);
+@media (hover: hover) {
+  .user-row-header:hover {
+    background: var(--surface-soft);
+  }
 }
 
 .user-row-meta {
@@ -4042,6 +4072,10 @@ button.danger {
     grid-template-columns: 1fr;
   }
 
+  .overview-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .cookbook-add-actions,
   .cookbook-item-footer {
     flex-wrap: wrap;
@@ -4082,12 +4116,42 @@ button.danger {
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 0.65rem;
-    padding-left: 0;
+    padding: 0;
   }
 
   .app-shell.sidebar-collapsed {
     padding-left: 0;
+  }
+
+  .content-shell {
+    padding: 0.75rem 0.6rem;
+  }
+
+  .page-header {
+    padding: 0.6rem 0.2rem;
+  }
+
+  .log-card-maximized {
+    left: 0;
+  }
+
+  button {
+    min-height: 44px;
+  }
+
+  button.small {
+    min-height: 36px;
+  }
+
+  button.icon-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
   }
 
   .sidebar {
@@ -4173,6 +4237,55 @@ button.danger {
   th,
   td {
     font-size: 0.77rem;
+    padding: 0.4rem 0.45rem;
+  }
+
+  .table-wrap,
+  .workspace-table-wrap,
+  .log-summary-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hide-mobile {
+    display: none;
+  }
+
+  .card {
+    padding: 0.8rem;
+  }
+
+  .auth-wordmark {
+    max-width: 100%;
+    height: 80px;
+  }
+
+  .auth-shell {
+    padding: 0.8rem;
+  }
+
+  .dredger-add-form {
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .drag-handle {
+    width: 2.75rem;
+    padding: 0.5rem;
+  }
+
+  .drag-handle-glyph {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .cookbook-drag-handle {
+    width: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .overview-stats {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4318,8 +4431,10 @@ button.danger {
   transition: background 0.15s;
 }
 
-.dredger-site-row:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+@media (hover: hover) {
+  .dredger-site-row:hover {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
 }
 
 .dredger-site-row.disabled {

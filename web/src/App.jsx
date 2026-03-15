@@ -3534,8 +3534,8 @@ export default function App() {
                 <tr>
                   <th>Task</th>
                   <th>Status</th>
-                  <th>Run Time</th>
-                  <th>Started</th>
+                  <th className="hide-mobile">Run Time</th>
+                  <th className="hide-mobile">Started</th>
                   <th></th>
                 </tr>
               </thead>
@@ -3578,8 +3578,8 @@ export default function App() {
                             </div>
                           )}
                         </td>
-                        <td className="muted">{formatRunTime(run)}</td>
-                        <td className="muted">{formatDateTimeShort(run.started_at || run.created_at)}</td>
+                        <td className="muted hide-mobile">{formatRunTime(run)}</td>
+                        <td className="muted hide-mobile">{formatDateTimeShort(run.started_at || run.created_at)}</td>
                         <td className="run-actions-cell">
                           {cancelable && (
                             <button
