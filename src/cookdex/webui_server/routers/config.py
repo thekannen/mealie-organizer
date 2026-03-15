@@ -225,6 +225,16 @@ async def validate_workspace_draft(
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.post("/config/workspace/reset")
+async def reset_workspace_draft(
+    _session: dict[str, Any] = Depends(require_session),
+    services: Services = Depends(require_services),
+) -> dict[str, Any]:
+    """Reset the workspace draft to match current managed state (clear all diffs)."""
+    workspace = TaxonomyWorkspaceDraftService(repo_root=services.settings.config_root, config_files=services.config_files)
+    return workspace.reset_draft_to_managed()
+
+
 @router.post("/config/workspace/publish")
 async def publish_workspace_draft(
     payload: TaxonomyWorkspaceVersionRequest,
