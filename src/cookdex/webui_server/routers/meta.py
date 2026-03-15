@@ -198,8 +198,17 @@ async def health(services: Services = Depends(require_services)) -> dict[str, An
 async def get_overview_metrics(
     _session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
+    refresh: bool = Query(default=False),
 ) -> dict[str, Any]:
-    return await asyncio.to_thread(_build_overview_metrics_sync, services)
+    cache_key = "overview_metrics"
+    if not refresh:
+        cached = services.state.cache_get(cache_key)
+        if cached is not None:
+            return cached
+    result = await asyncio.to_thread(_build_overview_metrics_sync, services)
+    if result.get("ok"):
+        services.state.cache_set(cache_key, result, ttl_seconds=300)
+    return result
 
 
 @router.get("/about/meta")

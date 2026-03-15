@@ -1148,6 +1148,18 @@ export default function App() {
     window.localStorage.setItem("cookdex_sidebar", sidebarCollapsed ? "collapsed" : "expanded");
   }, [sidebarCollapsed]);
 
+  // Lazy-load taxonomy content only when navigating to pages that need it.
+  const taxonomyLoaded = React.useRef(false);
+  useEffect(() => {
+    if (!session) return;
+    if (activePage === "recipe-organization" || activePage === "settings") {
+      if (!taxonomyLoaded.current) {
+        taxonomyLoaded.current = true;
+        loadTaxonomyContent();
+      }
+    }
+  }, [activePage, session]);
+
   useEffect(() => {
     setTaskValues(buildDefaultOptionValues(selectedTaskDef));
     setShowAdvancedTaskOptions(false);
@@ -1175,19 +1187,29 @@ export default function App() {
     // Fetch fresh task definitions (including dynamic options like provider choices)
     // every time the user opens the Tasks page, so cached data never goes stale.
     refreshTasks();
-    liveRunsTimer.current = setInterval(() => { refreshRuns(); }, 3000);
-    return () => clearInterval(liveRunsTimer.current);
-  }, [activePage, session]);
+    // Poll at 5s when there are active/queued runs, 30s when all idle.
+    function scheduleNext() {
+      const hasActive = runs.some(r => r.status === "running" || r.status === "queued");
+      const interval = hasActive ? 5000 : 30000;
+      liveRunsTimer.current = setTimeout(async () => {
+        await refreshRuns();
+        if (activePage === "tasks" && session) scheduleNext();
+      }, interval);
+    }
+    scheduleNext();
+    return () => clearTimeout(liveRunsTimer.current);
+  }, [activePage, session, runs.some(r => r.status === "running" || r.status === "queued")]);
 
-  // Keep a ref to the latest selected run status so the log poll interval
-  // can detect completion without a stale closure.
-  useEffect(() => {
-    const run = runs.find(r => r.run_id === selectedRunId) || null;
-    selectedRunStatusRef.current = run ? run.status : null;
+  const selectedRunStatus = useMemo(() => {
+    const run = runs.find(r => r.run_id === selectedRunId);
+    return run ? run.status : null;
   }, [runs, selectedRunId]);
 
+  // Keep ref in sync for any remaining external readers.
+  useEffect(() => { selectedRunStatusRef.current = selectedRunStatus; }, [selectedRunStatus]);
+
   // Log fetch + live tail polling.
-  // Re-runs when selectedRunId or activePage changes.
+  // Re-runs when selectedRunId, activePage, or run liveness changes.
   useEffect(() => {
     if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; }
 
@@ -1212,23 +1234,13 @@ export default function App() {
 
     doTail(false);
 
-    const run = runs.find(r => r.run_id === selectedRunId);
-    if (run && (run.status === "running" || run.status === "queued")) {
-      logPollRef.current = setInterval(async () => {
-        const status = selectedRunStatusRef.current;
-        if (status !== "running" && status !== "queued") {
-          clearInterval(logPollRef.current);
-          logPollRef.current = null;
-          await doTail(true);
-          return;
-        }
-        await doTail(true);
-      }, 1500);
+    const isLive = selectedRunStatus === "running" || selectedRunStatus === "queued";
+    if (isLive) {
+      logPollRef.current = setInterval(() => { doTail(true); }, 3000);
     }
 
     return () => { if (logPollRef.current) { clearInterval(logPollRef.current); logPollRef.current = null; } };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRunId, activePage]);
+  }, [selectedRunId, activePage, selectedRunStatus]);
 
   const bannerTimer = React.useRef(null);
 
@@ -1561,7 +1573,6 @@ export default function App() {
 
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch (e) { console.warn("sessionStorage unavailable:", e); }
 
-      await loadTaxonomyContent();
       clearBanners();
       scheduleAutoRefresh();
     } catch (exc) {
@@ -1592,8 +1603,6 @@ export default function App() {
         if (ok) {
           if (!loadCachedData()) {
             await loadData();
-          } else {
-            loadTaxonomyContent();
           }
         }
       } catch (exc) {
@@ -1910,7 +1919,18 @@ export default function App() {
         body: { env },
       });
 
-      await loadData();
+      // Only refresh settings — no need to reload tasks/runs/metrics.
+      const settingsPayload = await api("/settings");
+      const nextSpecs = settingsPayload?.env || {};
+      setEnvSpecs(nextSpecs);
+      const nextDraft = {};
+      for (const [key, item] of Object.entries(nextSpecs)) {
+        nextDraft[key] = item.secret ? "" : String(item.value ?? "");
+      }
+      setEnvDraft(nextDraft);
+      setEnvClear({});
+      // Invalidate overview metrics cache since Mealie connection may have changed.
+      setOverviewMetrics(null);
       showNotice("Settings updated.");
     } catch (exc) {
       handleError(exc);
@@ -2257,7 +2277,7 @@ export default function App() {
       }
 
       setConfigEditorState(content, activeConfig);
-      await loadData();
+      await loadTaxonomyContent();
       const ruleNote = formatRuleSyncNotice(savePayload?.rule_sync);
       showNotice(
         `${CONFIG_LABELS[activeConfig] || activeConfig} saved.${ruleNote ? ` ${ruleNote}` : ""}`
@@ -2286,7 +2306,7 @@ export default function App() {
       if (activeConfig === target) {
         setConfigEditorState(payload, target);
       }
-      await loadData();
+      await loadTaxonomyContent();
       const ruleNote = formatRuleSyncNotice(result?.rule_sync);
       showNotice(`${CONFIG_LABELS[target] || target} imported from JSON.${ruleNote ? ` ${ruleNote}` : ""}`);
     } catch (exc) {
@@ -2306,7 +2326,7 @@ export default function App() {
         method: "POST",
         body: { mode: taxonomyBootstrapMode, files: includeFiles },
       });
-      await loadData();
+      await loadTaxonomyContent();
       const changedCount = Object.keys(payload?.changes || {}).length;
       const ruleNote = formatRuleSyncNotice(payload?.rule_sync);
       showNotice(
@@ -2334,7 +2354,7 @@ export default function App() {
           files: includeFiles,
         },
       });
-      await loadData();
+      await loadTaxonomyContent();
       const changedCount = Object.keys(payload?.changes || {}).length;
       const ruleNote = formatRuleSyncNotice(payload?.rule_sync);
       showNotice(

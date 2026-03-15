@@ -160,6 +160,16 @@ class StateStore:
                     ON taxonomy(collection, name);
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS metric_cache (
+                      key TEXT PRIMARY KEY,
+                      value_json TEXT NOT NULL,
+                      computed_at REAL NOT NULL,
+                      ttl_seconds INTEGER NOT NULL DEFAULT 300
+                    );
+                    """
+                )
                 now = utc_now_iso()
                 for task_id in task_ids:
                     conn.execute(
@@ -170,6 +180,8 @@ class StateStore:
                         """,
                         (task_id, now),
                     )
+                # Update query planner statistics for better index selection.
+                conn.execute("ANALYZE;")
 
     def has_users(self) -> bool:
         with self._connect(readonly=True) as conn:
@@ -640,6 +652,52 @@ class StateStore:
             "schedule_id": row["schedule_id"],
             "log_path": str(row["log_path"]),
         }
+
+    # ── Metric cache ─────────────────────────────────────────────────
+
+    def cache_get(self, key: str) -> Any | None:
+        """Return cached value if still within TTL, else None."""
+        import time as _time
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT value_json, computed_at, ttl_seconds FROM metric_cache WHERE key = ?;",
+                (key,),
+            ).fetchone()
+        if row is None:
+            return None
+        age = _time.time() - float(row["computed_at"])
+        if age > int(row["ttl_seconds"]):
+            return None
+        return json.loads(str(row["value_json"]))
+
+    def cache_set(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
+        """Store a value in the metric cache."""
+        import time as _time
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO metric_cache(key, value_json, computed_at, ttl_seconds)
+                    VALUES(?, ?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                      value_json=excluded.value_json,
+                      computed_at=excluded.computed_at,
+                      ttl_seconds=excluded.ttl_seconds;
+                    """,
+                    (key, json.dumps(value, ensure_ascii=False), _time.time(), ttl_seconds),
+                )
+
+    def cache_invalidate(self, key: str) -> None:
+        """Remove a specific cache entry."""
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM metric_cache WHERE key = ?;", (key,))
+
+    def cache_invalidate_all(self) -> None:
+        """Remove all cached metrics (e.g. after a task run completes)."""
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.execute("DELETE FROM metric_cache;")
 
     # ── Taxonomy ──────────────────────────────────────────────────────
 

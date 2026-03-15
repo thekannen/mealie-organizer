@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -156,42 +157,69 @@ class RecipeDeduplicator:
         failed = 0
         action_idx = 0
 
-        for group in groups:
-            keeper_slug = str(group.keeper.get("slug") or "")
-            keeper_name = str(group.keeper.get("name") or "")
-            for dupe in group.duplicates:
+        if executable:
+            # Collect all delete work items, then execute in parallel.
+            work_items: list[tuple[DedupGroup, dict[str, Any]]] = []
+            for group in groups:
+                for dupe in group.duplicates:
+                    work_items.append((group, dupe))
+
+            def _delete_one(item: tuple[DedupGroup, dict[str, Any]]) -> dict[str, Any]:
+                grp, dupe = item
+                keeper_slug = str(grp.keeper.get("slug") or "")
+                keeper_name = str(grp.keeper.get("name") or "")
                 dupe_slug = str(dupe.get("slug") or "")
                 dupe_name = str(dupe.get("name") or "")
-                action_idx += 1
                 entry: dict[str, Any] = {
-                    "canonical_url": group.canonical_url,
+                    "canonical_url": grp.canonical_url,
                     "keeper_slug": keeper_slug,
                     "keeper_name": keeper_name,
                     "removed_slug": dupe_slug,
                     "removed_name": dupe_name,
                 }
-                if executable:
-                    try:
-                        self.client.delete_recipe(dupe_slug)
+                try:
+                    self.client.delete_recipe(dupe_slug)
+                    entry["status"] = "deleted"
+                except Exception as api_exc:
+                    if self._try_db_delete(dupe_slug):
                         entry["status"] = "deleted"
+                        entry["method"] = "db"
+                    else:
+                        entry["status"] = "error"
+                        entry["error"] = str(api_exc)
+                return entry
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(_delete_one, item): item for item in work_items}
+                for future in as_completed(futures):
+                    action_idx += 1
+                    entry = future.result()
+                    if entry["status"] == "deleted":
                         deleted += 1
-                        print(f"[ok] {action_idx}/{total_dupes} {dupe_slug} kept={keeper_slug}", flush=True)
-                    except Exception as api_exc:
-                        # API delete failed — try DB fallback for corrupted recipes.
-                        if self._try_db_delete(dupe_slug):
-                            entry["status"] = "deleted"
-                            entry["method"] = "db"
-                            deleted += 1
-                            print(f"[ok] {action_idx}/{total_dupes} {dupe_slug} kept={keeper_slug} (via DB)", flush=True)
-                        else:
-                            entry["status"] = "error"
-                            entry["error"] = str(api_exc)
-                            failed += 1
-                            print(f"[error] {dupe_slug}: {api_exc}", flush=True)
-                else:
-                    entry["status"] = "planned"
+                        method = f" (via {entry['method']})" if entry.get("method") else ""
+                        print(f"[ok] {action_idx}/{total_dupes} {entry['removed_slug']} kept={entry['keeper_slug']}{method}", flush=True)
+                    else:
+                        failed += 1
+                        print(f"[error] {entry['removed_slug']}: {entry.get('error', 'unknown')}", flush=True)
+                    action_log.append(entry)
+        else:
+            for group in groups:
+                keeper_slug = str(group.keeper.get("slug") or "")
+                keeper_name = str(group.keeper.get("name") or "")
+                for dupe in group.duplicates:
+                    dupe_slug = str(dupe.get("slug") or "")
+                    dupe_name = str(dupe.get("name") or "")
+                    action_idx += 1
+                    entry = {
+                        "canonical_url": group.canonical_url,
+                        "keeper_slug": keeper_slug,
+                        "keeper_name": keeper_name,
+                        "removed_slug": dupe_slug,
+                        "removed_name": dupe_name,
+                        "status": "planned",
+                    }
                     print(f"[plan] {dupe_slug}: would delete '{dupe_name}', keeping '{keeper_name}'", flush=True)
-                action_log.append(entry)
+                    action_log.append(entry)
 
         report: dict[str, Any] = {
             "summary": {

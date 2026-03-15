@@ -233,8 +233,32 @@ class MealieDBClient:
     Prefer using as a context manager (``with`` block) for automatic cleanup.
     """
 
+    _OPTIONAL_INDEXES: list[tuple[str, str, str]] = [
+        ("idx_cdx_tags_group_name", "tags", "group_id, lower(name)"),
+        ("idx_cdx_tools_group_name", "tools", "group_id, lower(name)"),
+        ("idx_cdx_categories_group_name", "categories", "group_id, lower(name)"),
+        ("idx_cdx_tags_slug_group", "tags", "slug, group_id"),
+        ("idx_cdx_tools_slug_group", "tools", "slug, group_id"),
+        ("idx_cdx_categories_slug_group", "categories", "slug, group_id"),
+    ]
+
     def __init__(self) -> None:
         self._db = DBWrapper()
+        self._ensure_indexes()
+
+    def _ensure_indexes(self) -> None:
+        """Create optional performance indexes on Mealie tables (idempotent)."""
+        for idx_name, table, columns in self._OPTIONAL_INDEXES:
+            try:
+                self._db.execute(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table}({columns})"
+                )
+            except Exception:
+                pass  # Table may not exist yet or columns differ across versions.
+        try:
+            self._db.commit()
+        except Exception:
+            pass
 
     def close(self) -> None:
         self._db.close()

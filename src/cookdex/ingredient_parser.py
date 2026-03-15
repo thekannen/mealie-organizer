@@ -642,6 +642,12 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     all_recipes = client.get_recipes(per_page=config.page_size)
+    # Build a slug→recipe lookup so we can skip per-recipe API re-fetches.
+    recipe_by_slug: dict[str, dict[str, Any]] = {}
+    for _r in all_recipes:
+        _slug = _str_or_none(_r.get("slug"))
+        if _slug:
+            recipe_by_slug[_slug] = _r
     cache_path = config.output_dir / config.scan_cache_filename
     scan_cache = _load_scan_cache(cache_path)
     slugs, skipped_cached, missing_parse_flag, updated_at_map = _build_candidate_slugs(
@@ -682,11 +688,14 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     for idx, slug in enumerate(slugs, start=1):
         started = time.monotonic()
         try:
-            try:
-                recipe = client.get_recipe(slug)
-            except requests.RequestException as exc:
-                reviews.append({"slug": slug, "name": "<unknown>", "reason": "recipe_fetch_failed", "error": str(exc)})
-                continue
+            recipe = recipe_by_slug.get(slug)
+            if recipe is None:
+                # Fallback: recipe appeared after initial fetch (unlikely but safe).
+                try:
+                    recipe = client.get_recipe(slug)
+                except requests.RequestException as exc:
+                    reviews.append({"slug": slug, "name": "<unknown>", "reason": "recipe_fetch_failed", "error": str(exc)})
+                    continue
 
             recipe_name = str(recipe.get("name") or slug)
             try:

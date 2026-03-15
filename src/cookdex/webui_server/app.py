@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -38,6 +39,40 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                     content={"detail": "CSRF validation failed"},
                 )
         return await call_next(request)
+
+
+class ETagMiddleware(BaseHTTPMiddleware):
+    """Add ETag headers to GET JSON API responses; return 304 when unchanged."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method != "GET" or "/api/" not in request.url.path:
+            return await call_next(request)
+
+        response = await call_next(request)
+        if response.status_code != 200:
+            return response
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            return response
+
+        # Read streamed body
+        body_chunks: list[bytes] = []
+        async for chunk in response.body_iterator:
+            body_chunks.append(chunk if isinstance(chunk, bytes) else chunk.encode("utf-8"))
+        body = b"".join(body_chunks)
+
+        etag = '"' + hashlib.md5(body).hexdigest() + '"'
+        if_none_match = request.headers.get("if-none-match", "")
+        if if_none_match == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers={**dict(response.headers), "ETag": etag},
+            media_type=response.media_type,
+        )
 
 
 def _select_ui_root(settings: WebUISettings) -> Path:
@@ -149,6 +184,7 @@ def create_app() -> FastAPI:
             services.runner.stop()
 
     app = FastAPI(title="CookDex Web UI", version="1.0", lifespan=lifespan)
+    app.add_middleware(ETagMiddleware)
     app.add_middleware(CSRFMiddleware)
     api_prefix = f"{settings.base_path}/api/v1"
 

@@ -258,6 +258,11 @@ class RunQueueManager:
                     exit_code=0,
                     error_text=None,
                 )
+                # Invalidate cached metrics so the next dashboard load is fresh.
+                try:
+                    self.state.cache_invalidate_all()
+                except Exception:
+                    pass
                 logger.info("run %s succeeded: task=%s", run_id, task_id)
             else:
                 self.state.update_run_status(
