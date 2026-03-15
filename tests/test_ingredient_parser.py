@@ -61,6 +61,21 @@ def test_build_candidate_slugs_recheck_review_overrides_cache_skip():
     assert skipped_recheck == 0
 
 
+def test_build_candidate_slugs_skips_planned_parse_from_dry_run():
+    recipes = [{"slug": "dry-ran", "updatedAt": "2026-01-06T00:00:00Z"}]
+    cache = {"dry-ran": {"updated_at": "2026-01-06T00:00:00Z", "status": "planned_parse", "checked_at": "x"}}
+
+    slugs, skipped_cached, missing_flag, _ = ingredient_parser._build_candidate_slugs(
+        recipes,
+        cache=cache,
+        recheck_review=False,
+    )
+
+    assert slugs == []
+    assert skipped_cached == 1
+    assert missing_flag == 1
+
+
 def test_build_candidate_slugs_requeues_when_recipe_was_updated():
     recipes = [{"slug": "changed", "updatedAt": "2026-01-05T00:00:00Z"}]
     cache = {"changed": {"updated_at": "2026-01-01T00:00:00Z", "status": "already_parsed", "checked_at": "x"}}
