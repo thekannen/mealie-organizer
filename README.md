@@ -185,9 +185,6 @@ curl -k https://localhost:4820/cookdex/api/v1/health
 - [Tasks](docs/TASKS.md) — task reference and safety policies
 - [Data Maintenance](docs/DATA_MAINTENANCE.md) — staged cleanup pipeline
 - [Direct DB Access](docs/DIRECT_DB.md) — optional direct PostgreSQL/SQLite access for bulk tasks
-- [Parser Migration](docs/PARSER_MIGRATION.md) — migrating from standalone parser
-
-- [Repository Hygiene](docs/REPO_HYGIENE.md) - local cleanup and repo standards workflow
 
 ## Testing
 
