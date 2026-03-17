@@ -4044,7 +4044,7 @@ export default function App() {
           <div className="card-head split">
             <div>
               <h3><Icon name="globe" /> Recipe Sources</h3>
-              <p>Sites the Recipe Dredger crawls for new recipes.</p>
+              <p>Sites the Recipe Dredger crawls for new recipes. <span className="muted tiny">Based on work by <a href="https://github.com/D0rk4ce/mealie-recipe-dredger" target="_blank" rel="noopener noreferrer">D0rk4ce</a></span></p>
             </div>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <button className="ghost" onClick={validateDredgerSites} disabled={dredgerValidating}>
