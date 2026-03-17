@@ -2,6 +2,15 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.40] - 2026-03-17
+
+### Added
+- UI screenshots in README (overview, tasks, recipe sources, taxonomy, settings)
+- Credit to original Recipe Dredger author (D0rk4ce) in Recipe Sources UI
+
+### Fixed
+- Overview page cookbooks count showing 0 — added cookbook fetch to overview metrics API
+
 ## [2026.3] - 2026-03-15
 
 ### Added
