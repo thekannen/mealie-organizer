@@ -302,6 +302,9 @@ class MealieApiClient:
         response = getattr(exc, "response", None)
         return bool(response is not None and response.status_code == 404)
 
+    def list_cookbooks(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
+        return self.get_paginated("/households/cookbooks", per_page=per_page, timeout=60)
+
     def list_tools(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         try:
             return self.get_paginated("/organizers/tools", per_page=per_page, timeout=60)

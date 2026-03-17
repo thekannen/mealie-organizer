@@ -1039,6 +1039,7 @@ export default function App() {
       categories: liveTotals.categories ?? taxonomyCounts.categories ?? 0,
       tags: liveTotals.tags ?? taxonomyCounts.tags ?? 0,
       tools: liveTotals.tools ?? taxonomyCounts.tools ?? 0,
+      cookbooks: liveTotals.cookbooks ?? taxonomyCounts.cookbooks ?? 0,
       labels: liveTotals.labels ?? taxonomyCounts.labels ?? 0,
       units: liveTotals.units ?? taxonomyCounts.units_aliases ?? 0,
     };
@@ -2638,7 +2639,7 @@ export default function App() {
               <article><span>Ingredients</span><strong>{overviewTotals.ingredients}</strong></article>
               <article><span>Tools</span><strong>{overviewTotals.tools}</strong></article>
               <article><span>Categories</span><strong>{overviewTotals.categories}</strong></article>
-              <article><span>Cookbooks</span><strong>{taxonomyCounts.cookbooks || 0}</strong></article>
+              <article><span>Cookbooks</span><strong>{overviewTotals.cookbooks}</strong></article>
               <article><span>Tags</span><strong>{overviewTotals.tags}</strong></article>
               <article><span>Labels</span><strong>{overviewTotals.labels}</strong></article>
               <article><span>Units</span><strong>{overviewTotals.units}</strong></article>

@@ -103,6 +103,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
             "tools": 0,
             "categories": 0,
             "tags": 0,
+            "cookbooks": 0,
             "labels": 0,
             "units": 0,
         },
@@ -123,6 +124,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
         foods = client.list_foods()
         units = client.list_units()
         labels = client.list_labels()
+        cookbooks = client.list_cookbooks()
     except requests.RequestException as exc:
         payload["reason"] = f"Unable to fetch Mealie metrics: {type(exc).__name__}."
         return payload
@@ -173,6 +175,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
         "tools": len(tools),
         "categories": len(categories),
         "tags": len(tags),
+        "cookbooks": len(cookbooks),
         "labels": len(labels),
         "units": len(units),
     }
