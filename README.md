@@ -2,6 +2,13 @@
 
 Web UI-first automation service for [Mealie](https://mealie.io). Manage recipe taxonomy, ingredient parsing, scheduled tasks, and runtime configuration from a single desktop-friendly interface.
 
+![Overview](docs/screenshots/overview.png)
+
+| | |
+|---|---|
+| ![Tasks](docs/screenshots/tasks.png) | ![Recipe Sources](docs/screenshots/recipe-sources.png) |
+| ![Recipe Organization](docs/screenshots/taxonomy.png) | ![Settings](docs/screenshots/settings.png) |
+
 ## Quick Start
 
 ```bash
