@@ -41,6 +41,26 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "object-src 'none'; "
+            "frame-ancestors 'none'"
+        )
+        return response
+
+
 class ETagMiddleware(BaseHTTPMiddleware):
     """Add ETag headers to GET JSON API responses; return 304 when unchanged."""
 
@@ -185,6 +205,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="CookDex Web UI", version="1.0", lifespan=lifespan)
     app.add_middleware(ETagMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(CSRFMiddleware)
     api_prefix = f"{settings.base_path}/api/v1"
 

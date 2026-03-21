@@ -133,7 +133,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                 onChange={(event) => setNewUserPassword(event.target.value)}
                 placeholder="At least 8 characters"
               />
-              <button type="button" className="ghost icon-btn" onClick={() => setShowPassword((v) => !v)} title={showPassword ? "Hide password" : "Show password"}>
+              <button type="button" className="ghost icon-btn" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>
                 <Icon name={showPassword ? "eye-off" : "eye"} />
               </button>
               <button type="button" className="ghost" onClick={generateTemporaryPassword}>
@@ -167,6 +167,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
               value={userSearch}
               onChange={(event) => setUserSearch(event.target.value)}
               placeholder="Search"
+              aria-label="Search users"
             />
           </label>
         </div>
@@ -191,7 +192,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                       <Icon name="chevron" className={`row-chevron${isOpen ? " rotated" : ""}`} />
                     </button>
                     {!isMe && (
-                      <button type="button" className="ghost danger-text icon-btn" title="Remove user" onClick={() => deleteUser(item.username)}>
+                      <button type="button" className="ghost danger-text icon-btn" aria-label={`Remove user ${item.username}`} onClick={() => deleteUser(item.username)}>
                         <Icon name="trash" />
                       </button>
                     )}

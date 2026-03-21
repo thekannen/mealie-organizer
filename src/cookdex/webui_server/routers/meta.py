@@ -194,7 +194,7 @@ def _build_overview_metrics_sync(services: Services) -> dict[str, Any]:
 
 @router.get("/health")
 async def health(services: Services = Depends(require_services)) -> dict[str, Any]:
-    return {"ok": True, "base_path": services.settings.base_path, "version": _read_version()}
+    return {"ok": True}
 
 
 @router.get("/metrics/overview")
@@ -322,7 +322,8 @@ def _build_health_report(services: Services) -> dict[str, Any]:
         return {"ok": ok, "detail": detail}
 
     if mealie_url and mealie_api_key:
-        mealie_conn = _conn(*_test_mealie_connection(mealie_url, mealie_api_key))
+        m_ok, m_detail, m_caps = _test_mealie_connection(mealie_url, mealie_api_key)
+        mealie_conn = {**_conn(m_ok, m_detail), "capabilities": m_caps}
     else:
         mealie_conn = _conn(False, "Not configured")
 
@@ -351,13 +352,13 @@ def _build_health_report(services: Services) -> dict[str, Any]:
             "enabled_schedules": enabled_schedules,
         },
         "config": {
-            "mealie_url": mealie_url or None,
+            "mealie_url_set": bool(mealie_url),
             "mealie_key_set": bool(mealie_api_key),
             "openai_key_set": bool(openai_api_key),
             "openai_model": openai_model or None,
             "anthropic_key_set": bool(anthropic_api_key),
             "anthropic_model": anthropic_model or None,
-            "ollama_url": ollama_url or None,
+            "ollama_url_set": bool(ollama_url),
             "ollama_model": ollama_model or None,
         },
         "connections": {

@@ -59,9 +59,17 @@ def _validate_service_url(url: str, *, allow_private: bool = False) -> str:
     except socket.gaierror:
         raise ValueError(f"Could not resolve hostname: {host}")
 
+    # Cloud metadata IPs that aren't caught by is_link_local or is_private
+    _blocked_ips = {
+        ipaddress.ip_address("168.63.129.16"),    # Azure metadata
+        ipaddress.ip_address("100.100.100.200"),   # Alibaba Cloud metadata
+    }
+
     for family, _, _, _, sockaddr in addr_info:
         ip = ipaddress.ip_address(sockaddr[0])
-        # Always block link-local (169.254.x.x / fe80::) — covers AWS/Azure metadata
+        if ip in _blocked_ips:
+            raise ValueError("Requests to cloud metadata endpoints are not allowed.")
+        # Always block link-local (169.254.x.x / fe80::) — covers AWS metadata
         if ip.is_link_local:
             raise ValueError("Requests to link-local addresses are not allowed.")
         if not allow_private and (ip.is_private or ip.is_loopback or ip.is_reserved):
@@ -79,15 +87,34 @@ def _safe_request_error(exc: requests.RequestException) -> str:
     return f"Connection failed: {type(exc).__name__}."
 
 
-def _test_mealie_connection(url: str, api_key: str) -> tuple[bool, str]:
+def _test_mealie_connection(url: str, api_key: str) -> tuple[bool, str, dict[str, Any]]:
+    """Test Mealie connection and return (ok, message, capabilities)."""
     base_url = _validate_service_url(url.rstrip("/"), allow_private=True)
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    capabilities: dict[str, Any] = {}
     try:
         response = requests.get(f"{base_url}/users/self", headers=headers, timeout=12)
         response.raise_for_status()
-        return True, "Mealie connection validated."
     except requests.RequestException as exc:
-        return False, _safe_request_error(exc)
+        return False, _safe_request_error(exc), capabilities
+
+    # Probe /about for server capabilities (version, features).
+    for about_path in ("/about", "/admin/about"):
+        try:
+            about_resp = requests.get(f"{base_url}{about_path}", headers=headers, timeout=8)
+            if about_resp.status_code < 400:
+                about = about_resp.json()
+                if isinstance(about, dict):
+                    capabilities["version"] = about.get("version") or about.get("versionLatest") or ""
+                    capabilities["enableOpenaiTranscription"] = bool(about.get("enableOpenaiTranscriptionServices", False) or about.get("enable_openai_transcription_services", False))
+                    break
+        except Exception:
+            pass
+
+    detail = "Mealie connection validated."
+    if capabilities.get("version"):
+        detail = f"Mealie {capabilities['version']} connected."
+    return True, detail, capabilities
 
 
 def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
@@ -373,8 +400,11 @@ async def test_mealie_settings(
     mealie_api_key = resolve_runtime_value(runtime_env, "MEALIE_API_KEY", payload.mealie_api_key)
     if not mealie_url or not mealie_api_key:
         return {"ok": False, "detail": "Mealie URL and API key are required."}
-    ok, detail = _test_mealie_connection(mealie_url, mealie_api_key)
-    return {"ok": ok, "detail": detail}
+    ok, detail, capabilities = _test_mealie_connection(mealie_url, mealie_api_key)
+    result: dict[str, Any] = {"ok": ok, "detail": detail}
+    if capabilities:
+        result["capabilities"] = capabilities
+    return result
 
 
 @router.post("/settings/test/openai")
@@ -506,7 +536,7 @@ _MEALIE_RAW_DB_KEYS = set(_MEALIE_ENV_MAP) | set(_MEALIE_FILE_ENV_MAP) | {"POSTG
 def _validated_ssh_host(value: str) -> str:
     """Validate an SSH hostname/IP to prevent argument injection."""
     clean = str(value or "").strip()
-    m = re.fullmatch(r"[A-Za-z0-9._:%-]+", clean) if clean else None
+    m = re.fullmatch(r"[A-Za-z0-9._:-]+", clean) if clean else None
     if not m:
         raise ValueError("Invalid SSH host.")
     return m.group()
@@ -515,7 +545,7 @@ def _validated_ssh_host(value: str) -> str:
 def _validated_ssh_user(value: str) -> str:
     """Validate an SSH username to prevent argument injection."""
     clean = str(value or "").strip()
-    m = re.fullmatch(r"[A-Za-z0-9._-]+", clean) if clean else None
+    m = re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", clean) if clean else None
     if not m:
         raise ValueError("Invalid SSH user.")
     return m.group()
@@ -524,7 +554,7 @@ def _validated_ssh_user(value: str) -> str:
 def _validated_container_name(value: str) -> str:
     """Validate a Docker container name to prevent command injection."""
     clean = str(value or "").strip()
-    m = re.fullmatch(r"[A-Za-z0-9._/-]+", clean) if clean else None
+    m = re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", clean) if clean else None
     if not m:
         raise ValueError("Invalid container name.")
     return m.group()

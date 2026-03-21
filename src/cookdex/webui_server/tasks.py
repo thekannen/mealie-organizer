@@ -26,6 +26,7 @@ class TaskExecution:
     command: list[str]
     env: dict[str, str]
     dangerous_requested: bool
+    pre_commands: list[list[str]] = field(default_factory=list)
 
 
 BuildFn = Callable[[dict[str, Any]], TaskExecution]
@@ -113,8 +114,47 @@ _JUNK_REASON_CHOICES: list[dict[str, str]] = [
 # Build functions
 # ---------------------------------------------------------------------------
 
+def _backup_pre_command() -> list[str]:
+    """Return the CLI command to create a Mealie backup."""
+    return _py_module("cookdex.mealie_backup")
+
+
+def _maybe_add_backup(execution: TaskExecution, options: dict[str, Any]) -> TaskExecution:
+    """Wrap an execution with a pre-backup step if backup_first is enabled."""
+    if not _bool_option(options, "backup_first", False):
+        return execution
+    return TaskExecution(
+        command=execution.command,
+        env=execution.env,
+        dangerous_requested=execution.dangerous_requested,
+        pre_commands=[_backup_pre_command()] + list(execution.pre_commands),
+    )
+
+
+_BACKUP_FIRST_OPTION = OptionSpec(
+    "backup_first",
+    "Backup First",
+    "boolean",
+    default=False,
+    help_text="Create a Mealie backup before running this task.",
+    hidden_when={"key": "dry_run", "value": True},
+)
+
+
+def _build_mealie_backup(options: dict[str, Any]) -> TaskExecution:
+    _validate_allowed(options, {"prune", "prune_only", "keep"})
+    keep = _int_option(options, "keep")
+    prune_only = _bool_option(options, "prune_only", False)
+    cmd = _py_module("cookdex.mealie_backup")
+    if prune_only and keep is not None:
+        cmd.extend(["--prune-only", str(keep)])
+    elif keep is not None:
+        cmd.extend(["--prune", str(keep)])
+    return TaskExecution(cmd, {}, dangerous_requested=False)
+
+
 def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "method", "provider", "use_db", "config_file", "missing_targets", "recat"})
+    _validate_allowed(options, {"dry_run", "backup_first", "method", "provider", "use_db", "config_file", "missing_targets", "recat"})
     env, dangerous = _common_env(options)
     method = _str_option(options, "method", "both") or "both"
 
@@ -157,7 +197,7 @@ def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:
         if recat:
             cmd.append("--recat")
 
-    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
 
 def _build_taxonomy_refresh(options: dict[str, Any]) -> TaskExecution:
@@ -274,6 +314,7 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
             "retries",
             "backoff_seconds",
             "no_cache",
+            "backup_first",
         },
     )
     env, dangerous = _common_env(options)
@@ -312,11 +353,11 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
     if _bool_option(options, "no_cache", False):
         cmd.append("--no-cache")
 
-    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
 
 def _build_cleanup_duplicates(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "target"})
+    _validate_allowed(options, {"dry_run", "backup_first", "target"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     target = _str_option(options, "target", "both") or "both"
@@ -325,7 +366,7 @@ def _build_cleanup_duplicates(options: dict[str, Any]) -> TaskExecution:
         cmd = _py_module("cookdex.data_maintenance", "--stages", "foods,units")
         if not dry_run:
             cmd.append("--apply-cleanups")
-        return TaskExecution(cmd, env, dangerous_requested=dangerous)
+        return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
     if target == "foods":
         cmd = _py_module("cookdex.foods_manager", "cleanup")
@@ -336,7 +377,7 @@ def _build_cleanup_duplicates(options: dict[str, Any]) -> TaskExecution:
         if not dry_run:
             cmd.append("--apply")
 
-    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
 
 def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
@@ -344,6 +385,7 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
         options,
         {
             "dry_run",
+            "backup_first",
             "stages",
             "continue_on_error",
             "apply_cleanups",
@@ -432,11 +474,11 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
         cmd.append("--parse-no-cache")
     if taxonomy_mode:
         cmd.extend(["--taxonomy-mode", taxonomy_mode])
-    return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups))
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups)), options)
 
 
 def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "run_dedup", "run_junk", "run_names", "reason", "force_all", "use_db"})
+    _validate_allowed(options, {"dry_run", "backup_first", "run_dedup", "run_junk", "run_names", "reason", "force_all", "use_db"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     run_dedup = _bool_option(options, "run_dedup", True)
@@ -454,7 +496,7 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
             cmd.append("--apply")
         if use_db:
             cmd.append("--use-db")
-        return TaskExecution(cmd, env, dangerous_requested=dangerous)
+        return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
     if run_junk and not run_dedup and not run_names:
         reason = _str_option(options, "reason", "")
@@ -463,7 +505,7 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
             cmd.append("--apply")
         if reason:
             cmd.extend(["--reason", reason])
-        return TaskExecution(cmd, env, dangerous_requested=dangerous)
+        return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
     if run_names and not run_dedup and not run_junk:
         force_all = _bool_option(options, "force_all", False)
@@ -472,7 +514,7 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
             cmd.append("--apply")
         if force_all:
             cmd.append("--all")
-        return TaskExecution(cmd, env, dangerous_requested=dangerous)
+        return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
     # Multiple operations: route through data_maintenance
     stage_map = [
@@ -492,11 +534,11 @@ def _build_clean_recipes(options: dict[str, Any]) -> TaskExecution:
     force_all = _bool_option(options, "force_all", False)
     if force_all and run_names:
         cmd.append("--names-force-all")
-    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
 
 def _build_reimport_recipes(options: dict[str, Any]) -> TaskExecution:
-    _validate_allowed(options, {"dry_run", "max_recipes", "slugs", "workers", "delay", "resume"})
+    _validate_allowed(options, {"dry_run", "backup_first", "max_recipes", "slugs", "workers", "delay", "resume"})
     env, dangerous = _common_env(options)
     dry_run = _bool_option(options, "dry_run", True)
     max_recipes = _int_option(options, "max_recipes", 0)
@@ -517,7 +559,7 @@ def _build_reimport_recipes(options: dict[str, Any]) -> TaskExecution:
         cmd.append("--resume")
     if slugs:
         cmd.extend(["--slugs", slugs])
-    return TaskExecution(cmd, env, dangerous_requested=dangerous)
+    return _maybe_add_backup(TaskExecution(cmd, env, dangerous_requested=dangerous), options)
 
 
 def _build_slug_repair(options: dict[str, Any]) -> TaskExecution:
@@ -604,6 +646,7 @@ class TaskRegistry:
                 description="Run all maintenance stages in order: Dedup > Junk Filter > Name Normalize > Ingredient Parse > Foods Cleanup > Units Cleanup > Labels Sync > Tools Sync > Taxonomy Refresh > Categorize > Cookbook Sync > Yield Normalize > Quality Audit > Taxonomy Audit. Select specific stages to run a subset.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "stages",
                         "Stages",
@@ -800,6 +843,31 @@ class TaskRegistry:
             )
         )
 
+        self._register(
+            TaskDefinition(
+                task_id="mealie-backup",
+                title="Mealie Backup",
+                group="Data Pipeline",
+                description="Create a Mealie backup via the admin API. Optionally prune old backups to keep only the newest N.",
+                options=[
+                    OptionSpec(
+                        "keep",
+                        "Keep Newest",
+                        "integer",
+                        help_text="After creating a backup, delete older backups keeping only this many. Leave blank to keep all.",
+                    ),
+                    OptionSpec(
+                        "prune_only",
+                        "Prune Only",
+                        "boolean",
+                        default=False,
+                        help_text="Skip backup creation and only prune old backups.",
+                    ),
+                ],
+                build=_build_mealie_backup,
+            )
+        )
+
         # ── Actions ──────────────────────────────────────────────────────
         self._register(
             TaskDefinition(
@@ -809,6 +877,7 @@ class TaskRegistry:
                 description="Remove duplicates, filter out junk content, and normalize messy import names — select which operations to run.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "run_dedup",
                         "Remove Duplicates",
@@ -890,6 +959,7 @@ class TaskRegistry:
                 description="Run NLP parsing on recipe ingredients to extract food, unit, and quantity from raw text. When confidence is below the threshold, parsing falls back to an AI processor.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "max_recipes",
                         "Max Recipes",
@@ -944,6 +1014,7 @@ class TaskRegistry:
                 description="Find and merge duplicate food or unit entries — e.g. 'garlic' and 'Garlic Clove', or 'tsp' / 'teaspoon' / 'Teaspoon'.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "target",
                         "Target",
@@ -969,6 +1040,7 @@ class TaskRegistry:
                 description="Re-scrape recipes from their original URLs. Overwrites content but preserves tags, categories, and favorites. Strips parsed ingredient links for re-parsing.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview which recipes would be reimported."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "max_recipes",
                         "Max Recipes",
@@ -1021,6 +1093,7 @@ class TaskRegistry:
                 description="Assign categories, tags, and tools to recipes. Both runs rules first (free, fast) then AI to fill gaps. Rules Only needs no AI provider. AI Only skips the rules layer.",
                 options=[
                     OptionSpec("dry_run", "Dry Run", "boolean", default=True, help_text="Preview changes without writing anything."),
+                    _BACKUP_FIRST_OPTION,
                     OptionSpec(
                         "method",
                         "Method",

@@ -89,7 +89,7 @@ class UnitsCleanupManager:
 
             # Capture extended Mealie metadata for create_unit calls
             meta: dict[str, Any] = {}
-            for field in ("pluralName", "abbreviation", "pluralAbbreviation", "description"):
+            for field in ("pluralName", "abbreviation", "pluralAbbreviation", "description", "standardUnit"):
                 val = str(entry.get(field) or "").strip()
                 if val:
                     meta[field] = val
@@ -97,6 +97,11 @@ class UnitsCleanupManager:
                 meta["fraction"] = bool(entry["fraction"])
             if "useAbbreviation" in entry:
                 meta["useAbbreviation"] = bool(entry["useAbbreviation"])
+            if "standardQuantity" in entry and entry["standardQuantity"] is not None:
+                try:
+                    meta["standardQuantity"] = float(entry["standardQuantity"])
+                except (TypeError, ValueError):
+                    pass
             if meta:
                 unit_metadata[canonical_norm] = meta
 
@@ -178,6 +183,8 @@ class UnitsCleanupManager:
                     description=meta.get("description", ""),
                     fraction=meta.get("fraction", True),
                     use_abbreviation=meta.get("useAbbreviation", False),
+                    standard_unit=meta.get("standardUnit", ""),
+                    standard_quantity=meta.get("standardQuantity"),
                 )
                 created_id = str(created.get("id") or "").strip()
                 if created_id:

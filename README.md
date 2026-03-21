@@ -1,5 +1,12 @@
 # CookDex
 
+<p>
+  <img alt="Mealie" src="https://img.shields.io/badge/Mealie-v3.13-4caf50?labelColor=2e7d32&logoColor=white">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.12%2B-3776ab?logo=python&logoColor=white">
+  <img alt="License" src="https://img.shields.io/github/license/thekannen/cookdex?color=f47a2a">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ed?logo=docker&logoColor=white">
+</p>
+
 Web UI-first automation service for [Mealie](https://mealie.io). Manage recipe taxonomy, ingredient parsing, scheduled tasks, and runtime configuration from a single desktop-friendly interface.
 
 ![Overview](docs/screenshots/overview.png)
@@ -42,6 +49,7 @@ No `.env` file is required — configuration is managed through the web UI.
 |---|---|
 | `data-maintenance` | Run the full staged pipeline: dedup → junk filter → name normalize → ingredient parse → foods/units cleanup → labels/tools sync → taxonomy refresh → categorize → cookbook sync → yield normalize → quality audit → taxonomy audit |
 | `recipe-dredger` | Discover and import recipes from curated sites — crawls sitemaps, verifies JSON-LD recipe schema, filters by language, and imports to Mealie |
+| `mealie-backup` | Create a Mealie backup via the admin API, with optional pruning to keep only the newest N |
 
 **Actions**
 | Task ID | Purpose |
@@ -194,6 +202,30 @@ curl -k https://localhost:4820/cookdex/api/v1/health
 - [Tasks](docs/TASKS.md) — task reference and safety policies
 - [Data Maintenance](docs/DATA_MAINTENANCE.md) — staged cleanup pipeline
 - [Direct DB Access](docs/DIRECT_DB.md) — optional direct PostgreSQL/SQLite access for bulk tasks
+
+## Security
+
+- All secrets encrypted at rest with Fernet (PBKDF2-derived key)
+- Passwords hashed with PBKDF2-HMAC-SHA256 (390k iterations)
+- Session cookies: HttpOnly, Secure, SameSite=Lax
+- CSRF protection via `X-Requested-With` header validation
+- CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy headers
+- SSRF protection with IP validation (blocks cloud metadata endpoints)
+- Rate limiting on login (5 attempts / 5 min) and actions (30 / min)
+- Subprocess isolation — tasks receive a minimal environment, not the full parent env
+- No `shell=True`, `eval()`, or string-interpolated SQL anywhere in the codebase
+
+## Accessibility
+
+The web UI targets WCAG 2.1 AA compliance:
+
+- Keyboard-navigable with visible `:focus-visible` indicators on all interactive elements
+- All icon-only buttons have `aria-label` attributes
+- Form inputs have associated labels (explicit or via `aria-label`)
+- Tables use `scope="col"` on headers with sr-only labels for action columns
+- Status updates announced to screen readers via `role="alert"` and `role="status"`
+- `@media (prefers-reduced-motion: reduce)` disables all animations
+- Dark mode with tested contrast ratios
 
 ## Testing
 

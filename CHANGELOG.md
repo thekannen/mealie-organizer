@@ -2,6 +2,49 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.45] - 2026-03-21
+
+### Added
+- **Mealie Backup** task — create and prune Mealie backups via the admin API, with optional retention limit
+- **Backup First** option on destructive tasks (Data Maintenance, Clean Recipes, Ingredient Parser, Tag & Categorize, Re-import, Cleanup Duplicates) — creates a Mealie backup before the task runs; hidden in dry-run mode
+- Pre-command support in task runner — tasks can now run prerequisite commands (e.g. backup) before the main task, with automatic abort on failure
+- Mealie server capabilities detection — connection test now probes `/about` for server version and feature flags
+- `get_about()` method on `MealieApiClient` for querying Mealie server info
+- Unit standardization fields (`standardUnit`, `standardQuantity`) supported in unit creation and alias metadata
+- Mealie compatibility badge in README (validated against Mealie v3.13.1)
+- Connection test response now includes `capabilities` object with `version` and `enableOpenaiTranscription`
+- Health/debug report includes Mealie server capabilities alongside connection status
+
+### Changed
+- `_test_mealie_connection` returns server capabilities (version, transcription support) alongside connection status
+- Settings test endpoint (`POST /settings/test/mealie`) returns `capabilities` when connection succeeds
+
+## [2026.3.44] - 2026-03-21
+
+### Security
+- Subprocess env isolation — tasks receive only essential system vars + catalog vars, no longer inherit full parent env
+- Added CSP, X-Frame-Options, X-Content-Type-Options, and Referrer-Policy security headers
+- Debug endpoint no longer exposes internal Mealie/Ollama URLs — reports `set`/`not set` only
+- Health endpoint no longer exposes app version or base path to unauthenticated callers
+- SSH host validation tightened — removed `%` from allowed chars to prevent config injection
+- SSH username and container name validation require alphanumeric first character to block flag injection
+- SSRF protection extended to block Azure (168.63.129.16) and Alibaba Cloud (100.100.100.200) metadata IPs
+- Auto-generated encryption key now stored in `.secrets/` subdirectory, separated from state database
+
+### Accessibility (WCAG 2.1 AA)
+- Added `:focus-visible` outlines on all interactive elements (buttons, inputs, nav items, toggles)
+- Added `@media (prefers-reduced-motion: reduce)` to disable all animations
+- Added `.sr-only` utility class for screen reader content
+- Replaced `title` with `aria-label` on all icon-only buttons across Tasks, Users, Recipe Sources, and Recipe Organization pages
+- Added `aria-label` to all search, filter, and unlabeled form inputs
+- Added `scope="col"` to all table headers; empty header columns given sr-only labels
+- Error/warning banners now use `role="alert"` and notice banners use `role="status"` for screen reader announcements
+- Task badges (AI, DB) use `role="img"` with `aria-label` instead of title-only
+- Improved disabled button contrast with explicit background/color instead of opacity-only
+
+### Changed
+- Replaced "Description" with "Ingredients Parsed" in gold medallion quality dimensions — all 6 dimensions are now actionable by the pipeline
+
 ## [2026.3.43] - 2026-03-21
 
 ### Changed

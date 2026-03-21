@@ -157,7 +157,7 @@ export default function OverviewPage({
       </article>
 
       {needsConnectionSetup && (
-        <p className="banner warning">
+        <p className="banner warning" role="alert">
           <span>
             <strong>Mealie connection not configured.</strong>{" "}
             Go to{" "}

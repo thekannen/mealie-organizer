@@ -209,6 +209,7 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                 <input
                   type="text"
                   placeholder="https://example.com"
+                  aria-label="Site URL"
                   value={dredgerSitesDraft.url}
                   onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, url: e.target.value }))}
                   onKeyDown={(e) => e.key === "Enter" && addDredgerSite()}
@@ -217,6 +218,7 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                   type="text"
                   list="dredger-region-list"
                   placeholder="Region"
+                  aria-label="Region"
                   value={dredgerSitesDraft.region}
                   onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, region: e.target.value }))}
                   style={{ maxWidth: "10rem" }}
@@ -234,6 +236,7 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                 <input
                   type="text"
                   placeholder="Search..."
+                  aria-label="Search recipe sources"
                   value={dredgerSitesFilter}
                   onChange={(e) => setDredgerSitesFilter(e.target.value)}
                 />
@@ -317,10 +320,10 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                               const fd = new FormData(e.target);
                               saveDredgerSiteEdit(site.id, { url: fd.get("url"), region: fd.get("region") });
                             }}>
-                              <input name="url" defaultValue={site.url} autoFocus />
-                              <input name="region" defaultValue={site.region} placeholder="Region" list="dredger-region-list" style={{ maxWidth: "10rem" }} />
-                              <button type="submit" className="ghost compact"><Icon name="check" /></button>
-                              <button type="button" className="ghost compact" onClick={() => setDredgerEditId(null)}><Icon name="x" /></button>
+                              <input name="url" defaultValue={site.url} aria-label="Edit site URL" autoFocus />
+                              <input name="region" defaultValue={site.region} placeholder="Region" aria-label="Edit region" list="dredger-region-list" style={{ maxWidth: "10rem" }} />
+                              <button type="submit" className="ghost compact" aria-label="Save"><Icon name="check" /></button>
+                              <button type="button" className="ghost compact" aria-label="Cancel" onClick={() => setDredgerEditId(null)}><Icon name="x" /></button>
                             </form>
                           ) : (
                             <>
@@ -338,7 +341,7 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                                     {vr.reachable ? (vr.sitemap_found ? "OK" : "No sitemap") : vr.error || "Unreachable"}
                                   </span>
                                 ) : null}
-                                <label className="toggle-switch" title={site.enabled ? "Enabled" : "Disabled"}>
+                                <label className="toggle-switch" aria-label={site.enabled ? "Enabled" : "Disabled"}>
                                   <input
                                     type="checkbox"
                                     checked={!!site.enabled}
@@ -346,8 +349,8 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                                   />
                                   <span className="toggle-track" />
                                 </label>
-                                <button className="ghost compact" onClick={() => setDredgerEditId(site.id)} title="Edit"><Icon name="edit" /></button>
-                                <button className="ghost compact danger" onClick={() => deleteDredgerSite(site.id)} title="Remove"><Icon name="trash" /></button>
+                                <button className="ghost compact" onClick={() => setDredgerEditId(site.id)} aria-label="Edit"><Icon name="edit" /></button>
+                                <button className="ghost compact danger" onClick={() => deleteDredgerSite(site.id)} aria-label="Remove"><Icon name="trash" /></button>
                               </div>
                             </>
                           )}

@@ -906,14 +906,14 @@ export default function RecipeWorkspacePage({
                         aria-label="Select all rows"
                       />
                     </th>
-                    <th className="table-col-drag" />
-                    <th className="workspace-row-index-head">#</th>
-                    <th>Name</th>
-                    {resource === "labels" ? <th>Color</th> : null}
-                    {resource === "tools" ? <th>On Hand</th> : null}
-                    {resource === "units_aliases" ? <th>Abbreviation</th> : null}
-                    {resource === "units_aliases" ? <th>Aliases</th> : null}
-                    <th className="table-col-action" />
+                    <th scope="col" className="table-col-drag"><span className="sr-only">Reorder</span></th>
+                    <th scope="col" className="workspace-row-index-head">#</th>
+                    <th scope="col">Name</th>
+                    {resource === "labels" ? <th scope="col">Color</th> : null}
+                    {resource === "tools" ? <th scope="col">On Hand</th> : null}
+                    {resource === "units_aliases" ? <th scope="col">Abbreviation</th> : null}
+                    {resource === "units_aliases" ? <th scope="col">Aliases</th> : null}
+                    <th scope="col" className="table-col-action"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>

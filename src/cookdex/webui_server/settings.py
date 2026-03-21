@@ -91,12 +91,21 @@ def _load_master_key(state_db_path: Path) -> tuple[str, bool]:
             raise RuntimeError(f"MO_WEBUI_MASTER_KEY_FILE does not exist: {path}")
         return _normalize_fernet_key(path.read_text(encoding="utf-8").strip()), False
 
-    # Priority 3: auto-generate and persist alongside the state DB
-    auto_key_path = state_db_path.parent / ".master_key"
-    if auto_key_path.exists():
-        return _normalize_fernet_key(auto_key_path.read_text(encoding="utf-8").strip()), False
+    # Priority 3: auto-generate and persist in a separate secrets directory
+    # to avoid co-locating the key with the encrypted database.
+    secrets_dir = state_db_path.parent / ".secrets"
+    auto_key_path = secrets_dir / ".master_key"
+    # Also check the legacy location (alongside state.db) for backwards compat
+    legacy_key_path = state_db_path.parent / ".master_key"
+    for candidate in (auto_key_path, legacy_key_path):
+        if candidate.exists():
+            return _normalize_fernet_key(candidate.read_text(encoding="utf-8").strip()), False
 
-    auto_key_path.parent.mkdir(parents=True, exist_ok=True)
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        secrets_dir.chmod(0o700)
+    except OSError:
+        pass
     new_key = Fernet.generate_key().decode("utf-8")
     auto_key_path.write_text(new_key, encoding="utf-8")
     try:

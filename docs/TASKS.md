@@ -68,6 +68,7 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 |---|---|---|
 | `data-maintenance` | Data Maintenance Pipeline | Run all maintenance stages in order: Dedup → Junk Filter → Name Normalize → Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit |
 | `recipe-dredger` | Recipe Dredger | Discover and import recipes from curated sites — crawls sitemaps, verifies JSON-LD recipe schema, filters by language, and imports to Mealie |
+| `mealie-backup` | Mealie Backup | Create a Mealie backup via the admin API, with optional pruning to keep only the newest N backups |
 
 **Actions**
 | Task ID | Title | Description |
@@ -91,11 +92,19 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 |---|---|---|
 | `health-check` | Health Check | Run diagnostic audits on your recipe library and taxonomy — surface missing metadata, unused entries, and duplicates |
 
+### mealie-backup options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `keep` | integer | *(unset)* | After creating a backup, prune older backups keeping only this many. Leave blank to keep all |
+| `prune_only` | boolean | `false` | Skip backup creation and only prune old backups |
+
 ### data-maintenance options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `dry_run` | boolean | `true` | Preview changes without writing anything |
+| `backup_first` | boolean | `false` | Create a Mealie backup before running (hidden in dry-run mode) |
 | `stages` | string (multi) | *(all)* | Select specific stages: `dedup`, `junk`, `names`, `parse`, `foods`, `units`, `labels`, `tools`, `taxonomy`, `categorize`, `cookbooks`, `yield`, `quality`, `audit` |
 | `provider` | string | *(configured default)* | Override categorizer provider for this run: `chatgpt` or `ollama` |
 | `use_db` | boolean | `false` | Enable direct DB mode for `quality` and `yield` stages (requires DB settings) |

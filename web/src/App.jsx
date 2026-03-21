@@ -1106,8 +1106,8 @@ export default function App() {
           ) : null}
         </header>
 
-        {error ? <div className="banner error"><span>{error}</span><button className="banner-close" onClick={() => setError("")}><Icon name="x" /></button></div> : null}
-        {!error && notice ? <div className="banner info"><span>{notice}</span><button className="banner-close" onClick={clearBanners}><Icon name="x" /></button></div> : null}
+        {error ? <div className="banner error" role="alert"><span>{error}</span><button className="banner-close" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="x" /></button></div> : null}
+        {!error && notice ? <div className="banner info" role="status"><span>{notice}</span><button className="banner-close" onClick={clearBanners} aria-label="Dismiss notice"><Icon name="x" /></button></div> : null}
 
         {renderPage()}
       </section>
@@ -1141,7 +1141,7 @@ export default function App() {
                     placeholder="At least 8 characters"
                     autoFocus
                   />
-                  <button type="button" className="ghost icon-btn" onClick={() => setForcedResetShowPass((v) => !v)} title={forcedResetShowPass ? "Hide" : "Show"}>
+                  <button type="button" className="ghost icon-btn" onClick={() => setForcedResetShowPass((v) => !v)} aria-label={forcedResetShowPass ? "Hide password" : "Show password"}>
                     <Icon name={forcedResetShowPass ? "eye-off" : "eye"} />
                   </button>
                 </div>

@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Local-only files
+marketing/
+
 
 # Virtual environments
 .venv/

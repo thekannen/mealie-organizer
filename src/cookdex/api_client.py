@@ -196,6 +196,23 @@ class MealieApiClient:
     def delete_recipe(self, slug: str) -> None:
         self._request_raw("DELETE", f"/recipes/{slug}", timeout=60)
 
+    def get_about(self) -> dict[str, Any]:
+        """Fetch Mealie server info from /about. Returns empty dict on failure."""
+        try:
+            data = self.request_json("GET", "/about", timeout=10)
+            if isinstance(data, dict):
+                return data
+        except requests.HTTPError:
+            pass
+        # Fallback: some versions expose it at /admin/about (requires admin token).
+        try:
+            data = self.request_json("GET", "/admin/about", timeout=10)
+            if isinstance(data, dict):
+                return data
+        except requests.HTTPError:
+            pass
+        return {}
+
     def scrape_recipe_url(self, url: str) -> str:
         """Scrape a recipe from a URL via Mealie's built-in scraper. Returns the new recipe's slug."""
         response = self._request_raw(
@@ -260,6 +277,8 @@ class MealieApiClient:
         description: str = "",
         fraction: bool = True,
         use_abbreviation: bool = False,
+        standard_unit: str = "",
+        standard_quantity: float | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "name": name,
@@ -274,6 +293,10 @@ class MealieApiClient:
             payload["pluralAbbreviation"] = plural_abbreviation
         if description:
             payload["description"] = description
+        if standard_unit:
+            payload["standardUnit"] = standard_unit
+        if standard_quantity is not None:
+            payload["standardQuantity"] = standard_quantity
         data = self.request_json("POST", "/units", json=payload, timeout=60)
         if isinstance(data, dict):
             return data

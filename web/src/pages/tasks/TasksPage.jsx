@@ -569,8 +569,8 @@ export default function TasksPage({
                                     {task.title}
                                     {task.badges?.length > 0 && (
                                       <span className="task-badges">
-                                        {task.badges.includes("ai") && <span className="task-badge badge-ai" title="Uses AI"><Icon name="wand" /></span>}
-                                        {task.badges.includes("db") && <span className="task-badge badge-db" title="Requires DB access"><Icon name="database" /></span>}
+                                        {task.badges.includes("ai") && <span className="task-badge badge-ai" role="img" aria-label="Uses AI"><Icon name="wand" /></span>}
+                                        {task.badges.includes("db") && <span className="task-badge badge-db" role="img" aria-label="Requires DB access"><Icon name="database" /></span>}
                                       </span>
                                     )}
                                   </span>
@@ -972,19 +972,19 @@ export default function TasksPage({
                       <div className="schedule-item-actions">
                         <button
                           className={`ghost small${isEditing ? " active-edit" : ""}`}
-                          title={isEditing ? "Close editor" : "Edit schedule"}
+                          aria-label={isEditing ? "Close editor" : "Edit schedule"}
                           onClick={() => (isEditing ? cancelScheduleEdit() : startScheduleEdit(schedule))}
                         >
                           <Icon name="pencil" />
                         </button>
                         <button
                           className={`ghost small ${schedule.enabled !== false ? "enabled-toggle" : "disabled-toggle"}`}
-                          title={schedule.enabled !== false ? "Disable schedule" : "Enable schedule"}
+                          aria-label={schedule.enabled !== false ? "Disable schedule" : "Enable schedule"}
                           onClick={() => toggleScheduleEnabled(schedule)}
                         >
                           <Icon name={schedule.enabled !== false ? "check-circle" : "x-circle"} />
                         </button>
-                        <button className="ghost small danger" onClick={() => deleteSchedule(scheduleId)}>
+                        <button className="ghost small danger" aria-label="Delete schedule" onClick={() => deleteSchedule(scheduleId)}>
                           <Icon name="trash" />
                         </button>
                       </div>
@@ -1232,6 +1232,7 @@ export default function TasksPage({
               value={runSearch}
               onChange={(event) => setRunSearch(event.target.value)}
               placeholder="Search task, type, or status"
+              aria-label="Search runs"
             />
           </label>
         </div>
@@ -1286,11 +1287,11 @@ export default function TasksPage({
           <table className="runs-table">
             <thead>
               <tr>
-                <th>Task</th>
-                <th>Status</th>
-                <th className="hide-mobile">Run Time</th>
-                <th className="hide-mobile">Started</th>
-                <th></th>
+                <th scope="col">Task</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="hide-mobile">Run Time</th>
+                <th scope="col" className="hide-mobile">Started</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1338,7 +1339,7 @@ export default function TasksPage({
                         {cancelable && (
                           <button
                             className="ghost small danger"
-                            title="Cancel run"
+                            aria-label="Cancel run"
                             onClick={(event) => { event.stopPropagation(); cancelRun(run.run_id); }}
                           >
                             <Icon name="x" />
@@ -1402,7 +1403,7 @@ export default function TasksPage({
               )}
               <button
                 className="ghost small"
-                title={logMaximized ? "Restore" : "Maximize"}
+                aria-label={logMaximized ? "Restore" : "Maximize"}
                 onClick={() => setLogMaximized(prev => !prev)}
               >
                 <Icon name={logMaximized ? "minimize" : "maximize"} />

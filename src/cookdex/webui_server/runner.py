@@ -193,7 +193,14 @@ class RunQueueManager:
             logger.error("run %s failed to build task=%s: %s", run_id, task_id, exc)
             return
 
-        env = os.environ.copy()
+        # Build a minimal environment for the subprocess — avoid leaking the
+        # full parent process env (which may contain unrelated secrets).
+        env: dict[str, str] = {}
+        # Inherit only essential system vars needed for Python/subprocesses.
+        for key in ("PATH", "HOME", "USER", "LANG", "LC_ALL", "SYSTEMROOT",
+                     "TEMP", "TMP", "COMSPEC", "VIRTUAL_ENV", "PYTHONPATH"):
+            if key in os.environ:
+                env[key] = os.environ[key]
         env.update(self.environment_provider())
         env.update(execution.env)
         # Suppress urllib3's LibreSSL warning — macOS ships LibreSSL which triggers
@@ -205,6 +212,46 @@ class RunQueueManager:
         command = execution.command
 
         with log_path.open("w", encoding="utf-8") as log_file:
+            # Run pre-commands (e.g. Mealie backup) before the main task.
+            for pre_cmd in execution.pre_commands:
+                log_file.write(f"$ {' '.join(pre_cmd)}\n")
+                log_file.flush()
+                try:
+                    pre_result = subprocess.run(
+                        pre_cmd,
+                        cwd=str(REPO_ROOT),
+                        env=env,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=300,
+                    )
+                    if pre_result.returncode != 0:
+                        message = f"Pre-command failed (exit {pre_result.returncode}): {' '.join(pre_cmd)}"
+                        log_file.write(f"\n{message}\n")
+                        self.state.update_run_status(
+                            run_id,
+                            status="failed",
+                            finished_at=utc_now_iso(),
+                            exit_code=pre_result.returncode,
+                            error_text=message,
+                        )
+                        self.state.update_run_log_size(run_id, log_path.stat().st_size)
+                        logger.error("run %s pre-command failed: %s", run_id, message)
+                        return
+                except Exception as exc:
+                    message = f"Pre-command error: {exc}"
+                    log_file.write(f"\n{message}\n")
+                    self.state.update_run_status(
+                        run_id,
+                        status="failed",
+                        finished_at=utc_now_iso(),
+                        exit_code=1,
+                        error_text=message,
+                    )
+                    self.state.update_run_log_size(run_id, log_path.stat().st_size)
+                    return
+
             log_file.write(f"$ {' '.join(command)}\n")
             log_file.flush()
             try:
