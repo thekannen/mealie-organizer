@@ -273,6 +273,7 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
             "timeout_seconds",
             "retries",
             "backoff_seconds",
+            "no_cache",
         },
     )
     env, dangerous = _common_env(options)
@@ -308,6 +309,8 @@ def _build_ingredient_parse(options: dict[str, Any]) -> TaskExecution:
         cmd.extend(["--retries", str(retries)])
     if backoff_seconds is not None:
         cmd.extend(["--backoff", str(backoff_seconds)])
+    if _bool_option(options, "no_cache", False):
+        cmd.append("--no-cache")
 
     return TaskExecution(cmd, env, dangerous_requested=dangerous)
 
@@ -359,6 +362,7 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
             "timeout_seconds",
             "retries",
             "backoff_seconds",
+            "no_cache",
             "taxonomy_mode",
         },
     )
@@ -424,6 +428,8 @@ def _build_data_maintenance(options: dict[str, Any]) -> TaskExecution:
         cmd.extend(["--parse-retries", str(parse_retries)])
     if parse_backoff is not None:
         cmd.extend(["--parse-backoff", str(parse_backoff)])
+    if _bool_option(options, "no_cache", False):
+        cmd.append("--parse-no-cache")
     if taxonomy_mode:
         cmd.extend(["--taxonomy-mode", taxonomy_mode])
     return TaskExecution(cmd, env, dangerous_requested=(dangerous or apply_cleanups))
@@ -635,6 +641,15 @@ class TaskRegistry:
                         "Max Recipes",
                         "integer",
                         help_text="Limit ingredient parsing to at most N recipes.",
+                        advanced=True,
+                        option_group="Ingredient Parse",
+                    ),
+                    OptionSpec(
+                        "no_cache",
+                        "Bypass Parse Cache",
+                        "boolean",
+                        default=False,
+                        help_text="Ignore the scan cache and reprocess all unparsed recipes.",
                         advanced=True,
                         option_group="Ingredient Parse",
                     ),
@@ -880,6 +895,13 @@ class TaskRegistry:
                         "Max Recipes",
                         "integer",
                         help_text="Limit parsing to at most N recipes. Leave blank to parse all candidates.",
+                    ),
+                    OptionSpec(
+                        "no_cache",
+                        "Bypass Cache",
+                        "boolean",
+                        default=False,
+                        help_text="Ignore the scan cache and reprocess all unparsed recipes.",
                     ),
                     OptionSpec(
                         "confidence_threshold",

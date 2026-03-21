@@ -46,6 +46,7 @@ class StageRuntimeOptions:
     parse_timeout_seconds: int | None = None
     parse_retries: int | None = None
     parse_backoff_seconds: float | None = None
+    parse_no_cache: bool = False
     taxonomy_mode: str | None = None
 
 
@@ -99,6 +100,8 @@ def stage_command(
             cmd.extend(["--retries", str(opts.parse_retries)])
         if opts.parse_backoff_seconds is not None:
             cmd.extend(["--backoff", str(opts.parse_backoff_seconds)])
+        if opts.parse_no_cache:
+            cmd.append("--no-cache")
         return cmd
     if stage == "foods":
         cmd = python_cmd + ["cookdex.foods_manager", "cleanup"]
@@ -320,6 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--parse-timeout", type=int, default=None, help="Ingredient parser HTTP timeout.")
     parser.add_argument("--parse-retries", type=int, default=None, help="Ingredient parser retry count.")
     parser.add_argument("--parse-backoff", type=float, default=None, help="Ingredient parser retry backoff.")
+    parser.add_argument("--parse-no-cache", action="store_true", help="Bypass ingredient parser scan cache.")
     parser.add_argument(
         "--taxonomy-mode",
         choices=["merge", "replace"],
@@ -349,6 +353,7 @@ def main() -> int:
         parse_timeout_seconds=args.parse_timeout,
         parse_retries=args.parse_retries,
         parse_backoff_seconds=args.parse_backoff,
+        parse_no_cache=bool(args.parse_no_cache),
         taxonomy_mode=_str_or_none(args.taxonomy_mode),
     )
     print(

@@ -1,6 +1,6 @@
 # Direct DB Access
 
-CookDex can read and write the Mealie database directly for bulk operations, bypassing the HTTP API entirely. This is an optional feature used by the `health-check`, `yield-normalize`, and `tag-categorize` tasks.
+CookDex can read and write the Mealie database directly for bulk operations, bypassing the HTTP API entirely. This is an optional feature used by the `health-check`, `yield-normalize`, `tag-categorize`, `slug-repair`, and `reimport-recipes` tasks.
 
 ## Why Use It
 
@@ -130,7 +130,7 @@ MEALIE_SQLITE_PATH=/app/data/mealie.db   # path visible to cookdex
 
 ### In the Web UI
 
-When queuing `health-check`, `yield-normalize`, or `tag-categorize` (rule-based method), enable the **Use Direct DB** toggle. The task will open a tunnel (if configured), run the query/transaction, and close the tunnel automatically.
+When queuing `health-check`, `yield-normalize`, `tag-categorize` (rule-based method), `slug-repair`, or `reimport-recipes`, enable the **Use Direct DB** toggle. The task will open a tunnel (if configured), run the query/transaction, and close the tunnel automatically.
 
 ### From the CLI
 

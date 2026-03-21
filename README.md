@@ -47,14 +47,16 @@ No `.env` file is required — configuration is managed through the web UI.
 | Task ID | Purpose |
 |---|---|
 | `clean-recipes` | Remove URL duplicates, filter junk content, and normalize slug-derived names |
+| `slug-repair` | Detect and fix recipe slug mismatches caused by name normalization (fixes require direct DB access) |
 | `ingredient-parse` | Parse raw ingredient text into structured food, unit, and quantity |
 | `yield-normalize` | Fill missing yield text from servings count, or parse yield text to set numeric servings |
 | `cleanup-duplicates` | Merge duplicate food and/or unit entries |
+| `reimport-recipes` | Re-scrape recipes from their original URLs, preserving tags, categories, and favorites |
 
 **Organizers**
 | Task ID | Purpose |
 |---|---|
-| `tag-categorize` | Tag and categorize recipes — AI semantic classification or fast regex rule-based (no LLM) |
+| `tag-categorize` | Tag and categorize recipes — rules first then AI (default), rules only (no LLM), or AI only |
 | `taxonomy-refresh` | Sync managed categories, tags, labels, and tools into Mealie |
 | `cookbook-sync` | Create and update cookbooks from cookbook configuration rules |
 
@@ -142,7 +144,7 @@ After first login, all provider settings are managed from the Settings page.
 
 ## Direct DB Access (Optional)
 
-The `health-check`, `yield-normalize`, and `tag-categorize` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `tag-categorize` (rule-based method), it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
+The `health-check`, `yield-normalize`, `tag-categorize`, `slug-repair`, and `reimport-recipes` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `tag-categorize` (rule-based method), it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
 
 To enable it:
 

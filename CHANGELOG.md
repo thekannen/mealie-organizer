@@ -2,6 +2,17 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.41] - 2026-03-20
+
+### Added
+- `--no-cache` flag for ingredient parser to bypass scan cache and reprocess all unparsed recipes
+- "Bypass Cache" toggle in Tasks UI for ingredient parser
+- Concurrent recipe prefetch (8 workers) for significantly faster parser runs
+
+### Fixed
+- Ingredient parser was sending `strategy` instead of `parser` to Mealie API — brute force and OpenAI fallbacks were never actually used
+- Recipes fetched from list endpoint were missing ingredient data, causing all recipes to be skipped as "empty"
+
 ## [2026.3.40] - 2026-03-17
 
 ### Added

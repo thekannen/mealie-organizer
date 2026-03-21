@@ -210,7 +210,7 @@ class MealieApiClient:
         data = self.request_json(
             "POST",
             "/parser/ingredients",
-            json={"strategy": strategy, "ingredients": ingredients},
+            json={"parser": strategy, "ingredients": ingredients},
             timeout=60,
         )
         if not isinstance(data, list):

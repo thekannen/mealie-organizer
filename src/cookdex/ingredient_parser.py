@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -130,6 +131,7 @@ class ParserRunConfig:
     success_log_filename: str
     scan_cache_filename: str
     recheck_review: bool
+    no_cache: bool
     review_tag_name: str
 
 
@@ -250,6 +252,7 @@ def parser_run_config() -> ParserRunConfig:
         success_log_filename=str(env_or_config("SUCCESS_FILE", "parser.success_file", "parsed_success.log")),
         scan_cache_filename=str(env_or_config("SCAN_CACHE_FILE", "parser.scan_cache_file", "parse_scan_cache.json")),
         recheck_review=bool(env_or_config("PARSER_RECHECK_REVIEW", "parser.recheck_review", False, to_bool)),
+        no_cache=False,
         review_tag_name=str(env_or_config("PARSER_REVIEW_TAG", "parser.review_tag_name", "Parser: Needs Review")),
     )
 
@@ -274,6 +277,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--recheck-review",
         action="store_true",
         help="Reprocess recipes cached as needs_review even when unchanged.",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Ignore the scan cache and reprocess all unparsed recipes.",
     )
     return parser
 
@@ -304,6 +312,7 @@ def apply_cli_overrides(config: ParserRunConfig, args: argparse.Namespace) -> Pa
         success_log_filename=config.success_log_filename,
         scan_cache_filename=config.scan_cache_filename,
         recheck_review=True if args.recheck_review else config.recheck_review,
+        no_cache=True if args.no_cache else config.no_cache,
         review_tag_name=config.review_tag_name,
     )
 
@@ -590,6 +599,7 @@ def _build_candidate_slugs(
     *,
     cache: dict[str, dict[str, str]],
     recheck_review: bool,
+    no_cache: bool = False,
 ) -> tuple[list[str], int, int, dict[str, str]]:
     slugs: list[str] = []
     skipped_cached = 0
@@ -611,6 +621,9 @@ def _build_candidate_slugs(
             continue
 
         missing_parse_flag += 1
+        if no_cache:
+            slugs.append(slug)
+            continue
         entry = cache.get(slug) or {}
         cache_updated_at = _str_or_none(entry.get("updated_at"))
         status = _str_or_none(entry.get("status")) or ""
@@ -635,7 +648,8 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
         f"confidence={config.confidence_threshold:.0%} "
         f"dry_run={config.dry_run}"
         + (f" max_recipes={config.max_recipes}" if config.max_recipes else "")
-        + (f" force_parser={config.force_parser}" if config.force_parser else ""),
+        + (f" force_parser={config.force_parser}" if config.force_parser else "")
+        + (" no_cache=True" if config.no_cache else ""),
         flush=True,
     )
 
@@ -654,6 +668,7 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
         all_recipes,
         cache=scan_cache,
         recheck_review=config.recheck_review,
+        no_cache=config.no_cache,
     )
     if missing_parse_flag:
         print(
@@ -685,12 +700,60 @@ def run_parser(client: MealieApiClient, config: ParserRunConfig) -> ParserRunSum
     successes: list[str] = []
     last_progress_ts = time.monotonic()
 
+    # Prefetch full recipes concurrently — list endpoint omits ingredients.
+    needs_fetch = [
+        s for s in slugs
+        if "recipeIngredient" not in recipe_by_slug.get(s, {})
+        and "ingredients" not in recipe_by_slug.get(s, {})
+    ]
+    if needs_fetch:
+        PREFETCH_WORKERS = 8
+        print(f"[info] Prefetching {len(needs_fetch)} full recipes ({PREFETCH_WORKERS} workers)...", flush=True)
+        prefetch_errors: dict[str, str] = {}
+
+        def _fetch_one(s: str) -> tuple[str, dict[str, Any] | None, str | None]:
+            # Each thread gets its own client to avoid sharing requests.Session.
+            thread_client = MealieApiClient(
+                base_url=client.base_url,
+                api_key=client.api_key,
+                timeout_seconds=client.timeout_seconds,
+                retries=client.retries,
+                backoff_seconds=client.backoff_seconds,
+            )
+            try:
+                return s, thread_client.get_recipe(s), None
+            except requests.RequestException as exc:
+                return s, None, str(exc)
+
+        with ThreadPoolExecutor(max_workers=PREFETCH_WORKERS) as pool:
+            futures = {pool.submit(_fetch_one, s): s for s in needs_fetch}
+            done = 0
+            for future in as_completed(futures):
+                s, data, err = future.result()
+                done += 1
+                if data is not None:
+                    recipe_by_slug[s] = data
+                elif err:
+                    prefetch_errors[s] = err
+                if done % 500 == 0:
+                    print(f"[info] Prefetched {done}/{len(needs_fetch)} recipes...", flush=True)
+
+        print(
+            f"[info] Prefetch complete: {len(needs_fetch) - len(prefetch_errors)} fetched"
+            + (f", {len(prefetch_errors)} failed" if prefetch_errors else ""),
+            flush=True,
+        )
+
     for idx, slug in enumerate(slugs, start=1):
         started = time.monotonic()
+
         try:
             recipe = recipe_by_slug.get(slug)
-            if recipe is None:
-                # Fallback: recipe appeared after initial fetch (unlikely but safe).
+            if recipe is None or ("recipeIngredient" not in recipe and "ingredients" not in recipe):
+                if needs_fetch and slug in prefetch_errors:
+                    reviews.append({"slug": slug, "name": "<unknown>", "reason": "recipe_fetch_failed", "error": prefetch_errors[slug]})
+                    continue
+                # Fallback: recipe appeared after initial fetch.
                 try:
                     recipe = client.get_recipe(slug)
                 except requests.RequestException as exc:
