@@ -194,7 +194,7 @@ export default function OverviewPage({
             <CoverageRing label="Tags" value={overviewCoverage.tags} />
             <CoverageRing label="Tools" value={overviewCoverage.tools} />
             {qualityMetrics?.available && <>
-              <CoverageRing label="Description" value={qualityMetrics.dimension_coverage?.description?.pct_have ?? 0} />
+              <CoverageRing label="Ingredients" value={qualityMetrics.dimension_coverage?.ingredients?.pct_have ?? 0} />
               <CoverageRing label="Cook Time" value={qualityMetrics.dimension_coverage?.time?.pct_have ?? 0} />
               <CoverageRing label="Yield" value={qualityMetrics.dimension_coverage?.yield?.pct_have ?? 0} />
             </>}
@@ -225,8 +225,8 @@ export default function OverviewPage({
           {qualityMetrics?.available ? (() => {
             const { total, gold, silver, bronze, gold_pct, dimension_coverage } = qualityMetrics;
             const tier = gold_pct >= 80 ? "gold" : gold_pct >= 50 ? "silver" : "bronze";
-            const DIMS = ["category", "tags", "tools", "description", "time", "yield"];
-            const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", description: "Description", time: "Cook Time", yield: "Yield" };
+            const DIMS = ["category", "tags", "tools", "ingredients", "time", "yield"];
+            const DIM_LABELS = { category: "Category", tags: "Tags", tools: "Tools", ingredients: "Ingredients", time: "Cook Time", yield: "Yield" };
             return (
               <div className="medallion-body">
                 <div className={`medallion-badge medallion-${tier}`}>

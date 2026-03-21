@@ -1,7 +1,7 @@
 """Recipe Gold Medallion Quality Auditor.
 
 Scores every recipe across six summary-level dimensions:
-  category, tags, tools, description, time, yield
+  category, tags, tools, ingredients, time, yield
 
 Plus estimates nutrition coverage via a configurable random sample of full recipes.
 
@@ -32,7 +32,7 @@ from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path
 from .db_client import resolve_db_client
 
-GOLD_DIMS = ["category", "tags", "tools", "description", "time", "yield"]
+GOLD_DIMS = ["category", "tags", "tools", "ingredients", "time", "yield"]
 MAX_SCORE = len(GOLD_DIMS)  # 6
 
 DEFAULT_REPORT = "reports/quality_audit_report.json"
@@ -73,12 +73,25 @@ def _has_yield(r: dict) -> bool:
     return False
 
 
+def _has_parsed_ingredients(r: dict) -> bool:
+    # Prefer the summary-level flag when present (not all Mealie versions expose it).
+    flag = r.get("hasParsedIngredients")
+    if flag is not None:
+        return bool(flag)
+    # Fallback: check if any ingredient dict has a food object (requires full recipe).
+    items = r.get("recipeIngredient") or []
+    return any(
+        isinstance(item, dict) and item.get("food")
+        for item in items
+    )
+
+
 def _score_recipe(r: dict) -> tuple[int, dict[str, bool]]:
     dims: dict[str, bool] = {
         "category": bool(r.get("recipeCategory")),
         "tags": bool(r.get("tags")),
         "tools": bool(r.get("tools")),
-        "description": bool(str(_gs(r, "description", "") or "").strip()),
+        "ingredients": _has_parsed_ingredients(r),
         "time": _has_time(r),
         "yield": _has_yield(r),
     }
@@ -100,7 +113,7 @@ def _score_recipe_db(r: dict) -> tuple[int, dict[str, bool]]:
         "category": int(r.get("cat_count") or 0) > 0,
         "tags":     int(r.get("tag_count") or 0) > 0,
         "tools":    int(r.get("tool_count") or 0) > 0,
-        "description": bool(str(_gs(r, "description", "") or "").strip()),
+        "ingredients": int(r.get("parsed_ingredient_count") or 0) > 0,
         "time": _has_time(r),
         "yield": _has_yield(r),
     }

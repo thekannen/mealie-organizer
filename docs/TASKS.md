@@ -198,7 +198,7 @@ All endpoints above are prefixed with `/cookdex/api/v1`.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `scope_quality` | boolean | `true` | Score all recipes on completeness: categories, tags, tools, description, cook time, yield, nutrition |
+| `scope_quality` | boolean | `true` | Score all recipes on completeness: categories, tags, tools, ingredients, cook time, yield, nutrition |
 | `scope_taxonomy` | boolean | `true` | Scan for unused taxonomy entries, duplicate names, and recipes missing categories or tags |
 | `use_db` | boolean | `false` | Fetch all recipe data in one query — faster and gives exact nutrition coverage; requires `MEALIE_DB_TYPE` |
 | `nutrition_sample` | integer | `200` | Recipes sampled for nutrition coverage estimate (API mode only, quality scope only) |

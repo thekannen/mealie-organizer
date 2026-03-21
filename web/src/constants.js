@@ -376,7 +376,7 @@ export const HELP_TASK_GUIDES = [
     title: "Health Check",
     icon: "shield",
     group: "Audits",
-    what: "Two read-only audits in one. Recipe Quality scores each recipe on completeness: categories, tags, tools, description, cook time, yield, and nutrition coverage. Taxonomy Audit finds unused taxonomy entries, near-duplicate names, and recipes missing categories or tags.",
+    what: "Two read-only audits in one. Recipe Quality scores each recipe on completeness: categories, tags, tools, ingredients, cook time, yield, and nutrition coverage. Taxonomy Audit finds unused taxonomy entries, near-duplicate names, and recipes missing categories or tags.",
     steps: [
       "Run with both scopes enabled to get a full library health report \u2014 no changes are ever made.",
       "Enable Use Direct DB for fast, exact nutrition coverage instead of a sample estimate.",

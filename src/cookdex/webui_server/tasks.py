@@ -1145,7 +1145,7 @@ class TaskRegistry:
                         "Recipe Quality",
                         "boolean",
                         default=True,
-                        help_text="Score all recipes on completeness: categories, tags, tools, description, cook time, yield, and nutrition.",
+                        help_text="Score all recipes on completeness: categories, tags, tools, ingredients, cook time, yield, and nutrition.",
                     ),
                     OptionSpec(
                         "scope_taxonomy",

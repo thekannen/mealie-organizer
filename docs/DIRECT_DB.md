@@ -162,6 +162,7 @@ CookDex only touches these tables and columns:
 | `recipes_to_tags` | `tag_id` (count) | — |
 | `recipes_to_categories` | `category_id` (count) | — |
 | `recipes_to_tools` | `tool_id` (count) | — |
+| `recipes_ingredients` | `id`, `food_id` (count where not null) | — |
 | `groups` | `id` | — |
 | `users` | `group_id` | — |
 

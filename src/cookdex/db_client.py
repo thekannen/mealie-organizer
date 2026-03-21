@@ -321,12 +321,14 @@ class MealieDBClient:
                 COUNT(DISTINCT rtag.tag_id)  AS tag_count,
                 COUNT(DISTINCT rcat.category_id) AS cat_count,
                 COUNT(DISTINCT rtool.tool_id) AS tool_count,
-                n.calories
+                n.calories,
+                COUNT(DISTINCT CASE WHEN ri.food_id IS NOT NULL THEN ri.id END) AS parsed_ingredient_count
             FROM recipes r
             LEFT JOIN recipes_to_tags       rtag  ON r.id = rtag.recipe_id
             LEFT JOIN recipes_to_categories rcat  ON r.id = rcat.recipe_id
             LEFT JOIN recipes_to_tools      rtool ON r.id = rtool.recipe_id
             LEFT JOIN recipe_nutrition      n     ON r.id = n.recipe_id
+            LEFT JOIN recipes_ingredients   ri    ON r.id = ri.recipe_id
             {where}
             GROUP BY
                 r.id, r.slug, r.name, r.description,
@@ -340,7 +342,7 @@ class MealieDBClient:
             "recipeYield", "recipeYieldQuantity", "recipeServings",
             "prepTime", "totalTime", "performTime", "cookTime",
             "tag_count", "cat_count", "tool_count",
-            "calories",
+            "calories", "parsed_ingredient_count",
         )
         return [dict(zip(keys, row)) for row in rows]
 
