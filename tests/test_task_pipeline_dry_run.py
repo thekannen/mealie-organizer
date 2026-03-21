@@ -26,6 +26,7 @@ ALL_TASK_IDS = [
     "data-maintenance",
     "health-check",
     "ingredient-parse",
+    "mealie-backup",
     "recipe-dredger",
     "reimport-recipes",
     "slug-repair",
@@ -35,7 +36,8 @@ ALL_TASK_IDS = [
 ]
 
 # Tasks with a user-visible dry_run option
-DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t != "health-check"]
+_NO_DRY_RUN = {"health-check", "mealie-backup"}
+DRY_RUN_OPTION_TASKS = [t for t in ALL_TASK_IDS if t not in _NO_DRY_RUN]
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +76,8 @@ def test_all_tasks_registered(task_id: str) -> None:
 def test_dry_run_defaults_are_safe(task_id: str) -> None:
     """Building each task with no explicit options must default to dry-run / safe."""
     execution = _build(task_id)
-    _assert_dry_run_safe(execution)
+    if task_id not in _NO_DRY_RUN:
+        _assert_dry_run_safe(execution)
     _assert_valid_command(execution)
 
 

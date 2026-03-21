@@ -394,7 +394,7 @@ def test_master_key_auto_generated(tmp_path: Path, monkeypatch):
     importlib.reload(app_module)
     app = app_module.create_app()
 
-    key_file = db_path.parent / ".master_key"
+    key_file = db_path.parent / ".secrets" / ".master_key"
     assert key_file.exists(), "Auto-generated key file should exist"
     first_key = key_file.read_text(encoding="utf-8").strip()
     assert len(first_key) > 0

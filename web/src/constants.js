@@ -385,6 +385,20 @@ export const HELP_TASK_GUIDES = [
     ],
     tip: "Schedule health-check monthly as a read-only report. It never writes any data.",
   },
+  {
+    id: "mealie-backup",
+    title: "Mealie Backup",
+    icon: "download",
+    group: "Data Pipeline",
+    what: "Creates a full Mealie backup via the admin API. Optionally prunes old backups to keep only the newest N. Also available as a pre-step on destructive tasks via the Backup First toggle.",
+    steps: [
+      "Run with no options to create a single backup.",
+      "Set Keep Newest to automatically delete older backups after creating a new one.",
+      "Enable Prune Only to clean up old backups without creating a new one.",
+      "Use the Backup First toggle on destructive tasks to automatically back up before each run.",
+    ],
+    tip: "Schedule a weekly backup with Keep Newest set to 3\u20135 to keep your Mealie data safe without filling up disk.",
+  },
 ];
 
 function inferBasePath() {

@@ -112,7 +112,7 @@ def _load_master_key(state_db_path: Path) -> tuple[str, bool]:
         auto_key_path.chmod(0o600)
     except OSError:
         pass
-    print(f"[webui] auto-generated encryption key at {auto_key_path}", flush=True)
+    print("[webui] auto-generated encryption key", flush=True)
     return new_key, False
 
 
