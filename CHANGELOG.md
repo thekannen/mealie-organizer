@@ -2,6 +2,18 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.42] - 2026-03-20
+
+### Changed
+- Split monolithic `App.jsx` (4925 lines) into 8 page components — App.jsx is now a 1160-line shell handling auth, routing, and shared state
+- Extracted task log parser and renderers into `taskLogUtils.jsx`
+
+### Docs
+- Added missing `slug-repair` and `reimport-recipes` tasks to README, TASKS.md, and DIRECT_DB.md
+- Fixed `tag-categorize` method default (`ai` → `both`) and added `recat` option in TASKS.md
+- Fixed `ingredient-parse` confidence default (`75` → `80`) and added `max_recipes`/`no_cache` options in TASKS.md
+- Added dredger-sites API endpoints to TASKS.md
+
 ## [2026.3.41] - 2026-03-20
 
 ### Added
