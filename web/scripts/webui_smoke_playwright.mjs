@@ -965,13 +965,13 @@ async function main() {
       await page.waitForTimeout(150);
     }
 
-    const maximizeLogBtn = page.locator('button[title="Maximize"]').first();
+    const maximizeLogBtn = page.locator('button[aria-label="Maximize"]').first();
     if (await maximizeLogBtn.isVisible().catch(() => false)) {
       await maximizeLogBtn.click();
       markControl("tasks", "tasks:log-maximize");
       rememberButtonClick("tasks", "Maximize");
       await page.waitForTimeout(200);
-      const restoreLogBtn = page.locator('button[title="Restore"]').first();
+      const restoreLogBtn = page.locator('button[aria-label="Restore"]').first();
       if (await restoreLogBtn.isVisible().catch(() => false)) {
         await restoreLogBtn.click();
         await page.waitForTimeout(150);
@@ -979,7 +979,7 @@ async function main() {
     }
 
     // Cancel button for queued/running runs (may not always be visible if all runs completed)
-    const cancelRunBtn = page.locator('button[title="Cancel run"]').first();
+    const cancelRunBtn = page.locator('button[aria-label="Cancel run"]').first();
     if (await cancelRunBtn.isVisible().catch(() => false)) {
       await cancelRunBtn.click();
       markControl("tasks", "tasks:run-cancel");
@@ -1542,7 +1542,7 @@ async function main() {
 
     // Show/hide password toggle
     const showPwdBtn = page
-      .locator('.icon-btn[title="Show password"], .icon-btn[title="Hide password"]')
+      .locator('.icon-btn[aria-label="Show password"], .icon-btn[aria-label="Hide password"]')
       .first();
     if (await showPwdBtn.isVisible().catch(() => false)) {
       await showPwdBtn.click();
@@ -1615,7 +1615,7 @@ async function main() {
     await ensureNoErrorBanner("User reset password failed");
 
     // Test confirmation modal cancel: click delete, click Cancel, verify user NOT deleted
-    const trashBtnForCancel = userRow.locator('button[title="Remove user"]').first();
+    const trashBtnForCancel = userRow.locator('button[aria-label*="Remove user"]').first();
     await expectVisible(trashBtnForCancel, "Trash/delete button missing for cancel modal test.");
     await trashBtnForCancel.click();
     await page.waitForTimeout(200);
@@ -1634,7 +1634,7 @@ async function main() {
     }
 
     // Delete user via trash icon (triggers confirmation modal)
-    const trashButton = userRow.locator('button[title="Remove user"]').first();
+    const trashButton = userRow.locator('button[aria-label*="Remove user"]').first();
     await expectVisible(trashButton, "Trash/delete button missing for created user.");
     await trashButton.click();
     await page.waitForTimeout(200);
