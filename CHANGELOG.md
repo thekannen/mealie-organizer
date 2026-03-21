@@ -2,6 +2,11 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.43] - 2026-03-21
+
+### Changed
+- Replaced "Description" with "Ingredients Parsed" in gold medallion quality dimensions — all 6 dimensions are now actionable by the pipeline
+
 ## [2026.3.42] - 2026-03-20
 
 ### Changed
