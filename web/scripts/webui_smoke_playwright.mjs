@@ -1109,7 +1109,7 @@ async function main() {
 
     // Edit first schedule inline and save
     const firstSchedName = normalizeText(await firstSched.locator("strong").first().innerText().catch(() => ""));
-    const editSchedBtn = firstSched.locator('.schedule-item-actions button[title*="Edit"]').first();
+    const editSchedBtn = firstSched.locator('.schedule-item-actions button[aria-label*="Edit"]').first();
     if (await editSchedBtn.isVisible().catch(() => false)) {
       await editSchedBtn.click();
       markControl("tasks", "tasks:schedule-edit-open");
