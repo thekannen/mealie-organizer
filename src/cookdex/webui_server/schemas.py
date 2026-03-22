@@ -113,6 +113,18 @@ class ProviderConnectionTestRequest(BaseModel):
     mealie_api_key: str | None = None
 
 
+class DbTestRequest(BaseModel):
+    db_type: str | None = None
+    pg_host: str | None = None
+    pg_port: str | None = None
+    pg_db: str | None = None
+    pg_user: str | None = None
+    pg_pass: str | None = None
+    ssh_host: str | None = None
+    ssh_user: str | None = None
+    ssh_key: str | None = None
+
+
 class DbDetectRequest(BaseModel):
     ssh_host: str | None = None
     ssh_user: str | None = None
@@ -156,18 +168,19 @@ class TaxonomyWorkspaceVersionRequest(BaseModel):
 class DredgerSiteCreateRequest(BaseModel):
     url: str = Field(min_length=1)
     label: str = ""
-    region: str = ""
+    group: str = ""
 
 
 class DredgerSiteUpdateRequest(BaseModel):
     url: str | None = None
     label: str | None = None
-    region: str | None = None
+    group: str | None = None
     enabled: bool | None = None
 
 
 class DredgerSitesSeedRequest(BaseModel):
     force: bool = False
+    merge: bool = False
 
 
 class DredgerSitesValidateRequest(BaseModel):

@@ -2,30 +2,29 @@
 
 All notable changes to CookDex are documented here.
 
-## [2026.3.47] - 2026-03-22
+## [2026.3.58] - 2026-03-22
 
 ### Added
 - **Direct DB setup wizard** (`scripts/setup-db-tunnel.sh`) — interactive script that handles SSH key generation, copying, volume mounting, settings configuration, and container restart in one command
 - Wizard writes SSH settings directly into CookDex's state database — no manual field entry needed
+- "Merge Defaults" button on Recipe Sources — adds new curated sites from updates without removing existing sites
+- Site add validation — checks reachability and requires a sitemap before adding; shows "Validating..." state during check
 
 ### Fixed
-- SSH key validation now checks read permission (`os.access`) — fixes key found but unreadable when web server runs as `app` user but key is owned by `root` (600)
-- DB tunnel client also checks readability before selecting a key path
+- SSH key validation now searches `/app/.ssh/` and `/tmp/.ssh-app/` in addition to `~/.ssh/`, and checks read permission — fixes "key not found" and permission errors in Docker
 - SSH known_hosts path falls back to `/tmp/.ssh-app/` when `~/.ssh/` doesn't exist — fixes paramiko failure when `HOME=/nonexistent` (app user in Docker)
-
-## [2026.3.46] - 2026-03-22
-
-### Fixed
-- SSH key validation now searches `/app/.ssh/` and `/tmp/.ssh-app/` in addition to `~/.ssh/` — fixes "key not found" when using the documented Docker volume mount
-- DB tunnel client also falls back to `/app/.ssh/` and `/tmp/.ssh-app/` when the key isn't found via `~/.ssh/`
+- Test DB now uses draft values from the UI like all other connection tests — no need to Apply Changes before testing
 - Default SSH Key Path changed from `~/.ssh/cookdex_mealie` to `/app/.ssh/cookdex_mealie` to match the documented container mount path
+- Tasks without a dry run option (e.g. Health Check) now show "Run" instead of misleading "Preview Run"
+
+### Removed
+- Removed 5 unreachable seed recipe sites (hard Cloudflare blocks / 406 rejections)
 
 ### Changed
-- Rewrote Direct DB docs — leads with quick-path auto-detect setup, moves manual config to separate section
+- Renamed "Region" to "Group" throughout Recipe Sources — allows organizing sites by any category (e.g. Vegan, Budget, Keto), not just cuisine region; existing databases auto-migrate on startup
+- Rewrote Direct DB docs — leads with setup wizard, then manual steps as fallback
 - Removed misleading `pip install 'cookdex[db]'` from docs (dependencies are included in Docker image)
-- Updated in-app help guides to match: merged SSH tunnel + credential guides into Quick Path and Manual fallback
-- Troubleshooting section now recommends Auto-detect DB first
-- Quick setup steps now more explicit: notes compose volume line is pre-existing (just uncomment), clarifies where to SSH, what to expect at each step
+- Updated in-app help guides to match new wizard-first setup flow
 
 ## [2026.3.45] - 2026-03-21
 
@@ -43,7 +42,6 @@ All notable changes to CookDex are documented here.
 ### Changed
 - `_test_mealie_connection` returns server capabilities (version, transcription support) alongside connection status
 - Settings test endpoint (`POST /settings/test/mealie`) returns `capabilities` when connection succeeds
-
 ## [2026.3.44] - 2026-03-21
 
 ### Security

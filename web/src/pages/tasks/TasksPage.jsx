@@ -128,6 +128,11 @@ export default function TasksPage({
     [tasks, selectedTask]
   );
 
+  const hasDryRun = useMemo(
+    () => (selectedTaskDef?.options || []).some((o) => o.key === "dry_run"),
+    [selectedTaskDef]
+  );
+
   const taskTitleById = useMemo(() => {
     const map = new Map();
     for (const task of tasks) {
@@ -859,11 +864,11 @@ export default function TasksPage({
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         <button
                           type="button"
-                          className={`primary action-hero-btn ${taskValues.dry_run === false ? "live-action" : "safe-action"}`}
+                          className={`primary action-hero-btn ${taskValues.dry_run === false ? "live-action" : !hasDryRun ? "" : "safe-action"}`}
                           onClick={triggerRun}
                         >
                           <Icon name={taskValues.dry_run === false ? "zap" : "play"} />
-                          {taskValues.dry_run === false ? "Run Live" : "Preview Run"}
+                          {taskValues.dry_run === false ? "Run Live" : !hasDryRun ? "Run" : "Preview Run"}
                         </button>
                         {(() => {
                           const required = (selectedTaskDef.options || []).filter(

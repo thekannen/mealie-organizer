@@ -4,13 +4,14 @@ import { api } from "../../utils.jsx";
 
 export default function RecipeSourcesPage({ onNotice, onError }) {
   const [dredgerSites, setDredgerSites] = useState([]);
-  const [dredgerSitesDraft, setDredgerSitesDraft] = useState({ url: "", label: "", region: "" });
+  const [dredgerSitesDraft, setDredgerSitesDraft] = useState({ url: "", label: "", group: "" });
   const [dredgerSitesLoading, setDredgerSitesLoading] = useState(false);
   const [dredgerValidating, setDredgerValidating] = useState(false);
   const [dredgerValidationResults, setDredgerValidationResults] = useState({});
   const [dredgerSitesFilter, setDredgerSitesFilter] = useState("");
   const [dredgerEditId, setDredgerEditId] = useState(null);
   const [dredgerSelected, setDredgerSelected] = useState(new Set());
+  const [dredgerAdding, setDredgerAdding] = useState(false);
 
   async function loadDredgerSites() {
     setDredgerSitesLoading(true);
@@ -31,16 +32,20 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
   async function addDredgerSite() {
     const url = dredgerSitesDraft.url.trim();
     if (!url) return;
+    setDredgerAdding(true);
     try {
       await api("/settings/dredger-sites", {
         method: "POST",
-        body: { url, label: dredgerSitesDraft.label, region: dredgerSitesDraft.region },
+        body: { url, label: dredgerSitesDraft.label, group: dredgerSitesDraft.group },
+        timeout: 30000,
       });
-      setDredgerSitesDraft({ url: "", label: "", region: "" });
+      setDredgerSitesDraft({ url: "", label: "", group: "" });
       await loadDredgerSites();
       onNotice("Site added.");
     } catch (exc) {
       onError(exc);
+    } finally {
+      setDredgerAdding(false);
     }
   }
 
@@ -74,11 +79,15 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
     }
   }
 
-  async function seedDredgerSites(force) {
+  async function seedDredgerSites({ force = false, merge = false } = {}) {
     try {
-      const data = await api("/settings/dredger-sites/seed", { method: "POST", body: { force } });
+      const data = await api("/settings/dredger-sites/seed", { method: "POST", body: { force, merge } });
       await loadDredgerSites();
-      onNotice(`Seeded ${data.inserted} default sites.`);
+      if (data.inserted > 0) {
+        onNotice(`${merge ? "Merged" : "Seeded"} ${data.inserted} default site${data.inserted !== 1 ? "s" : ""}.`);
+      } else {
+        onNotice("No new sites to add — your list already includes all defaults.");
+      }
     } catch (exc) {
       onError(exc);
     }
@@ -109,7 +118,7 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
     });
   }
 
-  function selectDredgerRegion(sites, selected) {
+  function selectDredgerGroup(sites) {
     setDredgerSelected((prev) => {
       const next = new Set(prev);
       const allSelected = sites.every((s) => prev.has(s.id));
@@ -148,13 +157,13 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
     }
   }
 
-  async function deleteRegionDredgerSites(regionSites) {
+  async function deleteGroupDredgerSites(groupSites) {
     try {
-      for (const s of regionSites) {
+      for (const s of groupSites) {
         await api(`/settings/dredger-sites/${s.id}`, { method: "DELETE" });
       }
       await loadDredgerSites();
-      onNotice(`Removed ${regionSites.length} site(s).`);
+      onNotice(`Removed ${groupSites.length} site(s).`);
     } catch (exc) {
       onError(exc);
     }
@@ -163,14 +172,14 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
   const filter = dredgerSitesFilter.toLowerCase();
   const grouped = {};
   for (const site of dredgerSites) {
-    if (filter && !site.url.toLowerCase().includes(filter) && !(site.region || "").toLowerCase().includes(filter)) continue;
-    const region = site.region || "Uncategorized";
-    if (!grouped[region]) grouped[region] = [];
-    grouped[region].push(site);
+    if (filter && !site.url.toLowerCase().includes(filter) && !(site.group || "").toLowerCase().includes(filter)) continue;
+    const group = site.group || "Uncategorized";
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(site);
   }
-  const regionEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+  const groupEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
   const enabledCount = dredgerSites.filter((s) => s.enabled).length;
-  const regions = [...new Set(dredgerSites.map((s) => s.region).filter(Boolean))].sort();
+  const groups = [...new Set(dredgerSites.map((s) => s.group).filter(Boolean))].sort();
   const hasSelection = dredgerSelected.size > 0;
   const hasValidation = Object.keys(dredgerValidationResults).length > 0;
   const deadLinks = hasValidation ? dredgerSites.filter((s) => dredgerValidationResults[s.id] && !dredgerValidationResults[s.id].reachable) : [];
@@ -197,10 +206,10 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
         {dredgerSites.length === 0 && !dredgerSitesLoading ? (
           <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
             <p className="muted" style={{ marginBottom: "1rem" }}>No recipe sources configured yet.</p>
-            <button className="primary" onClick={() => seedDredgerSites(false)}>
+            <button className="primary" onClick={() => seedDredgerSites()}>
               <Icon name="plus" /> Load Default Sites
             </button>
-            <p className="tiny muted" style={{ marginTop: "0.5rem" }}>Seeds ~90 curated recipe blogs organized by cuisine region.</p>
+            <p className="tiny muted" style={{ marginTop: "0.5rem" }}>Seeds ~85 curated recipe blogs organized by group.</p>
           </div>
         ) : (
           <>
@@ -216,20 +225,20 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                 />
                 <input
                   type="text"
-                  list="dredger-region-list"
-                  placeholder="Region"
-                  aria-label="Region"
-                  value={dredgerSitesDraft.region}
-                  onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, region: e.target.value }))}
+                  list="dredger-group-list"
+                  placeholder="Group"
+                  aria-label="Group"
+                  value={dredgerSitesDraft.group}
+                  onChange={(e) => setDredgerSitesDraft((d) => ({ ...d, group: e.target.value }))}
                   style={{ maxWidth: "10rem" }}
                 />
-                <datalist id="dredger-region-list">
-                  {regions.map((r) => (
-                    <option key={r} value={r} />
+                <datalist id="dredger-group-list">
+                  {groups.map((g) => (
+                    <option key={g} value={g} />
                   ))}
                 </datalist>
-                <button className="primary compact" onClick={addDredgerSite} disabled={!dredgerSitesDraft.url.trim()}>
-                  <Icon name="plus" /> Add
+                <button className="primary compact" onClick={addDredgerSite} disabled={!dredgerSitesDraft.url.trim() || dredgerAdding}>
+                  <Icon name={dredgerAdding ? "refresh" : "plus"} /> {dredgerAdding ? "Validating\u2026" : "Add"}
                 </button>
               </div>
               <div className="dredger-filter">
@@ -292,20 +301,20 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
             ) : null}
 
             <div className="dredger-sites-list">
-              {regionEntries.map(([region, sites]) => {
-                const allRegionSelected = sites.every((s) => dredgerSelected.has(s.id));
-                const someRegionSelected = sites.some((s) => dredgerSelected.has(s.id));
+              {groupEntries.map(([group, sites]) => {
+                const allGroupSelected = sites.every((s) => dredgerSelected.has(s.id));
+                const someGroupSelected = sites.some((s) => dredgerSelected.has(s.id));
                 return (
-                  <div key={region} className="dredger-region-group">
+                  <div key={group} className="dredger-group">
                     <div className="dredger-region-header">
                       <label className="dredger-region-select">
                         <input
                           type="checkbox"
-                          checked={allRegionSelected}
-                          ref={(el) => { if (el) el.indeterminate = someRegionSelected && !allRegionSelected; }}
-                          onChange={() => selectDredgerRegion(sites)}
+                          checked={allGroupSelected}
+                          ref={(el) => { if (el) el.indeterminate = someGroupSelected && !allGroupSelected; }}
+                          onChange={() => selectDredgerGroup(sites)}
                         />
-                        <h4 className="dredger-region-label">{region} <span className="chip-count">{sites.length}</span></h4>
+                        <h4 className="dredger-region-label">{group} <span className="chip-count">{sites.length}</span></h4>
                       </label>
                     </div>
                     {sites.map((site) => {
@@ -318,10 +327,10 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
                             <form className="dredger-edit-form" onSubmit={(e) => {
                               e.preventDefault();
                               const fd = new FormData(e.target);
-                              saveDredgerSiteEdit(site.id, { url: fd.get("url"), region: fd.get("region") });
+                              saveDredgerSiteEdit(site.id, { url: fd.get("url"), group: fd.get("group") });
                             }}>
                               <input name="url" defaultValue={site.url} aria-label="Edit site URL" autoFocus />
-                              <input name="region" defaultValue={site.region} placeholder="Region" aria-label="Edit region" list="dredger-region-list" style={{ maxWidth: "10rem" }} />
+                              <input name="group" defaultValue={site.group} placeholder="Group" aria-label="Edit group" list="dredger-group-list" style={{ maxWidth: "10rem" }} />
                               <button type="submit" className="ghost compact" aria-label="Save"><Icon name="check" /></button>
                               <button type="button" className="ghost compact" aria-label="Cancel" onClick={() => setDredgerEditId(null)}><Icon name="x" /></button>
                             </form>
@@ -363,7 +372,10 @@ export default function RecipeSourcesPage({ onNotice, onError }) {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem", gap: "0.5rem" }}>
-              <button className="ghost" onClick={() => seedDredgerSites(true)}>
+              <button className="ghost" onClick={() => seedDredgerSites({ merge: true })}>
+                <Icon name="plus" /> Merge Defaults
+              </button>
+              <button className="ghost" onClick={() => seedDredgerSites({ force: true })}>
                 <Icon name="refresh" /> Reset to Defaults
               </button>
             </div>

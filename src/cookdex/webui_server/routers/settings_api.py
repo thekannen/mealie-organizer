@@ -24,6 +24,7 @@ from ..deps import (
 from ..env_catalog import ENV_SPEC_BY_KEY
 from ..schemas import (
     DbDetectRequest,
+    DbTestRequest,
     DredgerSiteCreateRequest,
     DredgerSitesSeedRequest,
     DredgerSitesValidateRequest,
@@ -500,10 +501,26 @@ def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
 
 @router.post("/settings/test/db")
 async def test_db_settings(
+    payload: DbTestRequest,
     _session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
+    # Override with draft values from the UI (same pattern as other test endpoints)
+    _db_overrides = {
+        "MEALIE_DB_TYPE": payload.db_type,
+        "MEALIE_PG_HOST": payload.pg_host,
+        "MEALIE_PG_PORT": payload.pg_port,
+        "MEALIE_PG_DB": payload.pg_db,
+        "MEALIE_PG_USER": payload.pg_user,
+        "MEALIE_PG_PASS": payload.pg_pass,
+        "MEALIE_DB_SSH_HOST": payload.ssh_host,
+        "MEALIE_DB_SSH_USER": payload.ssh_user,
+        "MEALIE_DB_SSH_KEY": payload.ssh_key,
+    }
+    for key, value in _db_overrides.items():
+        if value is not None:
+            runtime_env[key] = value
     ok, detail = _test_db_connection(runtime_env)
     return {"ok": ok, "detail": detail}
 
@@ -1117,12 +1134,22 @@ async def add_dredger_site(
     if not url.startswith("http://") and not url.startswith("https://"):
         raise HTTPException(status_code=422, detail="URL must start with http:// or https://")
 
-    # Validate URL is reachable
+    # Validate URL is reachable and has a sitemap
     validation = _validate_dredger_site_url(url)
+    if not validation["reachable"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Site is not reachable: {validation.get('error', 'unknown error')}",
+        )
+    if not validation["sitemap_found"]:
+        raise HTTPException(
+            status_code=422,
+            detail="No sitemap found. The dredger needs a sitemap to discover recipes. Check that this is a recipe blog with a sitemap.xml.",
+        )
 
     store = _get_dredger_store()
     try:
-        site_id = store.add_site(url, label=payload.label, region=payload.region)
+        site_id = store.add_site(url, label=payload.label, group=payload.group)
     except _sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="This site URL already exists.")
 
@@ -1151,7 +1178,7 @@ async def update_dredger_site(
         site_id,
         url=payload.url,
         label=payload.label,
-        region=payload.region,
+        group=payload.group,
         enabled=payload.enabled,
     )
     if not updated:
@@ -1180,7 +1207,7 @@ async def seed_dredger_sites(
 ) -> dict[str, Any]:
     from cookdex.recipe_dredger.sites import DEFAULT_SITES
     store = _get_dredger_store()
-    inserted = store.seed_defaults(DEFAULT_SITES, force=payload.force)
+    inserted = store.seed_defaults(DEFAULT_SITES, force=payload.force, merge=payload.merge)
     return {"ok": True, "inserted": inserted}
 
 

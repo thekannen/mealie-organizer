@@ -4413,11 +4413,11 @@ button.danger {
   margin-right: auto;
 }
 
-.dredger-region-group {
+.dredger-group {
   margin-bottom: 0.75rem;
 }
 
-.dredger-region-group:last-child {
+.dredger-group:last-child {
   margin-bottom: 0;
 }
 

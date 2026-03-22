@@ -138,12 +138,12 @@ class TestDredgerStoreSitemapCache:
 
 class TestDredgerStoreSites:
     def test_add_and_list(self, store):
-        site_id = store.add_site("https://example.com", label="Test", region="General")
+        site_id = store.add_site("https://example.com", label="Test", group="General")
         assert site_id > 0
         sites = store.get_all_sites()
         assert len(sites) == 1
         assert sites[0]["url"] == "https://example.com"
-        assert sites[0]["region"] == "General"
+        assert sites[0]["group"] == "General"
 
     def test_strips_trailing_slash(self, store):
         store.add_site("https://example.com/")
@@ -176,8 +176,8 @@ class TestDredgerStoreSites:
 
     def test_seed_defaults(self, store):
         defaults = [
-            {"url": "https://a.com", "region": "General"},
-            {"url": "https://b.com", "region": "Asian"},
+            {"url": "https://a.com", "group": "General"},
+            {"url": "https://b.com", "group": "Asian"},
         ]
         inserted = store.seed_defaults(defaults)
         assert inserted == 2
@@ -282,9 +282,9 @@ class TestDefaultSites:
         for entry in DEFAULT_SITES:
             assert entry["url"].startswith("https://")
 
-    def test_all_have_region(self):
+    def test_all_have_group(self):
         for entry in DEFAULT_SITES:
-            assert entry.get("region"), f"Missing region for {entry['url']}"
+            assert entry.get("group"), f"Missing group for {entry['url']}"
 
 
 # ---------------------------------------------------------------------------

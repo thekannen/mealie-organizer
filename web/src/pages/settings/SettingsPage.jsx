@@ -136,7 +136,19 @@ export default function SettingsPage({ session, overviewMetrics, qualityMetrics,
       }));
 
       const requestOptions = { method: "POST" };
-      if (kind !== "db") {
+      if (kind === "db") {
+        requestOptions.body = {
+          db_type: draftOverrideValue("MEALIE_DB_TYPE"),
+          pg_host: draftOverrideValue("MEALIE_PG_HOST"),
+          pg_port: draftOverrideValue("MEALIE_PG_PORT"),
+          pg_db: draftOverrideValue("MEALIE_PG_DB"),
+          pg_user: draftOverrideValue("MEALIE_PG_USER"),
+          pg_pass: envClear.MEALIE_PG_PASS ? "" : draftOverrideValue("MEALIE_PG_PASS"),
+          ssh_host: draftOverrideValue("MEALIE_DB_SSH_HOST"),
+          ssh_user: draftOverrideValue("MEALIE_DB_SSH_USER"),
+          ssh_key: draftOverrideValue("MEALIE_DB_SSH_KEY"),
+        };
+      } else {
         requestOptions.body = {
           mealie_url: draftOverrideValue("MEALIE_URL"),
           mealie_api_key: envClear.MEALIE_API_KEY ? "" : draftOverrideValue("MEALIE_API_KEY"),

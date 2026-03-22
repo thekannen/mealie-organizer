@@ -77,11 +77,16 @@ class DredgerStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     url TEXT NOT NULL UNIQUE,
                     label TEXT DEFAULT '',
-                    region TEXT DEFAULT '',
+                    site_group TEXT DEFAULT '',
                     enabled INTEGER NOT NULL DEFAULT 1,
                     added_at TEXT NOT NULL
                 );
             """)
+            # Migrate: rename 'region' column to 'site_group' for existing DBs
+            try:
+                conn.execute("ALTER TABLE dredger_sites RENAME COLUMN region TO site_group")
+            except sqlite3.OperationalError:
+                pass  # Column already named site_group, or table is fresh
 
     # ------------------------------------------------------------------
     # Imported URLs
@@ -219,14 +224,15 @@ class DredgerStore:
     def get_all_sites(self) -> list[dict[str, Any]]:
         with _connect(self.db_path, readonly=True) as conn:
             rows = conn.execute(
-                "SELECT id, url, label, region, enabled, added_at FROM dredger_sites ORDER BY region, url"
+                "SELECT id, url, label, site_group, enabled, added_at FROM dredger_sites ORDER BY site_group, url"
             ).fetchall()
-            return [dict(row) for row in rows]
+            # Expose as "group" in the API (site_group avoids SQL reserved word)
+            return [{**dict(row), "group": dict(row).get("site_group", "")} for row in rows]
 
     def get_enabled_sites(self) -> list[str]:
         with _connect(self.db_path, readonly=True) as conn:
             rows = conn.execute(
-                "SELECT url FROM dredger_sites WHERE enabled = 1 ORDER BY region, url"
+                "SELECT url FROM dredger_sites WHERE enabled = 1 ORDER BY site_group, url"
             ).fetchall()
             return [row["url"] for row in rows]
 
@@ -235,18 +241,18 @@ class DredgerStore:
             row = conn.execute("SELECT COUNT(*) FROM dredger_sites").fetchone()
             return row[0] if row else 0
 
-    def add_site(self, url: str, label: str = "", region: str = "") -> int:
+    def add_site(self, url: str, label: str = "", group: str = "") -> int:
         """Add a site. Returns the new row id. Raises sqlite3.IntegrityError on duplicate."""
         normalized = url.rstrip("/")
         with _connect(self.db_path) as conn:
             cursor = conn.execute(
-                "INSERT INTO dredger_sites (url, label, region, enabled, added_at) VALUES (?, ?, ?, 1, ?)",
-                (normalized, label, region, _utc_now()),
+                "INSERT INTO dredger_sites (url, label, site_group, enabled, added_at) VALUES (?, ?, ?, 1, ?)",
+                (normalized, label, group, _utc_now()),
             )
             return cursor.lastrowid or 0
 
     def update_site(self, site_id: int, url: str | None = None, label: str | None = None,
-                    region: str | None = None, enabled: bool | None = None) -> bool:
+                    group: str | None = None, enabled: bool | None = None) -> bool:
         """Update a site. Returns True if a row was changed."""
         fields: list[str] = []
         values: list[Any] = []
@@ -256,9 +262,9 @@ class DredgerStore:
         if label is not None:
             fields.append("label = ?")
             values.append(label)
-        if region is not None:
-            fields.append("region = ?")
-            values.append(region)
+        if group is not None:
+            fields.append("site_group = ?")
+            values.append(group)
         if enabled is not None:
             fields.append("enabled = ?")
             values.append(1 if enabled else 0)
@@ -277,15 +283,17 @@ class DredgerStore:
             cursor = conn.execute("DELETE FROM dredger_sites WHERE id = ?", (site_id,))
             return cursor.rowcount > 0
 
-    def seed_defaults(self, defaults: list[dict[str, str]], force: bool = False) -> int:
+    def seed_defaults(self, defaults: list[dict[str, str]], force: bool = False, merge: bool = False) -> int:
         """Insert default sites. Returns number inserted.
 
-        If force=True, clears the table first. Otherwise only seeds when empty.
+        If force=True, clears the table first then inserts all defaults.
+        If merge=True, adds missing defaults without removing existing sites.
+        Otherwise only seeds when the table is empty.
         """
         with _connect(self.db_path) as conn:
             if force:
                 conn.execute("DELETE FROM dredger_sites")
-            else:
+            elif not merge:
                 count = conn.execute("SELECT COUNT(*) FROM dredger_sites").fetchone()[0]
                 if count > 0:
                     return 0
@@ -298,8 +306,8 @@ class DredgerStore:
                     continue
                 try:
                     conn.execute(
-                        "INSERT OR IGNORE INTO dredger_sites (url, label, region, enabled, added_at) VALUES (?, ?, ?, 1, ?)",
-                        (url, entry.get("label", ""), entry.get("region", ""), now),
+                        "INSERT OR IGNORE INTO dredger_sites (url, label, site_group, enabled, added_at) VALUES (?, ?, ?, 1, ?)",
+                        (url, entry.get("label", ""), entry.get("group", ""), now),
                     )
                     inserted += 1
                 except sqlite3.IntegrityError:
