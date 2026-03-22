@@ -5,6 +5,8 @@
 
 # Local-only files
 marketing/
+compose.dev.yml
+scripts/migrate_mealie_to_tandoor.py
 
 
 # Virtual environments

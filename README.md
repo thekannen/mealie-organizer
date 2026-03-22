@@ -206,6 +206,16 @@ curl -k https://localhost:4820/cookdex/api/v1/health
 - Subprocess isolation — tasks receive a minimal environment, not the full parent env
 - No `shell=True`, `eval()`, or string-interpolated SQL anywhere in the codebase
 
+## Privacy
+
+CookDex does not phone home, collect telemetry, or include any analytics or tracking. Your data stays on your server.
+
+- **No telemetry or analytics** — zero outbound requests to Anthropic, CookDex, or any third party
+- **Credentials stored locally** — API keys and passwords are encrypted at rest (Fernet) and never leave your instance
+- **Network access** — CookDex communicates only with your Mealie instance and, during recipe dredging, the recipe sites you configure
+- **AI categorization** — if enabled, recipe names and ingredient lists are sent to your configured provider (OpenAI API or your own Ollama instance). No other recipe data is transmitted
+- **No cookies or tracking** — session cookies are used for authentication only (HttpOnly, Secure, SameSite=Lax)
+
 ## Accessibility
 
 The web UI targets WCAG 2.1 AA compliance:

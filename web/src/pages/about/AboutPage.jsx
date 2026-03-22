@@ -34,6 +34,39 @@ export default function AboutPage({ aboutMeta, healthMeta, lastLoadedAt }) {
         </article>
 
         <article className="card">
+          <h3><Icon name="shield" /> Privacy &amp; Data</h3>
+          <ul className="kv-list">
+            <li>
+              <span>Telemetry</span>
+              <strong>None</strong>
+            </li>
+            <li>
+              <span>Analytics &amp; Tracking</span>
+              <strong>None</strong>
+            </li>
+            <li>
+              <span>Credentials</span>
+              <strong>Local only, encrypted at rest</strong>
+            </li>
+            <li>
+              <span>Network access</span>
+              <strong>Your Mealie instance only</strong>
+            </li>
+          </ul>
+          <p className="privacy-detail">
+            CookDex does not phone home, collect usage data, or send
+            information to any third-party service. API keys and passwords
+            are stored locally in an encrypted database and never leave
+            your server.
+          </p>
+          <p className="privacy-detail">
+            If AI-powered categorization is enabled, recipe names and
+            ingredient lists are sent to your configured provider
+            (OpenAI or Ollama). No other recipe data is transmitted.
+          </p>
+        </article>
+
+        <article className="card">
           <h3><Icon name="external" /> Project Links</h3>
           <a
             className="link-btn"

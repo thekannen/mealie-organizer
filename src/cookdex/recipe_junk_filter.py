@@ -13,6 +13,7 @@ Detection logic (per recipe, applied in order):
   5. Utility pages    – slug contains privacy-policy, about-us, contact, login, etc.
   6. Bad instructions – placeholder text ("could not detect", "unavailable") or empty
   7. No ingredients   – recipe has an empty ingredient list
+  8. Bad scrape       – char-by-char HTML steps, all ingredients in one note, etc.
 
 In dry-run mode (default) the tool reports what would be deleted without touching
 anything.  Pass --apply to actually delete.
@@ -165,6 +166,56 @@ def _extract_instructions_text(recipe: dict[str, Any]) -> str:
     return str(raw)
 
 
+def _classify_bad_scrape(recipe: dict[str, Any]) -> tuple[str | None, str]:
+    """Detect recipes where the scraper produced garbled data.
+
+    Known patterns (discovered during Mealie→Tandoor migration):
+      - Char-by-char HTML steps: scraper iterated an HTML string character by
+        character instead of parsing it, producing hundreds of single-char steps
+        like ``<``, ``p``, ``>``, ``r``, ``e`` …
+      - All ingredients in one note: structured ingredient list collapsed into a
+        single ingredient whose ``note`` field contains the entire ingredient
+        block as unparsed text (often >200 chars).
+    """
+    steps = recipe.get("recipeInstructions") or []
+    ingredients = recipe.get("recipeIngredient") or []
+
+    if not isinstance(steps, list):
+        return None, ""
+
+    # --- char-by-char steps ---
+    # Real recipes rarely exceed ~80 steps; >100 with majority single-char is
+    # a dead giveaway of an iterated HTML string.
+    if len(steps) > 50:
+        single_char = sum(
+            1 for s in steps
+            if len(str(s.get("text", "") if isinstance(s, dict) else s).strip()) <= 1
+        )
+        ratio = single_char / len(steps)
+        if ratio >= 0.8:
+            return "bad_scrape", (
+                f"Char-by-char steps ({len(steps)} steps, "
+                f"{single_char} single-char = {ratio:.0%})"
+            )
+
+    # --- all ingredients in one note ---
+    # Legit recipes with 1 ingredient have a short note; collapsed scrapes
+    # stuff the entire ingredient list into a single note field.
+    if len(ingredients) == 1:
+        ing = ingredients[0]
+        if isinstance(ing, dict):
+            note = ing.get("note") or ""
+            # A single ingredient note >200 chars almost certainly contains
+            # the full unparsed ingredient list.
+            if len(note) > 200:
+                return "bad_scrape", (
+                    f"All ingredients collapsed into one note "
+                    f"({len(note)} chars)"
+                )
+
+    return None, ""
+
+
 @dataclass
 class JunkAction:
     slug: str
@@ -220,7 +271,7 @@ class RecipeJunkFilter:
         # Pass 2: check instructions and ingredients for recipes not already flagged.
         # The listing API doesn't include recipeInstructions or full ingredient
         # data, so we fetch full recipes for deeper inspection.
-        deep_reasons = {None, "bad_instructions", "no_ingredients"}
+        deep_reasons = {None, "bad_instructions", "no_ingredients", "bad_scrape"}
         if self.filter_reason in deep_reasons:
             suspect_slugs = [
                 str(r.get("slug", ""))
@@ -228,7 +279,7 @@ class RecipeJunkFilter:
                 if str(r.get("slug", "")) not in flagged_slugs
             ]
             if suspect_slugs:
-                print(f"[start] Checking {len(suspect_slugs)} recipes for bad instructions / missing ingredients ...", flush=True)
+                print(f"[start] Checking {len(suspect_slugs)} recipes for bad instructions / missing ingredients / bad scrapes ...", flush=True)
                 checked = 0
                 found = 0
                 for slug in suspect_slugs:
@@ -243,6 +294,9 @@ class RecipeJunkFilter:
                             if not ingredients:
                                 reason_code = "no_ingredients"
                                 reason = "Recipe has no ingredients"
+                        # Check for bad scrapes (char-by-char steps, collapsed ingredients)
+                        if not reason_code and self.filter_reason in (None, "bad_scrape"):
+                            reason_code, reason = _classify_bad_scrape(full)
                         if reason_code:
                             name = str(full.get("name") or "").strip()
                             if not self.filter_reason or self.filter_reason == reason_code:
@@ -252,7 +306,7 @@ class RecipeJunkFilter:
                         pass
                     checked += 1
                     if checked % 500 == 0:
-                        print(f"[info] checked {checked}/{len(suspect_slugs)} ({found} bad instructions found)", flush=True)
+                        print(f"[info] checked {checked}/{len(suspect_slugs)} ({found} junk found)", flush=True)
                 if found:
                     print(f"[info] deep scan: {found} additional junk recipes found", flush=True)
 
@@ -332,7 +386,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="Delete junk recipes from Mealie.")
     parser.add_argument(
         "--reason",
-        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions", "failed_scrape", "no_ingredients"],
+        choices=["how_to", "listicle", "digest", "keyword", "utility", "bad_instructions", "failed_scrape", "no_ingredients", "bad_scrape"],
         default=None,
         help="Only process recipes matching this specific junk category.",
     )

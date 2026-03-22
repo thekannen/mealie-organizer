@@ -709,6 +709,13 @@ textarea {
   align-items: start;
 }
 
+.privacy-detail {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0.5rem 0 0;
+}
+
 .run-form {
   display: grid;
   gap: 0.72rem;

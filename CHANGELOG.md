@@ -2,6 +2,17 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.61] - 2026-03-22
+
+### Added
+- **Privacy & Data** card on About page — shows telemetry, analytics, credential storage, and network access at a glance with detailed explanations
+- **Privacy** section in README — documents data handling, credential storage, AI provider disclosure, and cookie usage
+- **Bad scrape detection** in junk filter — catches recipes where the scraper produced garbled data:
+  - Char-by-char HTML steps (scraper iterated an HTML string character by character, producing hundreds of single-char steps)
+  - Collapsed ingredients (entire ingredient list jammed into a single note field as unparsed text)
+- "Bad scrapes" option in junk filter reason dropdown (UI and CLI `--reason bad_scrape`)
+- Mealie-to-Tandoor migration script (`scripts/migrate_mealie_to_tandoor.py`) — direct API-to-API recipe transfer with image support, resumability, and Unicode-safe output
+
 ## [2026.3.59] - 2026-03-22
 
 ### Added

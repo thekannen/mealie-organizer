@@ -107,6 +107,7 @@ _JUNK_REASON_CHOICES: list[dict[str, str]] = [
     {"value": "bad_instructions", "label": "Placeholder instructions"},
     {"value": "failed_scrape", "label": "Failed scrapes (no name / GUID)"},
     {"value": "no_ingredients", "label": "No ingredients"},
+    {"value": "bad_scrape", "label": "Bad scrapes (garbled steps / collapsed ingredients)"},
 ]
 
 
