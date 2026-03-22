@@ -613,6 +613,11 @@ def _validated_ssh_key_path(raw_path: str) -> str:
         if not os.path.isfile(safe_path):
             continue
 
+        # Must be readable by the current process user — a root-owned 600
+        # file in /app/.ssh/ won't work when running as the app user.
+        if not os.access(safe_path, os.R_OK):
+            continue
+
         return safe_path
 
     raise FileNotFoundError("SSH key not found.")
@@ -680,9 +685,15 @@ def _ssh_exec(
     if paramiko is None:
         return _subprocess_ssh(host, user, resolved_key, command, timeout)
 
-    known_hosts = os.path.join(
-        os.path.realpath(os.path.expanduser("~/.ssh")), "known_hosts",
-    )
+    # Find a writable directory for known_hosts — ~/.ssh/ may not exist
+    # when running as the app user (HOME=/nonexistent).
+    _kh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
+    if not os.path.isdir(_kh_dir):
+        for _alt in ["/tmp/.ssh-app", "/tmp"]:
+            if os.path.isdir(_alt) and os.access(_alt, os.W_OK):
+                _kh_dir = _alt
+                break
+    known_hosts = os.path.join(_kh_dir, "known_hosts")
 
     class _TofuPolicy(paramiko.MissingHostKeyPolicy):
         """Trust-on-first-use: persist new host keys, reject changes."""

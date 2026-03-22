@@ -10,9 +10,27 @@ CookDex can read and write the Mealie database directly for bulk operations, byp
 | `yield-normalize` on 3000 recipes | ~30 min (3000 PATCH calls) | ~3 sec (single transaction) |
 | Nutrition coverage | Estimated from sample | Exact from `recipe_nutrition` table |
 
-## Quick Setup (Auto-Detect via UI)
+## Quick Setup (Wizard)
 
-The fastest way to get Direct DB working. CookDex will SSH into your Mealie host and automatically discover the database credentials from Docker or config files.
+The fastest way to get Direct DB working. SSH into the machine running CookDex and run:
+
+```bash
+docker cp cookdex:/app/scripts/setup-db-tunnel.sh /tmp/setup-db-tunnel.sh && bash /tmp/setup-db-tunnel.sh
+```
+
+The wizard will:
+
+1. Ask for your Mealie host IP and SSH user
+2. Generate an SSH key and copy it to the Mealie host (you'll enter the password once)
+3. Enable the volume mount in your compose file
+4. Save the SSH settings directly into CookDex
+5. Restart the container
+
+When it's done, open CookDex **Settings** → click **Auto-detect DB** → click **Apply Changes**. That's it.
+
+## Manual Setup (Step-by-Step)
+
+If you prefer to set things up by hand, or the wizard doesn't work for your environment, follow these steps.
 
 ### 1. Generate an SSH key
 

@@ -156,11 +156,13 @@ The `health-check`, `yield-normalize`, `tag-categorize`, `slug-repair`, and `rei
 
 All DB dependencies are included in the Docker image — no extra installation needed.
 
-**Quick path (auto-detect):** Set up an SSH key to your Mealie host, configure the SSH settings in Settings, and click **Auto-detect DB** — CookDex discovers your database credentials automatically.
+**Quick path:** Run the setup wizard on your Docker host — it handles SSH keys, volume mounts, and settings in one command:
 
-**Manual path:** Configure DB Type and PostgreSQL/SQLite credentials directly in Settings.
+```bash
+docker cp cookdex:/app/scripts/setup-db-tunnel.sh /tmp/setup-db-tunnel.sh && bash /tmp/setup-db-tunnel.sh
+```
 
-See [Direct DB Access](docs/DIRECT_DB.md) for step-by-step instructions for both approaches.
+Then open Settings and click **Auto-detect DB**. See [Direct DB Access](docs/DIRECT_DB.md) for details and manual setup instructions.
 
 ## Docker Volumes
 

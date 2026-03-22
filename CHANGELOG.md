@@ -2,6 +2,17 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.47] - 2026-03-22
+
+### Added
+- **Direct DB setup wizard** (`scripts/setup-db-tunnel.sh`) — interactive script that handles SSH key generation, copying, volume mounting, settings configuration, and container restart in one command
+- Wizard writes SSH settings directly into CookDex's state database — no manual field entry needed
+
+### Fixed
+- SSH key validation now checks read permission (`os.access`) — fixes key found but unreadable when web server runs as `app` user but key is owned by `root` (600)
+- DB tunnel client also checks readability before selecting a key path
+- SSH known_hosts path falls back to `/tmp/.ssh-app/` when `~/.ssh/` doesn't exist — fixes paramiko failure when `HOME=/nonexistent` (app user in Docker)
+
 ## [2026.3.46] - 2026-03-22
 
 ### Fixed
