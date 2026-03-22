@@ -2,7 +2,7 @@
 
 All notable changes to CookDex are documented here.
 
-## [2026.3.58] - 2026-03-22
+## [2026.3.59] - 2026-03-22
 
 ### Added
 - **Direct DB setup wizard** (`scripts/setup-db-tunnel.sh`) — interactive script that handles SSH key generation, copying, volume mounting, settings configuration, and container restart in one command

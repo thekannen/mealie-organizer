@@ -405,6 +405,7 @@ async function main() {
       { label: /queue run/i, uiLabel: "Queue Run" },
       { label: /preview run/i, uiLabel: "Preview Run" },
       { label: /run live/i, uiLabel: "Run Live" },
+      { label: /^run$/i, uiLabel: "Run" },
     ];
 
     for (const candidate of candidates) {
@@ -418,7 +419,7 @@ async function main() {
       }
     }
 
-    throw new Error("Run action button not found (expected Queue Run, Preview Run, or Run Live).");
+    throw new Error("Run action button not found (expected Queue Run, Preview Run, Run Live, or Run).");
   }
 
   async function clickSidebarAction(label, marker) {
