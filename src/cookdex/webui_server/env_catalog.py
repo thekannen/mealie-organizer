@@ -239,9 +239,9 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         key="MEALIE_DB_SSH_KEY",
         label="SSH Key Path",
         group="Direct DB",
-        default="~/.ssh/cookdex_mealie",
+        default="/app/.ssh/cookdex_mealie",
         secret=False,
-        description="Path to SSH private key file for the tunnel.",
+        description="Path to SSH private key file for the tunnel (use container path, e.g. /app/.ssh/cookdex_mealie).",
     ),
 )
 

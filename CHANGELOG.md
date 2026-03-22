@@ -2,6 +2,20 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.46] - 2026-03-22
+
+### Fixed
+- SSH key validation now searches `/app/.ssh/` and `/tmp/.ssh-app/` in addition to `~/.ssh/` — fixes "key not found" when using the documented Docker volume mount
+- DB tunnel client also falls back to `/app/.ssh/` and `/tmp/.ssh-app/` when the key isn't found via `~/.ssh/`
+- Default SSH Key Path changed from `~/.ssh/cookdex_mealie` to `/app/.ssh/cookdex_mealie` to match the documented container mount path
+
+### Changed
+- Rewrote Direct DB docs — leads with quick-path auto-detect setup, moves manual config to separate section
+- Removed misleading `pip install 'cookdex[db]'` from docs (dependencies are included in Docker image)
+- Updated in-app help guides to match: merged SSH tunnel + credential guides into Quick Path and Manual fallback
+- Troubleshooting section now recommends Auto-detect DB first
+- Quick setup steps now more explicit: notes compose volume line is pre-existing (just uncomment), clarifies where to SSH, what to expect at each step
+
 ## [2026.3.45] - 2026-03-21
 
 ### Added

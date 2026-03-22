@@ -154,24 +154,13 @@ After first login, all provider settings are managed from the Settings page.
 
 The `health-check`, `yield-normalize`, `tag-categorize`, `slug-repair`, and `reimport-recipes` tasks support a `use_db` option that bypasses the Mealie HTTP API and reads/writes directly to the database. This is dramatically faster for large libraries — a 3000-recipe quality audit completes in ~2 seconds instead of several minutes. For `tag-categorize` (rule-based method), it also unlocks ingredient-matching and tool-detection rules that are not available via the API.
 
-To enable it:
+All DB dependencies are included in the Docker image — no extra installation needed.
 
-1. Install the `db` extras:
-   ```bash
-   pip install 'cookdex[db]'
-   ```
+**Quick path (auto-detect):** Set up an SSH key to your Mealie host, configure the SSH settings in Settings, and click **Auto-detect DB** — CookDex discovers your database credentials automatically.
 
-2. Add DB credentials to `.env` (see `.env.example` for all options):
-   ```
-   MEALIE_DB_TYPE=postgres
-   MEALIE_PG_HOST=localhost
-   MEALIE_PG_PASS=your_mealie_db_password
-   MEALIE_DB_SSH_HOST=192.168.1.100   # omit if Postgres is directly reachable
-   ```
+**Manual path:** Configure DB Type and PostgreSQL/SQLite credentials directly in Settings.
 
-3. In the Web UI, enable **Use Direct DB** when queuing the relevant task.
-
-See [Direct DB Access](docs/DIRECT_DB.md) for full setup instructions including SSH tunnel configuration, SQLite support, and key generation.
+See [Direct DB Access](docs/DIRECT_DB.md) for step-by-step instructions for both approaches.
 
 ## Docker Volumes
 

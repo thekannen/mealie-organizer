@@ -121,8 +121,16 @@ class DBWrapper:
             ) from exc
 
         ssh_user = _env("MEALIE_DB_SSH_USER", "root")
-        ssh_key = _env("MEALIE_DB_SSH_KEY") or os.path.expanduser("~/.ssh/cookdex_mealie")
+        ssh_key = _env("MEALIE_DB_SSH_KEY") or "~/.ssh/cookdex_mealie"
         ssh_key = os.path.expanduser(ssh_key)
+        if not os.path.isfile(ssh_key):
+            # Try documented Docker mount and entrypoint copy locations
+            key_name = os.path.basename(ssh_key)
+            for alt_dir in ["/app/.ssh", "/tmp/.ssh-app"]:
+                alt = os.path.join(alt_dir, key_name)
+                if os.path.isfile(alt):
+                    ssh_key = alt
+                    break
         print(f"[db] Opening SSH tunnel -> {ssh_user}@{ssh_host} -> {pg_host}:{pg_port}", flush=True)
         print(f"[db] SSH key: {ssh_key} (exists={os.path.isfile(ssh_key)})", flush=True)
 

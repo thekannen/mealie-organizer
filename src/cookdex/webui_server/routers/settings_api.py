@@ -561,49 +561,61 @@ def _validated_container_name(value: str) -> str:
 
 
 def _validated_ssh_key_path(raw_path: str) -> str:
-    """Resolve a user-provided SSH key path safely within ``~/.ssh/``.
+    """Resolve a user-provided SSH key path safely within allowed directories.
 
     Accepts a plain filename (e.g. ``cookdex_mealie``) or a path that
-    includes ``~/.ssh/`` (e.g. ``~/.ssh/cookdex_mealie``).  The resolved
-    file **must** reside directly inside ``~/.ssh/`` — paths that escape
-    that directory are rejected to prevent path-traversal attacks.
+    includes a directory (e.g. ``~/.ssh/cookdex_mealie``,
+    ``/app/.ssh/cookdex_mealie``).  The resolved file **must** reside
+    directly inside one of the allowed directories — paths that escape
+    are rejected to prevent path-traversal attacks.
+
+    Allowed directories (checked in order):
+      1. ``~/.ssh/``          — standard SSH key location
+      2. ``/app/.ssh/``       — documented Docker volume mount path
+      3. ``/tmp/.ssh-app/``   — entrypoint copy destination
     """
     candidate = str(raw_path or "").strip()
     if not candidate:
         raise ValueError("Invalid SSH key path.")
 
-    ssh_dir = os.path.realpath(os.path.expanduser("~/.ssh"))
-
     # Extract just the filename; ignore any directory components the
-    # caller may have supplied so the result is always inside ~/.ssh/.
+    # caller may have supplied so the result is always inside an allowed dir.
     target_name = os.path.basename(os.path.expanduser(candidate))
     if not target_name or target_name.startswith("."):
         raise ValueError("Invalid SSH key filename.")
 
-    # Verify the file exists by enumerating ~/.ssh/ entries rather than
-    # passing user-derived data to filesystem APIs (prevents path-injection
-    # taint flow).
-    try:
-        dir_entries = os.listdir(ssh_dir)
-    except OSError:
-        raise FileNotFoundError("SSH key not found.")
+    # Search allowed directories for the key file.
+    allowed_dirs = [
+        os.path.realpath(os.path.expanduser("~/.ssh")),
+        "/app/.ssh",
+        "/tmp/.ssh-app",
+    ]
 
-    # Match against the directory listing (untainted source) and build the
-    # return path from the listing entry, breaking the taint chain.
-    matched = next((e for e in dir_entries if e == target_name), None)
-    if matched is None:
-        raise FileNotFoundError("SSH key not found.")
+    for ssh_dir in allowed_dirs:
+        try:
+            dir_entries = os.listdir(ssh_dir)
+        except OSError:
+            continue
 
-    safe_path = os.path.realpath(os.path.join(ssh_dir, matched))
+        # Match against the directory listing (untainted source) and build
+        # the return path from the listing entry, breaking the taint chain.
+        matched = next((e for e in dir_entries if e == target_name), None)
+        if matched is None:
+            continue
 
-    # Belt-and-suspenders: ensure the resolved path is under ~/.ssh/.
-    if not safe_path.startswith(ssh_dir + os.sep) and safe_path != ssh_dir:
-        raise ValueError("SSH key path escapes ~/.ssh/.")
+        safe_path = os.path.realpath(os.path.join(ssh_dir, matched))
 
-    if not os.path.isfile(safe_path):
-        raise FileNotFoundError("SSH key not found.")
+        # Ensure the resolved path is under this allowed directory.
+        real_dir = os.path.realpath(ssh_dir)
+        if not safe_path.startswith(real_dir + os.sep) and safe_path != real_dir:
+            continue
 
-    return safe_path
+        if not os.path.isfile(safe_path):
+            continue
+
+        return safe_path
+
+    raise FileNotFoundError("SSH key not found.")
 
 
 def _subprocess_ssh(
