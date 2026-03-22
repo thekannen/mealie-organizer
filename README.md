@@ -25,7 +25,7 @@ docker compose pull cookdex
 docker compose up -d cookdex
 ```
 
-Open `https://localhost:4820/cookdex` (accept the self-signed certificate warning), create your admin account, then add your Mealie URL and API key in **Settings**.
+Open `https://you.server.ip.address:4820/cookdex` (accept the self-signed certificate warning), create your admin account, then add your Mealie URL and API key in **Settings**.
 
 No `.env` file is required — configuration is managed through the web UI.
 
