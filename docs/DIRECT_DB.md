@@ -88,7 +88,7 @@ Open CookDex in your browser and go to **Settings**. Expand the **Direct DB** se
 | Setting | What to enter |
 |---|---|
 | **SSH Tunnel Host** | The IP or hostname of your Mealie server (e.g. `192.168.1.100`) — the same address you used in `ssh-copy-id` above |
-| **SSH Tunnel User** | The SSH user on that host (e.g. `aaron`) — the same user you used in `ssh-copy-id` above |
+| **SSH Tunnel User** | The SSH user on that host (e.g. `your_user`) — the same user you used in `ssh-copy-id` above |
 | **SSH Key Path** | Leave the default `/app/.ssh/cookdex_mealie` — this is the **container** path where you mounted the key, not the host path |
 
 Click **Apply Changes**.
