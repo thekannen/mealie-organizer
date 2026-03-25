@@ -12,9 +12,23 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+_MIN_DELAY: float = 1.0  # hard floor — cannot be bypassed by config
+
+_VERSION = "unknown"
+try:
+    from importlib.metadata import version as _pkg_version
+
+    _VERSION = _pkg_version("cookdex")
+except Exception:
+    pass
+
+USER_AGENT = f"CookDex/{_VERSION} (+https://github.com/thekannen/CookDex)"
+
+
 def get_crawl_session() -> requests.Session:
     """Create an HTTP session with retry logic for GET/HEAD requests."""
     session = requests.Session()
+    session.headers["User-Agent"] = USER_AGENT
     retries = Retry(
         total=3,
         backoff_factor=1,
@@ -28,7 +42,7 @@ def get_crawl_session() -> requests.Session:
 
 class RateLimiter:
     def __init__(self, default_delay: float = 2.0, respect_robots: bool = True) -> None:
-        self.default_delay = default_delay
+        self.default_delay = max(default_delay, _MIN_DELAY)
         self.respect_robots = respect_robots
         self.last_request: Dict[str, float] = {}
         self.crawl_delays: Dict[str, float] = {}

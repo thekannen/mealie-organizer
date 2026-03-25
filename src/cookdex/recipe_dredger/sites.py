@@ -1,100 +1,24 @@
 """Default curated recipe sites for the dredger.
 
-These are seeded into the dredger_sites table on first use and can be
-managed from the Settings > Recipe Sources UI afterward.
+Loaded from configs/default_sites.json at runtime and seeded into the
+dredger_sites table on first use.  Managed from Settings > Recipe Sources UI.
 """
 
 from __future__ import annotations
 
-DEFAULT_SITES: list[dict[str, str]] = [
-    # ── General ───────────────────────────────────────────────────────
-    {"url": "https://www.seriouseats.com", "group": "General"},
-    {"url": "https://www.bonappetit.com", "group": "General"},
-    {"url": "https://www.foodandwine.com", "group": "General"},
-    {"url": "https://www.simplyrecipes.com", "group": "General"},
-    {"url": "https://smittenkitchen.com", "group": "General"},
-    {"url": "https://www.skinnytaste.com", "group": "General"},
-    {"url": "https://www.budgetbytes.com", "group": "General"},
-    {"url": "https://www.twopeasandtheirpod.com", "group": "General"},
-    {"url": "https://cookieandkate.com", "group": "General"},
-    {"url": "https://minimalistbaker.com", "group": "General"},
-    {"url": "https://gimmesomeoven.com", "group": "General"},
-    {"url": "https://pinchofyum.com", "group": "General"},
-    {"url": "https://www.loveandlemons.com", "group": "General"},
-    {"url": "https://www.halfbakedharvest.com", "group": "General"},
-    {"url": "https://sallysbakingaddiction.com", "group": "General"},
-    {"url": "https://www.wellplated.com", "group": "General"},
-    {"url": "https://www.acouplecooks.com", "group": "General"},
-    {"url": "https://www.feastingathome.com", "group": "General"},
-    {"url": "https://www.recipetineats.com", "group": "General"},
-    {"url": "https://www.dinneratthezoo.com", "group": "General"},
-    {"url": "https://cafedelites.com", "group": "General"},
-    {"url": "https://natashaskitchen.com", "group": "General"},
-    {"url": "https://www.spendwithpennies.com", "group": "General"},
-    {"url": "https://carlsbadcravings.com", "group": "General"},
-    {"url": "https://www.averiecooks.com", "group": "General"},
-    {"url": "https://www.closetcooking.com", "group": "General"},
-    {"url": "https://rasamalaysia.com", "group": "General"},
-    {"url": "https://iamafoodblog.com", "group": "General"},
-    {"url": "https://www.101cookbooks.com", "group": "General"},
-    {"url": "https://www.sproutedkitchen.com", "group": "General"},
-    {"url": "https://www.howsweeteats.com", "group": "General"},
-    {"url": "https://joythebaker.com", "group": "General"},
-    {"url": "https://www.melskitchencafe.com", "group": "General"},
-    {"url": "https://www.eatingbirdfood.com", "group": "General"},
-    # ── Asian ─────────────────────────────────────────────────────────
-    {"url": "https://www.justonecookbook.com", "group": "Asian"},
-    {"url": "https://www.woksoflife.com", "group": "Asian"},
-    {"url": "https://omnivorescookbook.com", "group": "Asian"},
-    {"url": "https://glebekitchen.com", "group": "Asian"},
-    {"url": "https://www.indianhealthyrecipes.com", "group": "Asian"},
-    {"url": "https://www.vegrecipesofindia.com", "group": "Asian"},
-    {"url": "https://www.manjulaskitchen.com", "group": "Asian"},
-    {"url": "https://hebbarskitchen.com", "group": "Asian"},
-    {"url": "https://www.koreanbapsang.com", "group": "Asian"},
-    {"url": "https://mykoreankitchen.com", "group": "Asian"},
-    {"url": "https://hot-thai-kitchen.com", "group": "Asian"},
-    {"url": "https://panlasangpinoy.com", "group": "Asian"},
-    {"url": "https://www.kawalingpinoy.com", "group": "Asian"},
-    {"url": "https://steamykitchen.com", "group": "Asian"},
-    {"url": "https://chinasichuanfood.com", "group": "Asian"},
-    {"url": "https://redhousespice.com", "group": "Asian"},
-    {"url": "https://seonkyounglongest.com", "group": "Asian"},
-    {"url": "https://pupswithchopsticks.com", "group": "Asian"},
-    {"url": "https://wandercooks.com", "group": "Asian"},
-    {"url": "https://www.pressurecookrecipes.com", "group": "Asian"},
-    # ── Latin American ────────────────────────────────────────────────
-    {"url": "https://www.isabeleats.com", "group": "Latin American"},
-    {"url": "https://pinaenlacocina.com", "group": "Latin American"},
-    {"url": "https://www.dominicancooking.com", "group": "Latin American"},
-    {"url": "https://www.mycolombianrecipes.com", "group": "Latin American"},
-    {"url": "https://www.laylita.com", "group": "Latin American"},
-    {"url": "https://www.braziliankitchenabroad.com", "group": "Latin American"},
-    {"url": "https://www.chilipeppermadness.com", "group": "Latin American"},
-    {"url": "https://www.kitchengidget.com", "group": "Latin American"},
-    {"url": "https://www.quericavida.com", "group": "Latin American"},
-    # ── African & Caribbean ───────────────────────────────────────────
-    {"url": "https://www.africanbites.com", "group": "African & Caribbean"},
-    {"url": "https://lowcarbafrica.com", "group": "African & Caribbean"},
-    {"url": "https://www.myactivekitchen.com", "group": "African & Caribbean"},
-    {"url": "https://www.cheflolaskitchen.com", "group": "African & Caribbean"},
-    {"url": "https://sisijemimah.com", "group": "African & Caribbean"},
-    {"url": "https://originalflava.com", "group": "African & Caribbean"},
-    {"url": "https://caribbeanpot.com", "group": "African & Caribbean"},
-    {"url": "https://www.alicaspepperpot.com", "group": "African & Caribbean"},
-    {"url": "https://jehancancook.com", "group": "African & Caribbean"},
-    {"url": "https://www.cookwithdena.com", "group": "African & Caribbean"},
-    # ── Mediterranean & Middle Eastern ────────────────────────────────
-    {"url": "https://www.themediterraneandish.com", "group": "Mediterranean"},
-    {"url": "https://www.lazycatkitchen.com", "group": "Mediterranean"},
-    {"url": "https://ozlemsturkishtable.com", "group": "Mediterranean"},
-    {"url": "https://persianmama.com", "group": "Mediterranean"},
-    {"url": "https://www.unicornsinthekitchen.com", "group": "Mediterranean"},
-    {"url": "https://www.myjewishlearning.com/the-nosher", "group": "Mediterranean"},
-    {"url": "https://toriavey.com", "group": "Mediterranean"},
-    # ── Baking & Dessert ──────────────────────────────────────────────
-    {"url": "https://www.kingarthurbaking.com/recipes", "group": "Baking"},
-    {"url": "https://preppykitchen.com", "group": "Baking"},
-    {"url": "https://sugarspunrun.com", "group": "Baking"},
-    {"url": "https://www.biggerbolderbaking.com", "group": "Baking"},
-]
+import json
+from pathlib import Path
+
+_SITES_JSON = Path(__file__).resolve().parents[3] / "configs" / "default_sites.json"
+
+
+def load_default_sites() -> list[dict[str, str]]:
+    """Load default sites from the bundled JSON file."""
+    if not _SITES_JSON.is_file():
+        return []
+    with open(_SITES_JSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+# Backwards-compatible alias — existing code imports DEFAULT_SITES directly.
+DEFAULT_SITES: list[dict[str, str]] = load_default_sites()

@@ -2,6 +2,17 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.63] - 2026-03-25
+
+### Security
+- **SSRF fix** — Starter pack import endpoint now validates URLs through `_validate_service_url`, blocking private IPs, cloud metadata endpoints, and non-HTTP schemes
+- **Prompt injection hardening** — Recipe names, slugs, and ingredients are sanitized before AI prompt interpolation (strips control chars, role markers, and common injection phrases)
+- **Identified User-Agent** — Dredger crawler now sends `CookDex/{version}` with repo link instead of anonymous `python-requests` default
+- **Rate limit floor** — Hard minimum 1s crawl delay that cannot be bypassed by configuration
+
+### Changed
+- Default site list moved from hardcoded Python to `configs/default_sites.json` — cleaner data/code separation
+
 ## [2026.3.62] - 2026-03-24
 
 ### Fixed

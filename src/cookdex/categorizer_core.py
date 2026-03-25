@@ -465,13 +465,25 @@ class MealieCategorizer:
         return self._get_paginated(f"{self.mealie_url}/organizers/tags?perPage=1000", timeout=60)
 
     @staticmethod
-    def _format_recipe_lines(recipes):
+    def _sanitize_field(value: str, max_len: int = 200) -> str:
+        """Strip control chars and truncate to limit prompt injection surface."""
+        cleaned = re.sub(r"[\x00-\x1f\x7f]", "", str(value))
+        # Collapse sequences that look like prompt injection boundaries
+        cleaned = re.sub(r"(?i)(system|user|assistant)\s*:", "", cleaned)
+        cleaned = re.sub(r"(?i)ignore\s+(all\s+)?previous\s+instructions", "", cleaned)
+        return cleaned[:max_len]
+
+    @classmethod
+    def _format_recipe_lines(cls, recipes):
         lines = ""
         for recipe in recipes:
-            ingredients = ", ".join(i.get("title", "") for i in recipe.get("ingredients", [])[:10])
-            lines += (
-                f"\n- slug={recipe.get('slug')} | name=\"{recipe.get('name', '')}\" | ingredients: {ingredients}"
+            slug = cls._sanitize_field(recipe.get("slug", ""), 80)
+            name = cls._sanitize_field(recipe.get("name", ""), 200)
+            ingredients = ", ".join(
+                cls._sanitize_field(i.get("title", ""), 100)
+                for i in recipe.get("ingredients", [])[:10]
             )
+            lines += f"\n- slug={slug} | name=\"{name}\" | ingredients: {ingredients}"
         return lines
 
     @staticmethod
