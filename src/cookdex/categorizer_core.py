@@ -12,6 +12,13 @@ import requests
 from .config import env_or_config
 
 
+class ProviderUnavailableError(RuntimeError):
+    """Raised when an AI provider is persistently unreachable (e.g. quota exhausted).
+
+    Signals the caller to abort immediately rather than retrying further.
+    """
+
+
 def require_int(value: object, field: str) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -270,6 +277,9 @@ class MealieCategorizer:
         self._throttle_lock = threading.Lock()
         self._last_request_time = 0.0
         self.cache_enabled = True
+        self._provider_unavailable = False
+        self._consecutive_failures = 0
+        self._consecutive_failure_limit = 3
         self.stats = {
             "query_retry_warnings": 0,
             "query_failures": 0,
@@ -466,52 +476,36 @@ class MealieCategorizer:
 
     @staticmethod
     def _single_organizer_prompt(recipes, field, role, names, example, recipe_lines):
-        names_text = "\n".join(f"- {name}" for name in names)
+        names_text = ", ".join(names)
         return f"""
 You are a food recipe {role}.
 
-Select one or more applicable {field} for each recipe from THIS LIST ONLY:
-{names_text}
+Select one or more {field} for each recipe from THIS LIST ONLY: {names_text}
 
-Return ONLY valid JSON array like:
-[
-  {{"slug": "recipe-slug", {example}}}
-]
-
-If absolutely nothing matches, use an empty array. No commentary.
+Return ONLY valid JSON. [{{"slug": "recipe-slug", {example}}}]
+Use empty arrays when nothing fits. No commentary.
 
 Recipes:
 {recipe_lines}""".strip()
 
     @classmethod
     def make_prompt(cls, recipes, category_names, tag_names, tool_names):
-        categories_text = "\n".join(f"- {name}" for name in category_names)
-        tags_text = "\n".join(f"- {name}" for name in tag_names)
-        tools_text = "\n".join(f"- {name}" for name in tool_names)
+        categories_text = ", ".join(category_names)
+        tags_text = ", ".join(tag_names)
+        tools_text = ", ".join(tool_names)
         recipe_lines = cls._format_recipe_lines(recipes)
         return f"""
 You are a food recipe classifier.
 
-For each recipe below:
-1) Select one or more matching categories FROM THIS LIST ONLY.
-2) Select one or more relevant tags FROM THIS LIST ONLY. Use an empty array ONLY if nothing fits.
-3) Select one or more relevant kitchen tools FROM THIS LIST ONLY. Use an empty array ONLY if nothing fits.
+For each recipe below, select matching items FROM THESE LISTS ONLY:
+1) Categories  2) Tags  3) Kitchen tools
+Use empty arrays when nothing fits. Do not invent new names. Return ONLY valid JSON.
 
-Return results ONLY as valid JSON array like:
-[
-  {{"slug": "recipe-slug", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Cast Iron Skillet"]}}
-]
+[{{"slug": "recipe-slug", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Cast Iron Skillet"]}}]
 
-If nothing matches, use empty arrays. Do not invent new names. No extra commentary.
-
-Categories:
-{categories_text}
-
-Tags:
-{tags_text}
-
-Tools:
-{tools_text}
+Categories: {categories_text}
+Tags: {tags_text}
+Tools: {tools_text}
 
 Recipes:
 {recipe_lines}""".strip()
@@ -561,7 +555,10 @@ Recipes:
         attempts = retries if retries is not None else self.query_retries
         for attempt in range(attempts):
             self._throttle()
-            result = self.query_text(prompt_text)
+            try:
+                result = self.query_text(prompt_text)
+            except ProviderUnavailableError:
+                raise  # propagate immediately — no point retrying a hard quota limit
             if result:
                 parsed = parse_json_response(result)
                 if parsed is not None:
@@ -937,9 +934,18 @@ Recipes:
         self.log("[warn] Falling back to per-recipe classification for this batch.")
         self.increment_stat("fallback_batches")
         for recipe in batch:
+            if self._provider_unavailable:
+                self.advance_progress(1)
+                continue
             slug = (recipe.get("slug") or "").strip() or "(missing slug)"
             self.increment_stat("per_recipe_fallback_attempts")
-            entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names, tool_names)
+            try:
+                entry = self.classify_single_recipe_with_fallback(recipe, category_names, tag_names, tool_names)
+            except ProviderUnavailableError as exc:
+                self._provider_unavailable = True
+                self.log(f"[error] Provider unavailable — aborting: {exc}")
+                self.advance_progress(1)
+                continue
             if not entry:
                 self.log(f"[warn] No classification returned for {slug} after fallback attempts.")
                 self.increment_stat("per_recipe_no_classification")
@@ -960,7 +966,7 @@ Recipes:
             )
 
     def process_batch(self, batch, category_names, tag_names, tool_names, categories_by_name, tags_by_name, tools_by_name):
-        if not batch:
+        if not batch or self._provider_unavailable:
             return
 
         if not self.replace_existing and not self.dry_run:
@@ -988,8 +994,24 @@ Recipes:
             if not batch:
                 return
 
-        parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names, tool_names))
+        try:
+            parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names, tool_names))
+        except ProviderUnavailableError as exc:
+            self._provider_unavailable = True
+            self.log(f"[error] Provider unavailable — aborting: {exc}")
+            self.advance_progress(len(batch))
+            return
+
         if not isinstance(parsed, list):
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._consecutive_failure_limit:
+                self._provider_unavailable = True
+                self.log(
+                    f"[error] {self._consecutive_failures} consecutive batch failures — "
+                    "provider appears down, aborting remaining batches."
+                )
+                self.advance_progress(len(batch))
+                return
             self.log("[warn] Batch failed parsing after retries.")
             self.increment_stat("batch_parse_failures")
             self.process_batch_with_fallback(
@@ -1003,6 +1025,7 @@ Recipes:
             )
             return
 
+        self._consecutive_failures = 0  # reset on success
         self.apply_parsed_entries_to_batch(
             batch,
             parsed,
@@ -1074,11 +1097,21 @@ Recipes:
             for future in as_completed(futures):
                 try:
                     future.result()
+                except ProviderUnavailableError as exc:
+                    self._provider_unavailable = True
+                    self.log(f"[error] Provider unavailable — aborting: {exc}")
                 except Exception as exc:
                     self.log(f"[error] Batch crashed: {exc}")
         self.progress_stop_event.set()
         reporter.join(timeout=1)
         done, total, start_time = self.progress_snapshot()
         self.log(self.render_progress_line(done, total, start_time))
+        if self._provider_unavailable:
+            self.log(
+                "[error] Categorization ABORTED — AI provider is unavailable "
+                "(likely API quota/rate-limit exceeded). Check your provider dashboard."
+            )
+            self.print_summary()
+            raise SystemExit(1)
         self.log("[done] Categorization complete.")
         self.print_summary()

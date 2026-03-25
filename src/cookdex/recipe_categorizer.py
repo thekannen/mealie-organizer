@@ -8,7 +8,7 @@ from typing import Callable
 
 import requests
 
-from .categorizer_core import MealieCategorizer
+from .categorizer_core import MealieCategorizer, ProviderUnavailableError
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, secret, to_bool
 
 
@@ -40,7 +40,7 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 20, int), "categorizer.batch_size")
+BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 50, int), "categorizer.batch_size")
 MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 1, int), "categorizer.max_workers")
 INTER_REQUEST_DELAY: float = require_float(
     env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 3.0, float),
@@ -107,7 +107,7 @@ def cache_file_for_provider(provider: str) -> str:
     )
 
 
-_MAX_RATE_LIMIT_RETRIES = 15
+_MAX_RATE_LIMIT_RETRIES = 5
 
 
 def _rate_limit_wait(provider: str, response, rate_limit_hits: int) -> float:
@@ -157,8 +157,10 @@ def query_chatgpt(
             response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
             if response.status_code == 429:
                 if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
-                    print(f"[error] ChatGPT: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
-                    return None
+                    raise ProviderUnavailableError(
+                        f"ChatGPT: {_MAX_RATE_LIMIT_RETRIES} consecutive rate-limit (429) retries exhausted — "
+                        "API quota likely exceeded"
+                    )
                 time.sleep(_rate_limit_wait("ChatGPT", response, rate_limit_hits))
                 rate_limit_hits += 1
                 continue  # don't increment attempt for rate limits
@@ -237,8 +239,9 @@ def query_ollama(
             )
             if response.status_code == 429:
                 if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
-                    print(f"[error] Ollama: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
-                    return None
+                    raise ProviderUnavailableError(
+                        f"Ollama: {_MAX_RATE_LIMIT_RETRIES} consecutive rate-limit (429) retries exhausted"
+                    )
                 time.sleep(_rate_limit_wait("Ollama", response, rate_limit_hits))
                 rate_limit_hits += 1
                 continue
@@ -304,8 +307,10 @@ def query_anthropic(
             response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
             if response.status_code == 429:
                 if rate_limit_hits >= _MAX_RATE_LIMIT_RETRIES:
-                    print(f"[error] Anthropic: {_MAX_RATE_LIMIT_RETRIES} rate-limit retries exhausted")
-                    return None
+                    raise ProviderUnavailableError(
+                        f"Anthropic: {_MAX_RATE_LIMIT_RETRIES} consecutive rate-limit (429) retries exhausted — "
+                        "API quota likely exceeded"
+                    )
                 time.sleep(_rate_limit_wait("Anthropic", response, rate_limit_hits))
                 rate_limit_hits += 1
                 continue  # don't increment attempt for rate limits

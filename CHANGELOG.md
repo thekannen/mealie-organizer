@@ -2,6 +2,19 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.3.62] - 2026-03-24
+
+### Fixed
+- **Runaway task prevention** — AI categorizer now aborts immediately when provider is unavailable (rate-limit/quota exhausted) instead of retrying indefinitely for days
+- Rate-limit retries reduced from 15 to 5 per API call; raises `ProviderUnavailableError` on exhaustion
+- Consecutive batch failure circuit breaker — 3 failures in a row aborts the run
+- **4-hour max run duration** enforced on all tasks (configurable via `MAX_RUN_DURATION_SECONDS` in Settings)
+
+### Changed
+- Default ingredient parser confidence threshold lowered from 80% to 70% — dramatically reduces expensive OpenAI parser fallbacks
+- Categorizer batch size increased from 20 to 50 — fewer API calls, better cost amortization
+- Categorizer prompts compacted to comma-separated taxonomy lists — reduces token usage per request
+
 ## [2026.3.61] - 2026-03-22
 
 ### Added

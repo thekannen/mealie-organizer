@@ -27,6 +27,7 @@ class TaskExecution:
     env: dict[str, str]
     dangerous_requested: bool
     pre_commands: list[list[str]] = field(default_factory=list)
+    max_duration: int | None = None  # seconds; None = no limit
 
 
 BuildFn = Callable[[dict[str, Any]], TaskExecution]
@@ -675,8 +676,8 @@ class TaskRegistry:
                         "confidence_threshold",
                         "Confidence Threshold",
                         "integer",
-                        default=80,
-                        help_text="NLP confidence % (0–100). Lower values accept more NLP results.",
+                        default=70,
+                        help_text="NLP confidence % (0–100). Lower values accept more NLP results and reduce AI fallback costs.",
                         advanced=True,
                         option_group="Ingredient Parse",
                     ),
@@ -978,7 +979,7 @@ class TaskRegistry:
                         "confidence_threshold",
                         "Confidence Threshold",
                         "integer",
-                        default=80,
+                        default=70,
                         help_text="Minimum confidence % (0–100) to accept an NLP parse result. Results below this threshold fall back to AI parsing.",
                         advanced=True,
                     ),

@@ -4,17 +4,24 @@ import logging
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
-from ..config import REPO_ROOT
+from ..config import REPO_ROOT, env_or_config
 from .state import StateStore, utc_now_iso
 from .tasks import TaskRegistry
 
 logger = logging.getLogger(__name__)
+
+# Default max run duration: 4 hours.  Override via MAX_RUN_DURATION_SECONDS env
+# or config key.  Individual TaskExecution objects can also carry their own limit.
+_DEFAULT_MAX_DURATION: int = int(
+    env_or_config("MAX_RUN_DURATION_SECONDS", "runner.max_run_duration_seconds", 14400, int)
+)
 
 ENVProvider = Callable[[], dict[str, str]]
 
@@ -282,12 +289,43 @@ class RunQueueManager:
             with self._active_lock:
                 self._active[run_id] = process
 
+            max_duration = execution.max_duration or _DEFAULT_MAX_DURATION
+            timed_out = False
             try:
-                if process.stdout is not None:
-                    for line in process.stdout:
-                        log_file.write(line)
+                # Stream stdout in a background thread so the main thread can
+                # enforce a max-duration deadline without blocking on I/O.
+                done_event = Event()
+
+                def _stream_stdout() -> None:
+                    try:
+                        if process.stdout is not None:
+                            for line in process.stdout:
+                                log_file.write(line)
+                                log_file.flush()
+                    finally:
+                        done_event.set()
+
+                streamer = Thread(target=_stream_stdout, daemon=True, name=f"log-{run_id[:8]}")
+                streamer.start()
+
+                deadline = time.monotonic() + max_duration
+                while not done_event.is_set():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        timed_out = True
+                        hrs = max_duration / 3600
+                        timeout_msg = (
+                            f"\n[error] Run exceeded maximum duration "
+                            f"({hrs:.1f}h) — terminating.\n"
+                        )
+                        log_file.write(timeout_msg)
                         log_file.flush()
-                exit_code = process.wait()
+                        self._terminate_process_tree(process, wait_for_exit=True)
+                        break
+                    done_event.wait(timeout=min(remaining, 5.0))
+
+                streamer.join(timeout=5)
+                exit_code = process.wait(timeout=5) if not timed_out else process.poll()
             finally:
                 with self._active_lock:
                     self._active.pop(run_id, None)
@@ -297,7 +335,17 @@ class RunQueueManager:
                 self.state.update_run_log_size(run_id, log_path.stat().st_size)
                 return
 
-            if exit_code == 0:
+            if timed_out:
+                hrs = max_duration / 3600
+                self.state.update_run_status(
+                    run_id,
+                    status="failed",
+                    finished_at=utc_now_iso(),
+                    exit_code=exit_code,
+                    error_text=f"Timed out after {hrs:.1f}h (max {max_duration}s).",
+                )
+                logger.error("run %s timed out: task=%s max_duration=%ss", run_id, task_id, max_duration)
+            elif exit_code == 0:
                 self.state.update_run_status(
                     run_id,
                     status="succeeded",

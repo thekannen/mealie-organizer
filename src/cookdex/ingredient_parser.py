@@ -220,7 +220,7 @@ def parser_run_config() -> ParserRunConfig:
 
     return ParserRunConfig(
         confidence_threshold=_require_float(
-            env_or_config("CONFIDENCE_THRESHOLD", "parser.confidence_threshold", 0.80, float),
+            env_or_config("CONFIDENCE_THRESHOLD", "parser.confidence_threshold", 0.70, float),
             "parser.confidence_threshold",
         ),
         parser_strategies=parser_strategies,

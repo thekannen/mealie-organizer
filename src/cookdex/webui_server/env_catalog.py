@@ -243,6 +243,14 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         secret=False,
         description="Path to SSH private key file for the tunnel (use container path, e.g. /app/.ssh/cookdex_mealie).",
     ),
+    EnvVarSpec(
+        key="MAX_RUN_DURATION_SECONDS",
+        label="Max Run Duration (seconds)",
+        group="Runner",
+        default="14400",
+        secret=False,
+        description="Maximum wall-clock time (in seconds) before a running task is automatically terminated. Default: 14400 (4 hours).",
+    ),
 )
 
 ENV_SPEC_BY_KEY: dict[str, EnvVarSpec] = {item.key: item for item in ENV_VAR_SPECS}
