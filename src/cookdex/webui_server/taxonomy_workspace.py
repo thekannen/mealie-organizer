@@ -448,6 +448,9 @@ class TaxonomyWorkspaceService:
 
     @staticmethod
     def _fetch_json_url(url: str) -> Any:
+        from .routers.settings_api import _validate_service_url
+
+        _validate_service_url(url)
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         try:

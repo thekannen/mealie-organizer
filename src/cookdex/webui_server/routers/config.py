@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ...api_client import MealieApiClient
 from ..deps import Services, build_runtime_env, require_services, require_session, resolve_runtime_value
-from .settings_api import _validate_service_url
 from ..schemas import (
     ConfigWriteRequest,
     StarterPackImportRequest,
@@ -125,11 +124,6 @@ async def import_starter_pack(
     _session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
-    if payload.base_url:
-        try:
-            _validate_service_url(payload.base_url)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"Invalid starter pack URL: {exc}")
     workspace = TaxonomyWorkspaceService(repo_root=services.settings.config_root, config_files=services.config_files)
     try:
         return workspace.import_starter_pack(
