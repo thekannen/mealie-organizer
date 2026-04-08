@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
 
     if not state.has_users():
         if settings.bootstrap_password:
-            state.upsert_user(settings.bootstrap_user, hash_password(settings.bootstrap_password))
+            state.upsert_user(settings.bootstrap_user, hash_password(settings.bootstrap_password), role="owner")
             print(f"[webui] bootstrapped login user '{settings.bootstrap_user}'", flush=True)
         else:
             print("[webui] no users found. First-time setup is required.", flush=True)

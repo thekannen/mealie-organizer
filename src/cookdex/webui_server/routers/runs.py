@@ -6,7 +6,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
-from ..deps import Services, build_runtime_env, enforce_safety, require_services, require_session
+from ..deps import (
+    Services,
+    build_runtime_env,
+    enforce_safety,
+    require_editor_session,
+    require_owner_session,
+    require_services,
+)
 from ..rate_limit import ActionRateLimiter
 from ..schemas import PoliciesUpdateRequest, RunCreateRequest
 
@@ -16,7 +23,7 @@ _action_limiter = ActionRateLimiter(max_per_minute=30)
 
 @router.get("/tasks")
 async def list_tasks(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     tasks = services.registry.describe_tasks()
@@ -51,7 +58,7 @@ async def list_tasks(
 
 @router.get("/policies")
 async def get_policies(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {"policies": services.state.list_task_policies()}
@@ -60,7 +67,7 @@ async def get_policies(
 @router.put("/policies")
 async def put_policies(
     payload: PoliciesUpdateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     for task_id, item in payload.policies.items():
@@ -71,7 +78,7 @@ async def put_policies(
 @router.post("/runs", status_code=202)
 async def create_run(
     payload: RunCreateRequest,
-    session: dict[str, Any] = Depends(require_session),
+    session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     _action_limiter.check(session["username"])
@@ -86,7 +93,7 @@ async def create_run(
 @router.get("/runs")
 async def list_runs(
     limit: int = 100,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     value = min(max(limit, 1), 500)
@@ -96,7 +103,7 @@ async def list_runs(
 @router.get("/runs/{run_id}")
 async def get_run(
     run_id: str,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     run = services.state.get_run(run_id)
@@ -108,7 +115,7 @@ async def get_run(
 @router.get("/runs/{run_id}/log")
 async def get_run_log(
     run_id: str,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> PlainTextResponse:
     try:
@@ -122,7 +129,7 @@ async def get_run_log(
 async def get_run_log_tail(
     run_id: str,
     offset: int = Query(default=0, ge=0),
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     """Return log bytes from `offset` onwards, plus the current total file size."""
@@ -149,7 +156,7 @@ async def get_run_log_tail(
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(
     run_id: str,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     if not services.runner.cancel(run_id):

@@ -89,6 +89,7 @@ class SchedulerService:
         return schedules
 
     def create_schedule(self, payload: SchedulePayload) -> dict[str, Any]:
+        self._validate_schedule_definition(payload.schedule_kind, payload.schedule_data)
         schedule_id = str(uuid4())
         record = self.state.create_schedule(
             schedule_id=schedule_id,
@@ -98,6 +99,7 @@ class SchedulerService:
             schedule_data=payload.schedule_data,
             options=payload.options,
             enabled=payload.enabled,
+            validation_error=None,
         )
         self._sync_schedule_job(record)
         return self._with_next_run(record)
@@ -105,6 +107,7 @@ class SchedulerService:
     def update_schedule(self, schedule_id: str, payload: SchedulePayload) -> dict[str, Any] | None:
         if self.state.get_schedule(schedule_id) is None:
             return None
+        self._validate_schedule_definition(payload.schedule_kind, payload.schedule_data)
         record = self.state.update_schedule(
             schedule_id=schedule_id,
             name=payload.name,
@@ -113,6 +116,7 @@ class SchedulerService:
             schedule_data=payload.schedule_data,
             options=payload.options,
             enabled=payload.enabled,
+            validation_error=None,
         )
         self._sync_schedule_job(record)
         return self._with_next_run(record)
@@ -131,11 +135,23 @@ class SchedulerService:
     def _restore_from_db(self) -> None:
         for item in self.state.list_schedules():
             try:
+                kind = str(item["schedule_kind"])
+                schedule_data = dict(item["schedule_data"])
+                if self._should_skip_restored_once_schedule(item, schedule_data):
+                    if item.get("validation_error"):
+                        self.state.set_schedule_validation_error(str(item["schedule_id"]), None)
+                    continue
+                self._validate_schedule_definition(kind, schedule_data, enforce_future_once=False)
+                if item.get("validation_error"):
+                    self.state.set_schedule_validation_error(str(item["schedule_id"]), None)
+                    item["validation_error"] = None
                 self._sync_schedule_job(item)
             except Exception as exc:
+                detail = str(exc)
+                self.state.set_schedule_validation_error(str(item["schedule_id"]), detail)
                 logger.warning(
                     "Skipping schedule %s (%s) on restore: %s",
-                    item.get("schedule_id"), item.get("name"), exc,
+                    item.get("schedule_id"), item.get("name"), detail,
                 )
 
     def _with_next_run(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -197,6 +213,47 @@ class SchedulerService:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
+
+    def _should_skip_restored_once_schedule(
+        self,
+        record: dict[str, Any],
+        schedule_data: dict[str, Any],
+    ) -> bool:
+        if str(record.get("schedule_kind") or "") != "once":
+            return False
+        if record.get("last_enqueued_at") is None:
+            return False
+        run_at = self._parse_dt(schedule_data.get("run_at"))
+        return run_at is not None and run_at <= datetime.now(timezone.utc)
+
+    def _validate_schedule_definition(
+        self,
+        kind: str,
+        schedule_data: dict[str, Any],
+        *,
+        enforce_future_once: bool = True,
+    ) -> None:
+        if kind == "interval":
+            start_date = self._parse_dt(schedule_data.get("start_at"))
+            end_date = self._parse_dt(schedule_data.get("end_at"))
+            if start_date is not None and end_date is not None and start_date >= end_date:
+                raise ValueError("Interval schedules require 'start_at' before 'end_at'.")
+            self._build_trigger(kind, schedule_data)
+            return
+
+        if kind == "once":
+            run_at_raw = str(schedule_data.get("run_at", "")).strip()
+            if not run_at_raw:
+                raise ValueError("Once schedules require non-empty 'run_at'.")
+            run_at = self._parse_dt(run_at_raw)
+            if run_at is None:
+                raise ValueError("Once schedules require non-empty 'run_at'.")
+            if enforce_future_once and run_at <= datetime.now(timezone.utc):
+                raise ValueError("Once schedules require 'run_at' in the future.")
+            self._build_trigger(kind, schedule_data)
+            return
+
+        raise ValueError(f"Unsupported schedule kind: {kind}")
 
     def _build_trigger(self, kind: str, schedule_data: dict[str, Any]) -> IntervalTrigger | DateTrigger:
         if kind == "interval":

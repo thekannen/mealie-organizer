@@ -526,8 +526,12 @@ export function runTypeLabel(run) {
   return run.schedule_id ? "Scheduled" : "Manual";
 }
 
-export function userRoleLabel(username, currentUsername) {
-  return String(username || "") === String(currentUsername || "") ? "Owner" : "Editor";
+export function isOwnerRole(role) {
+  return String(role || "").trim().toLowerCase() === "owner";
+}
+
+export function userRoleLabel(role) {
+  return isOwnerRole(role) ? "Owner" : "Editor";
 }
 
 export function statusClass(status) {

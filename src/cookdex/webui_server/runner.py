@@ -231,7 +231,7 @@ class RunQueueManager:
                         stdout=log_file,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        timeout=300,
+                        timeout=1200,
                     )
                     if pre_result.returncode != 0:
                         message = f"Pre-command failed (exit {pre_result.returncode}): {' '.join(pre_cmd)}"

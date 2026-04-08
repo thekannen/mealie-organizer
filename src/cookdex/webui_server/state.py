@@ -10,9 +10,18 @@ from typing import Any, Iterator
 
 from ..taxonomy_store import COLLECTION_FILES
 
+VALID_USER_ROLES = frozenset({"owner", "editor"})
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def normalize_user_role(role: str | None) -> str:
+    value = str(role or "").strip().lower() or "editor"
+    if value not in VALID_USER_ROLES:
+        raise ValueError(f"Unsupported user role: {role}")
+    return value
 
 
 class StateStore:
@@ -50,7 +59,8 @@ class StateStore:
                       username TEXT PRIMARY KEY,
                       password_hash TEXT NOT NULL,
                       created_at TEXT NOT NULL,
-                      force_password_reset INTEGER NOT NULL DEFAULT 0
+                      force_password_reset INTEGER NOT NULL DEFAULT 0,
+                      role TEXT NOT NULL DEFAULT 'editor'
                     );
                     """
                 )
@@ -58,6 +68,12 @@ class StateStore:
                 try:
                     conn.execute(
                         "ALTER TABLE users ADD COLUMN force_password_reset INTEGER NOT NULL DEFAULT 0;"
+                    )
+                except Exception:
+                    pass  # Column already exists
+                try:
+                    conn.execute(
+                        "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'editor';"
                     )
                 except Exception:
                     pass  # Column already exists
@@ -111,10 +127,16 @@ class StateStore:
                       enabled INTEGER NOT NULL DEFAULT 1,
                       created_at TEXT NOT NULL,
                       updated_at TEXT NOT NULL,
-                      last_enqueued_at TEXT
+                      last_enqueued_at TEXT,
+                      validation_error TEXT
                     );
                     """
                 )
+                try:
+                    conn.execute("ALTER TABLE schedules ADD COLUMN validation_error TEXT;")
+                except Exception:
+                    pass  # Column already exists
+                self._backfill_user_roles(conn)
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS task_policies (
@@ -183,6 +205,30 @@ class StateStore:
                 # Update query planner statistics for better index selection.
                 conn.execute("ANALYZE;")
 
+    @staticmethod
+    def _backfill_user_roles(conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT username, role FROM users ORDER BY created_at ASC, username ASC;"
+        ).fetchall()
+        if not rows:
+            return
+
+        owner_found = False
+        for row in rows:
+            username = str(row["username"])
+            raw_role = row["role"]
+            try:
+                role = normalize_user_role(str(raw_role)) if raw_role is not None else "editor"
+            except ValueError:
+                role = "editor"
+            if role == "owner":
+                owner_found = True
+            if raw_role != role:
+                conn.execute("UPDATE users SET role = ? WHERE username = ?;", (role, username))
+
+        if not owner_found:
+            conn.execute("UPDATE users SET role = 'owner' WHERE username = ?;", (str(rows[0]["username"]),))
+
     def has_users(self) -> bool:
         with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT 1 FROM users LIMIT 1;").fetchone()
@@ -196,23 +242,46 @@ class StateStore:
     def list_users(self) -> list[dict]:
         with self._connect(readonly=True) as conn:
             rows = conn.execute(
-                "SELECT username, created_at, force_password_reset FROM users ORDER BY username ASC;"
+                "SELECT username, created_at, force_password_reset, role FROM users ORDER BY username ASC;"
             ).fetchall()
         return [
             {
                 "username": str(row["username"]),
                 "created_at": str(row["created_at"]),
                 "force_password_reset": bool(row["force_password_reset"]),
+                "role": normalize_user_role(str(row["role"])),
             }
             for row in rows
         ]
+
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT username, created_at, force_password_reset, role FROM users WHERE username = ?;",
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "username": str(row["username"]),
+            "created_at": str(row["created_at"]),
+            "force_password_reset": bool(row["force_password_reset"]),
+            "role": normalize_user_role(str(row["role"])),
+        }
 
     def user_exists(self, username: str) -> bool:
         with self._connect(readonly=True) as conn:
             row = conn.execute("SELECT 1 FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
             return row is not None
 
-    def create_user(self, username: str, password_hash: str, force_reset: bool = False) -> bool:
+    def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        force_reset: bool = False,
+        role: str = "editor",
+    ) -> bool:
+        normalized_role = normalize_user_role(role)
         now = utc_now_iso()
         with self._write_lock:
             with self._connect() as conn:
@@ -220,23 +289,31 @@ class StateStore:
                 if row is not None:
                     return False
                 conn.execute(
-                    "INSERT INTO users(username, password_hash, created_at, force_password_reset) VALUES(?, ?, ?, ?);",
-                    (username, password_hash, now, 1 if force_reset else 0),
+                    "INSERT INTO users(username, password_hash, created_at, force_password_reset, role) VALUES(?, ?, ?, ?, ?);",
+                    (username, password_hash, now, 1 if force_reset else 0, normalized_role),
                 )
         return True
 
-    def upsert_user(self, username: str, password_hash: str) -> None:
+    def upsert_user(self, username: str, password_hash: str, role: str | None = None) -> None:
         now = utc_now_iso()
         with self._write_lock:
             with self._connect() as conn:
+                existing = conn.execute("SELECT role FROM users WHERE username = ?;", (username,)).fetchone()
+                if existing is not None and existing["role"] is not None:
+                    normalized_role = normalize_user_role(str(existing["role"]))
+                elif role is not None:
+                    normalized_role = normalize_user_role(role)
+                else:
+                    has_users = conn.execute("SELECT 1 FROM users LIMIT 1;").fetchone() is not None
+                    normalized_role = "editor" if has_users else "owner"
                 conn.execute(
                     """
-                    INSERT INTO users(username, password_hash, created_at)
-                    VALUES(?, ?, ?)
+                    INSERT INTO users(username, password_hash, created_at, role)
+                    VALUES(?, ?, ?, ?)
                     ON CONFLICT(username) DO UPDATE SET
                       password_hash=excluded.password_hash;
                     """,
-                    (username, password_hash, now),
+                    (username, password_hash, now, normalized_role),
                 )
 
     def update_password(self, username: str, password_hash: str) -> bool:
@@ -273,10 +350,78 @@ class StateStore:
                 return None
             return str(row["password_hash"])
 
+    def count_users_by_role(self, role: str) -> int:
+        normalized_role = normalize_user_role(role)
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS value FROM users WHERE role = ?;",
+                (normalized_role,),
+            ).fetchone()
+            return int(row["value"]) if row is not None else 0
+
+    def update_user_role(self, username: str, role: str) -> bool:
+        normalized_role = normalize_user_role(role)
+        with self._write_lock:
+            with self._connect() as conn:
+                result = conn.execute(
+                    "UPDATE users SET role = ? WHERE username = ?;",
+                    (normalized_role, username),
+                )
+                return int(result.rowcount or 0) > 0
+
+    def update_user_role_guarded(self, username: str, role: str) -> dict[str, Any] | None:
+        normalized_role = normalize_user_role(role)
+        with self._write_lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE username = ?;",
+                    (username,),
+                ).fetchone()
+                if row is None:
+                    return None
+                current_role = normalize_user_role(str(row["role"]))
+                if current_role == "owner" and normalized_role != "owner":
+                    owner_count_row = conn.execute(
+                        "SELECT COUNT(*) AS value FROM users WHERE role = 'owner';"
+                    ).fetchone()
+                    owner_count = int(owner_count_row["value"]) if owner_count_row is not None else 0
+                    if owner_count <= 1:
+                        raise ValueError("At least one owner account must remain.")
+                conn.execute(
+                    "UPDATE users SET role = ? WHERE username = ?;",
+                    (normalized_role, username),
+                )
+        return self.get_user(username)
+
     def delete_user(self, username: str) -> bool:
         with self._write_lock:
             with self._connect() as conn:
                 # Both deletes are in a single transaction (atomic).
+                conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
+                result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
+                return int(result.rowcount or 0) > 0
+
+    def delete_user_guarded(self, username: str) -> bool | None:
+        with self._write_lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE username = ?;",
+                    (username,),
+                ).fetchone()
+                if row is None:
+                    return None
+                current_role = normalize_user_role(str(row["role"]))
+                if current_role == "owner":
+                    owner_count_row = conn.execute(
+                        "SELECT COUNT(*) AS value FROM users WHERE role = 'owner';"
+                    ).fetchone()
+                    owner_count = int(owner_count_row["value"]) if owner_count_row is not None else 0
+                    if owner_count <= 1:
+                        raise ValueError("At least one owner account must remain.")
+                total_row = conn.execute("SELECT COUNT(*) AS value FROM users;").fetchone()
+                total_count = int(total_row["value"]) if total_row is not None else 0
+                if total_count <= 1:
+                    raise ValueError("At least one account must remain.")
                 conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
                 result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
                 return int(result.rowcount or 0) > 0
@@ -444,7 +589,7 @@ class StateStore:
             rows = conn.execute(
                 """
                 SELECT schedule_id, name, task_id, schedule_kind, schedule_data_json, options_json, enabled,
-                       created_at, updated_at, last_enqueued_at
+                       created_at, updated_at, last_enqueued_at, validation_error
                 FROM schedules
                 ORDER BY created_at DESC;
                 """
@@ -463,6 +608,7 @@ class StateStore:
                     "created_at": str(row["created_at"]),
                     "updated_at": str(row["updated_at"]),
                     "last_enqueued_at": row["last_enqueued_at"],
+                    "validation_error": row["validation_error"],
                 }
             )
         return schedules
@@ -472,7 +618,7 @@ class StateStore:
             row = conn.execute(
                 """
                 SELECT schedule_id, name, task_id, schedule_kind, schedule_data_json, options_json, enabled,
-                       created_at, updated_at, last_enqueued_at
+                       created_at, updated_at, last_enqueued_at, validation_error
                 FROM schedules
                 WHERE schedule_id = ?;
                 """,
@@ -491,6 +637,7 @@ class StateStore:
             "created_at": str(row["created_at"]),
             "updated_at": str(row["updated_at"]),
             "last_enqueued_at": row["last_enqueued_at"],
+            "validation_error": row["validation_error"],
         }
 
     def create_schedule(
@@ -502,6 +649,7 @@ class StateStore:
         schedule_data: dict[str, Any],
         options: dict[str, Any],
         enabled: bool,
+        validation_error: str | None = None,
     ) -> dict[str, Any]:
         now = utc_now_iso()
         with self._write_lock:
@@ -510,8 +658,8 @@ class StateStore:
                     """
                     INSERT INTO schedules(
                       schedule_id, name, task_id, schedule_kind, schedule_data_json, options_json, enabled,
-                      created_at, updated_at, last_enqueued_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL);
+                      created_at, updated_at, last_enqueued_at, validation_error
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?);
                     """,
                     (
                         schedule_id,
@@ -523,6 +671,7 @@ class StateStore:
                         1 if enabled else 0,
                         now,
                         now,
+                        validation_error,
                     ),
                 )
         return self.get_schedule(schedule_id) or {}
@@ -537,6 +686,7 @@ class StateStore:
         schedule_data: dict[str, Any],
         options: dict[str, Any],
         enabled: bool,
+        validation_error: str | None = None,
     ) -> dict[str, Any]:
         now = utc_now_iso()
         with self._write_lock:
@@ -550,6 +700,7 @@ class StateStore:
                       schedule_data_json = ?,
                       options_json = ?,
                       enabled = ?,
+                      validation_error = ?,
                       updated_at = ?
                     WHERE schedule_id = ?;
                     """,
@@ -560,11 +711,26 @@ class StateStore:
                         json.dumps(schedule_data, sort_keys=True),
                         json.dumps(options, sort_keys=True),
                         1 if enabled else 0,
+                        validation_error,
                         now,
                         schedule_id,
                     ),
                 )
         return self.get_schedule(schedule_id) or {}
+
+    def set_schedule_validation_error(self, schedule_id: str, validation_error: str | None) -> bool:
+        now = utc_now_iso()
+        with self._write_lock:
+            with self._connect() as conn:
+                result = conn.execute(
+                    """
+                    UPDATE schedules
+                    SET validation_error = ?, updated_at = ?
+                    WHERE schedule_id = ?;
+                    """,
+                    (validation_error, now, schedule_id),
+                )
+                return int(result.rowcount or 0) > 0
 
     def delete_schedule(self, schedule_id: str) -> None:
         with self._write_lock:

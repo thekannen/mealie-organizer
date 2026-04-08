@@ -17,9 +17,10 @@ from ..deps import (
     Services,
     build_runtime_env,
     env_payload,
+    require_editor_session,
+    require_owner_session,
     resolve_runtime_value,
     require_services,
-    require_session,
 )
 from ..env_catalog import ENV_SPEC_BY_KEY
 from ..schemas import (
@@ -192,7 +193,7 @@ def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
 
 @router.get("/settings")
 async def get_settings(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     secret_keys = sorted(services.state.list_encrypted_secrets().keys())
@@ -220,7 +221,7 @@ def _payload_has_secret_values(payload: SettingsUpdateRequest) -> bool:
 @router.put("/settings")
 async def put_settings(
     payload: SettingsUpdateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     if services.settings.weak_master_key and _payload_has_secret_values(payload):
@@ -357,7 +358,7 @@ def _list_anthropic_models(api_key: str) -> list[str]:
 @router.post("/settings/models/openai")
 async def list_openai_models(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -369,7 +370,7 @@ async def list_openai_models(
 @router.post("/settings/models/ollama")
 async def list_ollama_models(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -381,7 +382,7 @@ async def list_ollama_models(
 @router.post("/settings/models/anthropic")
 async def list_anthropic_models(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -393,7 +394,7 @@ async def list_anthropic_models(
 @router.post("/settings/test/mealie")
 async def test_mealie_settings(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -411,7 +412,7 @@ async def test_mealie_settings(
 @router.post("/settings/test/openai")
 async def test_openai_settings(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -424,7 +425,7 @@ async def test_openai_settings(
 @router.post("/settings/test/ollama")
 async def test_ollama_settings(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -437,7 +438,7 @@ async def test_ollama_settings(
 @router.post("/settings/test/anthropic")
 async def test_anthropic_settings(
     payload: ProviderConnectionTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -502,7 +503,7 @@ def _test_db_connection(runtime_env: dict[str, str]) -> tuple[bool, str]:
 @router.post("/settings/test/db")
 async def test_db_settings(
     payload: DbTestRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -1080,7 +1081,7 @@ def _detect_db_credentials(
 @router.post("/settings/detect/db")
 async def detect_db_settings(
     payload: DbDetectRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
@@ -1109,7 +1110,7 @@ def _get_dredger_store():
 
 @router.get("/settings/dredger-sites")
 async def list_dredger_sites(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     store = _get_dredger_store()
@@ -1125,7 +1126,7 @@ async def list_dredger_sites(
 @router.post("/settings/dredger-sites")
 async def add_dredger_site(
     payload: DredgerSiteCreateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     import sqlite3 as _sqlite3
@@ -1164,7 +1165,7 @@ async def add_dredger_site(
 async def update_dredger_site(
     site_id: int,
     payload: DredgerSiteUpdateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     if payload.url is not None:
@@ -1189,7 +1190,7 @@ async def update_dredger_site(
 @router.delete("/settings/dredger-sites/{site_id}")
 async def delete_dredger_site(
     site_id: int,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     store = _get_dredger_store()
@@ -1202,7 +1203,7 @@ async def delete_dredger_site(
 @router.post("/settings/dredger-sites/seed")
 async def seed_dredger_sites(
     payload: DredgerSitesSeedRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     from cookdex.recipe_dredger.sites import DEFAULT_SITES
@@ -1251,7 +1252,7 @@ def _validate_dredger_site_url(url: str) -> dict[str, Any]:
 @router.post("/settings/dredger-sites/validate")
 async def validate_dredger_sites(
     payload: DredgerSitesValidateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     _services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     import asyncio

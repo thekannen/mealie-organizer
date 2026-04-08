@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..deps import Services, enforce_safety, require_services, require_session
+from ..deps import Services, enforce_safety, require_editor_session, require_services
 from ..scheduler import SchedulePayload
 from ..schemas import ScheduleCreateRequest, ScheduleUpdateRequest
 
@@ -74,7 +74,7 @@ def _schedule_payload_from_update(existing: dict[str, Any], request: ScheduleUpd
 
 @router.get("/schedules")
 async def list_schedules(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {"items": services.scheduler.list_schedules()}
@@ -83,21 +83,24 @@ async def list_schedules(
 @router.post("/schedules", status_code=201)
 async def create_schedule(
     payload: ScheduleCreateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     if payload.task_id.strip() not in services.registry.task_ids:
         raise HTTPException(status_code=404, detail=f"Unknown task '{payload.task_id}'.")
     enforce_safety(services, payload.task_id.strip(), dict(payload.options))
     schedule_payload = _schedule_payload_from_create(payload)
-    return services.scheduler.create_schedule(schedule_payload)
+    try:
+        return services.scheduler.create_schedule(schedule_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.patch("/schedules/{schedule_id}")
 async def update_schedule(
     schedule_id: str,
     payload: ScheduleUpdateRequest,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     existing = services.state.get_schedule(schedule_id)
@@ -107,7 +110,10 @@ async def update_schedule(
     if schedule_payload.task_id not in services.registry.task_ids:
         raise HTTPException(status_code=404, detail=f"Unknown task '{schedule_payload.task_id}'.")
     enforce_safety(services, schedule_payload.task_id, dict(schedule_payload.options))
-    updated = services.scheduler.update_schedule(schedule_id, schedule_payload)
+    try:
+        updated = services.scheduler.update_schedule(schedule_id, schedule_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if updated is None:
         raise HTTPException(status_code=404, detail="Schedule not found.")
     return updated
@@ -116,7 +122,7 @@ async def update_schedule(
 @router.delete("/schedules/{schedule_id}")
 async def delete_schedule(
     schedule_id: str,
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, bool]:
     if not services.scheduler.delete_schedule(schedule_id):

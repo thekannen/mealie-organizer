@@ -1,4 +1,7 @@
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from cookdex.webui_server.state import StateStore
 
@@ -16,6 +19,7 @@ def test_state_user_and_session_roundtrip(tmp_path: Path):
     store.initialize([])
     store.upsert_user("admin", "hash-value")
     assert store.get_password_hash("admin") == "hash-value"
+    assert store.get_user("admin")["role"] == "owner"
 
     token = "token-1"
     expires_at = "2099-01-01T00:00:00Z"
@@ -24,3 +28,77 @@ def test_state_user_and_session_roundtrip(tmp_path: Path):
     assert session is not None
     assert session["username"] == "admin"
     assert session["expires_at"] == expires_at
+
+
+def test_state_migrates_existing_users_to_owner_and_editor(tmp_path: Path):
+    db_path = tmp_path / "state.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE users (
+              username TEXT PRIMARY KEY,
+              password_hash TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              force_password_reset INTEGER NOT NULL DEFAULT 0
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO users(username, password_hash, created_at, force_password_reset) VALUES(?, ?, ?, ?);",
+            ("admin", "hash-1", "2026-01-01T00:00:00Z", 0),
+        )
+        conn.execute(
+            "INSERT INTO users(username, password_hash, created_at, force_password_reset) VALUES(?, ?, ?, ?);",
+            ("editor", "hash-2", "2026-01-02T00:00:00Z", 0),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = StateStore(db_path)
+    store.initialize([])
+
+    users = {item["username"]: item for item in store.list_users()}
+    assert users["admin"]["role"] == "owner"
+    assert users["editor"]["role"] == "editor"
+
+
+def test_update_user_role_guarded_blocks_demoting_last_owner(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+
+    with pytest.raises(ValueError, match="At least one owner account must remain."):
+        store.update_user_role_guarded("admin", "editor")
+
+    assert store.get_user("admin")["role"] == "owner"
+
+
+def test_delete_user_guarded_blocks_removing_last_owner(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+    store.create_user("editor", "hash-editor", role="editor")
+
+    with pytest.raises(ValueError, match="At least one owner account must remain."):
+        store.delete_user_guarded("admin")
+
+    assert store.get_user("admin")["role"] == "owner"
+    assert store.get_user("editor")["role"] == "editor"
+
+
+def test_guarded_owner_mutations_allow_safe_changes(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+    store.create_user("editor", "hash-editor", role="editor")
+
+    promoted = store.update_user_role_guarded("editor", "owner")
+    assert promoted is not None
+    assert promoted["role"] == "owner"
+
+    deleted = store.delete_user_guarded("admin")
+    assert deleted is True
+    assert store.get_user("admin") is None
+    assert store.get_user("editor")["role"] == "owner"

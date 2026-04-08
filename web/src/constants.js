@@ -3,8 +3,8 @@ export const NAV_ITEMS = [
   { id: "tasks", label: "Tasks", icon: "folder" },
   { id: "recipe-sources", label: "Recipe Sources", icon: "globe" },
   { id: "recipe-organization", label: "Recipe Organization", icon: "book-open" },
-  { id: "users", label: "Users", icon: "user" },
-  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "users", label: "Users", icon: "user", ownerOnly: true },
+  { id: "settings", label: "Settings", icon: "settings", ownerOnly: true },
   { id: "help", label: "Help", icon: "life-buoy" },
   { id: "about", label: "About", icon: "info" },
 ];
@@ -152,13 +152,13 @@ export const HELP_FAQ = [
     question: "How do permissions work for team members?",
     icon: "users",
     answer:
-      "Create separate user accounts on the Users page. Assign the Viewer role for read-only access or Editor for full task execution. Use temporary passwords and rotate after onboarding.",
+      "Create separate user accounts on the Users page. Owners can manage users, settings, and task policies. Editors can run tasks, manage schedules, and work in the recipe organization tools. Use temporary passwords and rotate after onboarding.",
   },
   {
     question: "How do I schedule recurring tasks?",
     icon: "calendar",
     answer:
-      "Open the Tasks page, pick a task, choose interval or cron timing, and save. Scheduled runs appear in the activity table alongside manual runs.",
+      "Open the Tasks page, pick a task, choose an interval or one-time run, and save. Scheduled runs appear in the activity table alongside manual runs.",
   },
   {
     question: "Can I tag recipes without an AI provider?",

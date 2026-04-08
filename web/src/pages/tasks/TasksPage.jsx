@@ -9,6 +9,7 @@ import {
   formatRunTime,
   formatRelativeTime,
   formatCountdown,
+  isOwnerRole,
   normalizeErrorMessage,
   normalizeTaskOptions,
   parseIso,
@@ -115,6 +116,7 @@ export default function TasksPage({
   const [editingScheduleId, setEditingScheduleId] = useState("");
   const [scheduleEditForm, setScheduleEditForm] = useState(null);
   const [showAdvancedScheduleOptions, setShowAdvancedScheduleOptions] = useState(false);
+  const canManagePolicies = isOwnerRole(session?.role);
 
   // ─── Refs ───────────────────────────────────────────────────────────────────
   const logOffsetRef = useRef(0);
@@ -315,7 +317,7 @@ export default function TasksPage({
     try {
       const options = normalizeTaskOptions(selectedTaskDef, taskValues);
       const isDangerous = options.dry_run === false;
-      if (isDangerous) {
+      if (isDangerous && canManagePolicies) {
         await togglePolicy(selectedTaskDef.task_id, true);
       }
       await api("/runs", {
@@ -340,6 +342,10 @@ export default function TasksPage({
   }
 
   async function togglePolicy(taskId, value) {
+    if (!canManagePolicies) {
+      onError({ message: "Only owners can change task safety policies." });
+      return;
+    }
     try {
       await api("/policies", {
         method: "PUT",
@@ -372,7 +378,7 @@ export default function TasksPage({
 
     try {
       const options = normalizeTaskOptions(selectedTaskDef, taskValues);
-      if (options.dry_run === false) {
+      if (options.dry_run === false && canManagePolicies) {
         await togglePolicy(selectedTask, true);
       }
       const intervalSeconds = Number(scheduleForm.intervalValue) * (SCHEDULE_UNIT_SECONDS[scheduleForm.intervalUnit] || 1);
@@ -454,7 +460,7 @@ export default function TasksPage({
 
     try {
       const options = normalizeTaskOptions(selectedEditTaskDef, scheduleEditForm.optionValues || {});
-      if (options.dry_run === false) {
+      if (options.dry_run === false && canManagePolicies) {
         await togglePolicy(selectedEditTaskDef.task_id, true);
       }
       const intervalSeconds =
@@ -973,6 +979,11 @@ export default function TasksPage({
                             </span>
                           );
                         })()}
+                        {schedule.validation_error ? (
+                          <p className="tiny" style={{ color: "var(--warning-strong, #b45309)", marginTop: "0.35rem" }}>
+                            Invalid schedule: {schedule.validation_error}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="schedule-item-actions">
                         <button

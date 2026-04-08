@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from apscheduler.triggers.date import DateTrigger
@@ -110,6 +110,56 @@ class TestRestoreFromDb:
             svc._restore_from_db()
         finally:
             svc.scheduler.shutdown(wait=False)
+        svc.state.set_schedule_validation_error.assert_called_with(
+            "bad-id",
+            "Once schedules require non-empty 'run_at'.",
+        )
+
+    def test_restore_clears_legacy_validation_error_for_valid_schedule(self, tmp_path):
+        svc = _make_service(tmp_path)
+        future_run_at = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        svc.state.list_schedules.return_value = [
+            {
+                "schedule_id": "good-id",
+                "name": "Recovered",
+                "task_id": "tag-categorize",
+                "schedule_kind": "once",
+                "schedule_data": {"run_at": future_run_at},
+                "options": {},
+                "enabled": False,
+                "validation_error": "Old error",
+            }
+        ]
+        svc.scheduler.start()
+        try:
+            svc._restore_from_db()
+        finally:
+            svc.scheduler.shutdown(wait=False)
+        svc.state.set_schedule_validation_error.assert_called_with("good-id", None)
+
+    def test_restore_skips_already_fired_once_schedule_without_marking_it_invalid(self, tmp_path):
+        svc = _make_service(tmp_path)
+        past_run_at = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        svc.state.list_schedules.return_value = [
+            {
+                "schedule_id": "done-id",
+                "name": "Already fired",
+                "task_id": "tag-categorize",
+                "schedule_kind": "once",
+                "schedule_data": {"run_at": past_run_at},
+                "options": {},
+                "enabled": True,
+                "last_enqueued_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "validation_error": "Old error",
+            }
+        ]
+        svc.scheduler.start()
+        try:
+            svc._restore_from_db()
+            assert svc.scheduler.get_job("done-id") is None
+        finally:
+            svc.scheduler.shutdown(wait=False)
+        svc.state.set_schedule_validation_error.assert_called_with("done-id", None)
 
 
 class TestStartOrder:

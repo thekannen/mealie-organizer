@@ -4,13 +4,14 @@ import { api, userRoleLabel } from "../../utils.jsx";
 
 export default function UsersPage({ users, session, onNotice, onError, onConfirm, refreshUsers }) {
   const [newUserUsername, setNewUserUsername] = useState("");
-  const [newUserRole, setNewUserRole] = useState("Editor");
+  const [newUserRole, setNewUserRole] = useState("editor");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserForceReset, setNewUserForceReset] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [resetPasswords, setResetPasswords] = useState({});
   const [resetForceResets, setResetForceResets] = useState({});
+  const [roleDrafts, setRoleDrafts] = useState({});
   const [expandedUser, setExpandedUser] = useState(null);
 
   const filteredUsers = useMemo(() => {
@@ -18,8 +19,8 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     if (!query) return users;
     return users.filter((item) => {
       const username = String(item.username || "");
-      const inferredRole = username === session?.username ? "owner" : "editor";
-      return `${username} ${inferredRole}`.toLowerCase().includes(query);
+      const role = String(item.role || "editor");
+      return `${username} ${role}`.toLowerCase().includes(query);
     });
   }, [users, userSearch, session]);
 
@@ -46,15 +47,19 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     setShowPassword(true);
   }
 
-  async function createUser(event) {
-    event.preventDefault();
+  async function submitCreateUser() {
     try {
       await api("/users", {
         method: "POST",
-        body: { username: newUserUsername, password: newUserPassword, force_reset: newUserForceReset },
+        body: {
+          username: newUserUsername,
+          password: newUserPassword,
+          force_reset: newUserForceReset,
+          role: newUserRole,
+        },
       });
       setNewUserUsername("");
-      setNewUserRole("Editor");
+      setNewUserRole("editor");
       setNewUserPassword("");
       setNewUserForceReset(true);
       await refreshUsers();
@@ -62,6 +67,20 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     } catch (exc) {
       onError(exc);
     }
+  }
+
+  function createUser(event) {
+    event.preventDefault();
+    if (newUserRole === "owner") {
+      onConfirm({
+        message: `Create "${newUserUsername || "this user"}" as an owner? Owners can manage users, settings, and task policies.`,
+        confirmLabel: "Create Owner",
+        danger: false,
+        action: submitCreateUser,
+      });
+      return;
+    }
+    submitCreateUser();
   }
 
   async function resetUserPassword(usernameValue) {
@@ -84,9 +103,36 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     }
   }
 
+  async function updateRole(usernameValue) {
+    const nextRole = String(roleDrafts[usernameValue] || "").trim().toLowerCase() || "editor";
+    const runUpdate = async () => {
+      try {
+        await api(`/users/${encodeURIComponent(usernameValue)}/role`, {
+          method: "PATCH",
+          body: { role: nextRole },
+        });
+        await refreshUsers();
+        onNotice(`Updated role for ${usernameValue}.`);
+      } catch (exc) {
+        onError(exc);
+      }
+    };
+    if (nextRole === "owner") {
+      onConfirm({
+        message: `Promote "${usernameValue}" to owner? Owners can manage users, settings, and task policies.`,
+        confirmLabel: "Promote",
+        danger: false,
+        action: runUpdate,
+      });
+      return;
+    }
+    await runUpdate();
+  }
+
   function deleteUser(usernameValue) {
     onConfirm({
       message: `Remove user "${usernameValue}"? This cannot be undone.`,
+      confirmLabel: "Remove",
       action: async () => {
         try {
           await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });
@@ -117,9 +163,8 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
           <label className="field">
             <span>Role</span>
             <select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value)}>
-              <option value="Editor">Editor</option>
-              <option value="Viewer">Viewer</option>
-              <option value="Owner">Owner</option>
+              <option value="editor">Editor</option>
+              <option value="owner">Owner</option>
             </select>
           </label>
 
@@ -185,7 +230,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                     <button type="button" className="user-row-toggle" onClick={() => setExpandedUser(isOpen ? null : item.username)}>
                       <strong>{item.username}</strong>
                       <span className="user-row-meta">
-                        <span className="status-pill neutral">{userRoleLabel(item.username, session?.username)}</span>
+                        <span className="status-pill neutral">{userRoleLabel(item.role)}</span>
                         {isMe && <span className="status-pill success">You</span>}
                         {item.force_password_reset && <span className="status-pill warning" title="Must reset password on next login">Reset pending</span>}
                       </span>
@@ -199,6 +244,20 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                   </div>
                   {isOpen && (
                     <div className="user-row-body">
+                      <div className="password-row">
+                        <select
+                          value={roleDrafts[item.username] ?? item.role ?? "editor"}
+                          onChange={(event) =>
+                            setRoleDrafts((prev) => ({ ...prev, [item.username]: event.target.value }))
+                          }
+                        >
+                          <option value="editor">Editor</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <button className="ghost" onClick={() => updateRole(item.username)}>
+                          Update Role
+                        </button>
+                      </div>
                       <div className="password-row">
                         <input
                           type="text"
