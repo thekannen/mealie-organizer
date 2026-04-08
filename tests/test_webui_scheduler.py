@@ -137,6 +137,30 @@ class TestRestoreFromDb:
             svc.scheduler.shutdown(wait=False)
         svc.state.set_schedule_validation_error.assert_called_with("good-id", None)
 
+    def test_restore_skips_already_fired_once_schedule_without_marking_it_invalid(self, tmp_path):
+        svc = _make_service(tmp_path)
+        past_run_at = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        svc.state.list_schedules.return_value = [
+            {
+                "schedule_id": "done-id",
+                "name": "Already fired",
+                "task_id": "tag-categorize",
+                "schedule_kind": "once",
+                "schedule_data": {"run_at": past_run_at},
+                "options": {},
+                "enabled": True,
+                "last_enqueued_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "validation_error": "Old error",
+            }
+        ]
+        svc.scheduler.start()
+        try:
+            svc._restore_from_db()
+            assert svc.scheduler.get_job("done-id") is None
+        finally:
+            svc.scheduler.shutdown(wait=False)
+        svc.state.set_schedule_validation_error.assert_called_with("done-id", None)
+
 
 class TestStartOrder:
     def test_start_restores_before_starting_scheduler(self, tmp_path):

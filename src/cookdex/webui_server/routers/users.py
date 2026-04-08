@@ -74,14 +74,12 @@ async def update_user_role(
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     normalized = normalize_username(username)
-    existing = services.state.get_user(normalized)
-    if existing is None:
+    try:
+        updated = services.state.update_user_role_guarded(normalized, payload.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if updated is None:
         raise HTTPException(status_code=404, detail="User not found.")
-    current_role = str(existing.get("role") or "")
-    if current_role == ROLE_OWNER and payload.role != ROLE_OWNER and services.state.count_users_by_role(ROLE_OWNER) <= 1:
-        raise HTTPException(status_code=409, detail="At least one owner account must remain.")
-    services.state.update_user_role(normalized, payload.role)
-    updated = services.state.get_user(normalized)
     return {"ok": True, "user": updated}
 
 
@@ -95,14 +93,10 @@ async def delete_user(
     current_username = str(session["username"])
     if normalized == current_username:
         raise HTTPException(status_code=409, detail="You cannot delete the active account.")
-    existing = services.state.get_user(normalized)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="User not found.")
-    if str(existing.get("role") or "") == ROLE_OWNER and services.state.count_users_by_role(ROLE_OWNER) <= 1:
-        raise HTTPException(status_code=409, detail="At least one owner account must remain.")
-    if services.state.count_users() <= 1:
-        raise HTTPException(status_code=409, detail="At least one account must remain.")
-    deleted = services.state.delete_user(normalized)
-    if not deleted:
+    try:
+        deleted = services.state.delete_user_guarded(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if deleted is None:
         raise HTTPException(status_code=404, detail="User not found.")
     return {"ok": True}

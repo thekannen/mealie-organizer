@@ -47,8 +47,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     setShowPassword(true);
   }
 
-  async function createUser(event) {
-    event.preventDefault();
+  async function submitCreateUser() {
     try {
       await api("/users", {
         method: "POST",
@@ -68,6 +67,20 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     } catch (exc) {
       onError(exc);
     }
+  }
+
+  function createUser(event) {
+    event.preventDefault();
+    if (newUserRole === "owner") {
+      onConfirm({
+        message: `Create "${newUserUsername || "this user"}" as an owner? Owners can manage users, settings, and task policies.`,
+        confirmLabel: "Create Owner",
+        danger: false,
+        action: submitCreateUser,
+      });
+      return;
+    }
+    submitCreateUser();
   }
 
   async function resetUserPassword(usernameValue) {
@@ -92,21 +105,34 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
 
   async function updateRole(usernameValue) {
     const nextRole = String(roleDrafts[usernameValue] || "").trim().toLowerCase() || "editor";
-    try {
-      await api(`/users/${encodeURIComponent(usernameValue)}/role`, {
-        method: "PATCH",
-        body: { role: nextRole },
+    const runUpdate = async () => {
+      try {
+        await api(`/users/${encodeURIComponent(usernameValue)}/role`, {
+          method: "PATCH",
+          body: { role: nextRole },
+        });
+        await refreshUsers();
+        onNotice(`Updated role for ${usernameValue}.`);
+      } catch (exc) {
+        onError(exc);
+      }
+    };
+    if (nextRole === "owner") {
+      onConfirm({
+        message: `Promote "${usernameValue}" to owner? Owners can manage users, settings, and task policies.`,
+        confirmLabel: "Promote",
+        danger: false,
+        action: runUpdate,
       });
-      await refreshUsers();
-      onNotice(`Updated role for ${usernameValue}.`);
-    } catch (exc) {
-      onError(exc);
+      return;
     }
+    await runUpdate();
   }
 
   function deleteUser(usernameValue) {
     onConfirm({
       message: `Remove user "${usernameValue}"? This cannot be undone.`,
+      confirmLabel: "Remove",
       action: async () => {
         try {
           await api(`/users/${encodeURIComponent(usernameValue)}`, { method: "DELETE" });

@@ -213,30 +213,21 @@ class StateStore:
         if not rows:
             return
 
-        sanitized_roles: dict[str, str] = {}
         owner_found = False
         for row in rows:
             username = str(row["username"])
             raw_role = row["role"]
-            role = ""
-            if raw_role is not None:
-                try:
-                    role = normalize_user_role(str(raw_role))
-                except ValueError:
-                    role = ""
+            try:
+                role = normalize_user_role(str(raw_role)) if raw_role is not None else "editor"
+            except ValueError:
+                role = "editor"
             if role == "owner":
                 owner_found = True
-            sanitized_roles[username] = role
+            if raw_role != role:
+                conn.execute("UPDATE users SET role = ? WHERE username = ?;", (role, username))
 
-        first_owner = str(rows[0]["username"]) if not owner_found else ""
-        for row in rows:
-            username = str(row["username"])
-            role = sanitized_roles.get(username, "")
-            desired_role = role or "editor"
-            if not owner_found and username == first_owner:
-                desired_role = "owner"
-            if desired_role != role:
-                conn.execute("UPDATE users SET role = ? WHERE username = ?;", (desired_role, username))
+        if not owner_found:
+            conn.execute("UPDATE users SET role = 'owner' WHERE username = ?;", (str(rows[0]["username"]),))
 
     def has_users(self) -> bool:
         with self._connect(readonly=True) as conn:
@@ -378,10 +369,59 @@ class StateStore:
                 )
                 return int(result.rowcount or 0) > 0
 
+    def update_user_role_guarded(self, username: str, role: str) -> dict[str, Any] | None:
+        normalized_role = normalize_user_role(role)
+        with self._write_lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE username = ?;",
+                    (username,),
+                ).fetchone()
+                if row is None:
+                    return None
+                current_role = normalize_user_role(str(row["role"]))
+                if current_role == "owner" and normalized_role != "owner":
+                    owner_count_row = conn.execute(
+                        "SELECT COUNT(*) AS value FROM users WHERE role = 'owner';"
+                    ).fetchone()
+                    owner_count = int(owner_count_row["value"]) if owner_count_row is not None else 0
+                    if owner_count <= 1:
+                        raise ValueError("At least one owner account must remain.")
+                conn.execute(
+                    "UPDATE users SET role = ? WHERE username = ?;",
+                    (normalized_role, username),
+                )
+        return self.get_user(username)
+
     def delete_user(self, username: str) -> bool:
         with self._write_lock:
             with self._connect() as conn:
                 # Both deletes are in a single transaction (atomic).
+                conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
+                result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
+                return int(result.rowcount or 0) > 0
+
+    def delete_user_guarded(self, username: str) -> bool | None:
+        with self._write_lock:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE username = ?;",
+                    (username,),
+                ).fetchone()
+                if row is None:
+                    return None
+                current_role = normalize_user_role(str(row["role"]))
+                if current_role == "owner":
+                    owner_count_row = conn.execute(
+                        "SELECT COUNT(*) AS value FROM users WHERE role = 'owner';"
+                    ).fetchone()
+                    owner_count = int(owner_count_row["value"]) if owner_count_row is not None else 0
+                    if owner_count <= 1:
+                        raise ValueError("At least one owner account must remain.")
+                total_row = conn.execute("SELECT COUNT(*) AS value FROM users;").fetchone()
+                total_count = int(total_row["value"]) if total_row is not None else 0
+                if total_count <= 1:
+                    raise ValueError("At least one account must remain.")
                 conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
                 result = conn.execute("DELETE FROM users WHERE username = ?;", (username,))
                 return int(result.rowcount or 0) > 0

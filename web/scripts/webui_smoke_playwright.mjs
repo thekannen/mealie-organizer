@@ -1556,11 +1556,11 @@ async function main() {
     // Role dropdown (default: Editor)
     const roleSelect = page.locator('label:has-text("Role") select').first();
     if (await roleSelect.isVisible().catch(() => false)) {
-      await roleSelect.selectOption("Editor");
+      await roleSelect.selectOption("editor");
       await page.waitForTimeout(100);
-      await roleSelect.selectOption("Owner");
+      await roleSelect.selectOption("owner");
       await page.waitForTimeout(100);
-      await roleSelect.selectOption("Editor");
+      await roleSelect.selectOption("editor");
       markControl("users", "users:role-dropdown");
     }
 
@@ -1591,6 +1591,10 @@ async function main() {
       userRow = page.locator(".user-row", { hasText: tempUser }).first();
     }
     await expectVisible(userRow, "Created user row was not found in user list.");
+    const createdUserText = normalizeText(await userRow.innerText());
+    if (!createdUserText.includes("Editor")) {
+      throw new Error(`Created user row did not persist the expected Editor role badge: '${createdUserText}'`);
+    }
 
     // User search: filter by partial username and verify user still visible
     const userSearchInput = page.locator(".search-box input").first();

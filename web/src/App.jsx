@@ -17,6 +17,7 @@ import {
   FILTER_FIELDS,
   FILTER_OPERATORS,
   parseLineEditorContent,
+  isOwnerRole,
   userRoleLabel,
 } from "./utils.jsx";
 import Icon from "./components/Icon";
@@ -30,7 +31,18 @@ import OverviewPage from "./pages/overview/OverviewPage";
 import TasksPage from "./pages/tasks/TasksPage";
 
 function canAccessNavItem(item, role) {
-  return !item.ownerOnly || role === "owner";
+  return !item.ownerOnly || isOwnerRole(role);
+}
+
+function sanitizeCachedDataForRole(data, role) {
+  if (!data || typeof data !== "object" || isOwnerRole(role)) {
+    return data;
+  }
+  return {
+    ...data,
+    users: { items: [] },
+    settings: null,
+  };
 }
 
 export default function App() {
@@ -218,7 +230,7 @@ export default function App() {
   const taxonomyLoaded = React.useRef(false);
   useEffect(() => {
     if (!session) return;
-    if (activePage === "recipe-organization" || (activePage === "settings" && session.role === "owner")) {
+    if (activePage === "recipe-organization" || (activePage === "settings" && isOwnerRole(session.role))) {
       if (!taxonomyLoaded.current) {
         taxonomyLoaded.current = true;
         loadTaxonomyContent();
@@ -300,6 +312,9 @@ export default function App() {
       const payload = await api("/auth/session", { method: "GET" });
       setSession(payload);
       setError("");
+      if (!isOwnerRole(payload.role)) {
+        patchCachedData((cached) => sanitizeCachedDataForRole(cached, payload.role));
+      }
       if (payload.force_reset) setForcedResetPending(true);
       return payload;
     } catch {
@@ -378,10 +393,7 @@ export default function App() {
     try {
       const raw = sessionStorage.getItem(CACHE_KEY);
       if (!raw) return false;
-      const cached = JSON.parse(raw);
-      if (currentSession?.role !== "owner") {
-        cached.users = { items: [] };
-      }
+      const cached = sanitizeCachedDataForRole(JSON.parse(raw), currentSession?.role);
       if (Date.now() - cached.savedAt > CACHE_TTL) return false;
       applyData(cached);
       scheduleAutoRefresh();
@@ -433,7 +445,7 @@ export default function App() {
   }
 
   async function refreshUsers() {
-    if (session?.role !== "owner") {
+    if (!isOwnerRole(session?.role)) {
       setUsers([]);
       return;
     }
@@ -455,7 +467,7 @@ export default function App() {
     setIsLoading(true);
     showNotice("Refreshing data\u2026", 30000);
     try {
-      const isOwner = currentSession?.role === "owner";
+      const isOwner = isOwnerRole(currentSession?.role);
       const [
         taskPayload, runPayload, schedulePayload, settingsPayload,
         configPayload, usersPayload,
@@ -473,13 +485,13 @@ export default function App() {
         api("/health").catch(() => null),
       ]);
 
-      const data = {
+      const data = sanitizeCachedDataForRole({
         tasks: taskPayload, runs: runPayload, schedules: schedulePayload,
         settings: settingsPayload, config: configPayload, users: usersPayload,
         metrics: metricsPayload, quality: qualityPayload,
         about: aboutPayload, health: healthPayload,
         timestamp: new Date().toISOString(), savedAt: Date.now(),
-      };
+      }, currentSession?.role);
 
       applyData(data);
 
@@ -932,8 +944,8 @@ export default function App() {
   }
 
   function renderPage() {
-    if (activePage === "settings" && session?.role !== "owner") return renderOverviewPage();
-    if (activePage === "users" && session?.role !== "owner") return renderOverviewPage();
+    if (activePage === "settings" && !isOwnerRole(session?.role)) return renderOverviewPage();
+    if (activePage === "users" && !isOwnerRole(session?.role)) return renderOverviewPage();
     if (activePage === "tasks") return renderTasksPage();
     if (activePage === "settings") return renderSettingsPage();
     if (activePage === "recipe-sources") return renderRecipeSourcesPage();
@@ -1146,7 +1158,12 @@ export default function App() {
             <p>{confirmModal.message}</p>
             <div className="modal-actions">
               <button className="ghost" onClick={() => setConfirmModal(null)}>Cancel</button>
-              <button className="primary danger" onClick={() => { setConfirmModal(null); confirmModal.action(); }}>Remove</button>
+              <button
+                className={`primary${confirmModal.danger === false ? "" : " danger"}`}
+                onClick={() => { setConfirmModal(null); confirmModal.action(); }}
+              >
+                {confirmModal.confirmLabel || "Remove"}
+              </button>
             </div>
           </div>
         </div>

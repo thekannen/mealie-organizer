@@ -9,6 +9,7 @@ import {
   formatRunTime,
   formatRelativeTime,
   formatCountdown,
+  isOwnerRole,
   normalizeErrorMessage,
   normalizeTaskOptions,
   parseIso,
@@ -115,7 +116,7 @@ export default function TasksPage({
   const [editingScheduleId, setEditingScheduleId] = useState("");
   const [scheduleEditForm, setScheduleEditForm] = useState(null);
   const [showAdvancedScheduleOptions, setShowAdvancedScheduleOptions] = useState(false);
-  const canManagePolicies = session?.role === "owner";
+  const canManagePolicies = isOwnerRole(session?.role);
 
   // ─── Refs ───────────────────────────────────────────────────────────────────
   const logOffsetRef = useRef(0);

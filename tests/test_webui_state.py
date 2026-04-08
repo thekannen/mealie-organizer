@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from cookdex.webui_server.state import StateStore
 
 
@@ -60,3 +62,43 @@ def test_state_migrates_existing_users_to_owner_and_editor(tmp_path: Path):
     users = {item["username"]: item for item in store.list_users()}
     assert users["admin"]["role"] == "owner"
     assert users["editor"]["role"] == "editor"
+
+
+def test_update_user_role_guarded_blocks_demoting_last_owner(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+
+    with pytest.raises(ValueError, match="At least one owner account must remain."):
+        store.update_user_role_guarded("admin", "editor")
+
+    assert store.get_user("admin")["role"] == "owner"
+
+
+def test_delete_user_guarded_blocks_removing_last_owner(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+    store.create_user("editor", "hash-editor", role="editor")
+
+    with pytest.raises(ValueError, match="At least one owner account must remain."):
+        store.delete_user_guarded("admin")
+
+    assert store.get_user("admin")["role"] == "owner"
+    assert store.get_user("editor")["role"] == "editor"
+
+
+def test_guarded_owner_mutations_allow_safe_changes(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-admin")
+    store.create_user("editor", "hash-editor", role="editor")
+
+    promoted = store.update_user_role_guarded("editor", "owner")
+    assert promoted is not None
+    assert promoted["role"] == "owner"
+
+    deleted = store.delete_user_guarded("admin")
+    assert deleted is True
+    assert store.get_user("admin") is None
+    assert store.get_user("editor")["role"] == "owner"

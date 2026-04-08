@@ -77,6 +77,9 @@ def require_session(request: Request, services: Services = Depends(require_servi
 
 
 def _require_role(session: dict[str, Any], allowed_roles: set[str]) -> dict[str, Any]:
+    # RBAC here is intentionally scoped to authenticated Web UI HTTP requests.
+    # Scheduler dispatch, runner subprocesses, CLI flows, and external API keys
+    # are outside this enforcement layer.
     role = str(session.get("role") or "").strip().lower()
     if role not in allowed_roles:
         raise HTTPException(status_code=403, detail="Insufficient permissions.")

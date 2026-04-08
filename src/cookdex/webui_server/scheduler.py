@@ -135,7 +135,13 @@ class SchedulerService:
     def _restore_from_db(self) -> None:
         for item in self.state.list_schedules():
             try:
-                self._validate_schedule_definition(str(item["schedule_kind"]), dict(item["schedule_data"]))
+                kind = str(item["schedule_kind"])
+                schedule_data = dict(item["schedule_data"])
+                if self._should_skip_restored_once_schedule(item, schedule_data):
+                    if item.get("validation_error"):
+                        self.state.set_schedule_validation_error(str(item["schedule_id"]), None)
+                    continue
+                self._validate_schedule_definition(kind, schedule_data, enforce_future_once=False)
                 if item.get("validation_error"):
                     self.state.set_schedule_validation_error(str(item["schedule_id"]), None)
                     item["validation_error"] = None
@@ -208,7 +214,25 @@ class SchedulerService:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
 
-    def _validate_schedule_definition(self, kind: str, schedule_data: dict[str, Any]) -> None:
+    def _should_skip_restored_once_schedule(
+        self,
+        record: dict[str, Any],
+        schedule_data: dict[str, Any],
+    ) -> bool:
+        if str(record.get("schedule_kind") or "") != "once":
+            return False
+        if record.get("last_enqueued_at") is None:
+            return False
+        run_at = self._parse_dt(schedule_data.get("run_at"))
+        return run_at is not None and run_at <= datetime.now(timezone.utc)
+
+    def _validate_schedule_definition(
+        self,
+        kind: str,
+        schedule_data: dict[str, Any],
+        *,
+        enforce_future_once: bool = True,
+    ) -> None:
         if kind == "interval":
             start_date = self._parse_dt(schedule_data.get("start_at"))
             end_date = self._parse_dt(schedule_data.get("end_at"))
@@ -222,7 +246,9 @@ class SchedulerService:
             if not run_at_raw:
                 raise ValueError("Once schedules require non-empty 'run_at'.")
             run_at = self._parse_dt(run_at_raw)
-            if run_at is None or run_at <= datetime.now(timezone.utc):
+            if run_at is None:
+                raise ValueError("Once schedules require non-empty 'run_at'.")
+            if enforce_future_once and run_at <= datetime.now(timezone.utc):
                 raise ValueError("Once schedules require 'run_at' in the future.")
             self._build_trigger(kind, schedule_data)
             return
