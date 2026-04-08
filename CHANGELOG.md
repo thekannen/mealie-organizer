@@ -2,6 +2,19 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.4.1] - 2026-04-07
+
+### Security
+- **Role-based access control** — Users now have `owner` or `editor` roles; owner-only routes (users, settings, debug) are enforced server-side with atomic last-owner protections
+- **Session cookie TTL** — Login cookies now set `Max-Age`/`Expires` matching `WEB_SESSION_TTL_SECONDS` so sessions survive browser restarts
+
+### Fixed
+- **Schedule validation** — Invalid schedule inputs rejected with 422 before DB writes; legacy broken schedules surface `validation_error` instead of silently failing
+- **Backup timeout** — Mealie backup POST timeout increased from 2min to 15min, pre-command timeout from 5min to 20min, to support large datasets
+
+### Changed
+- Mealie badge updated to v3.14
+
 ## [2026.3.63] - 2026-03-25
 
 ### Security

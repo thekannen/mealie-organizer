@@ -22,7 +22,7 @@ def create_backup(client: MealieApiClient) -> bool:
     """Create a new Mealie backup. Returns True on success."""
     print("[start] Creating Mealie backup...", flush=True)
     try:
-        data = client.request_json("POST", "/admin/backups", timeout=120)
+        data = client.request_json("POST", "/admin/backups", timeout=900)
         msg = data.get("message", "") if isinstance(data, dict) else str(data)
         print(f"[ok] Backup created: {msg}", flush=True)
         return True
@@ -92,8 +92,8 @@ def main() -> int:
         base_url=resolve_mealie_url(),
         api_key=resolve_mealie_api_key(required=True),
         timeout_seconds=60,
-        retries=2,
-        backoff_seconds=1.0,
+        retries=0,
+        backoff_seconds=0,
     )
 
     if args.list:
