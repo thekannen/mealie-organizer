@@ -20,6 +20,8 @@ from .tasks import TaskRegistry
 
 _ENV_KEY_RE = re.compile(r"^[A-Z0-9_]+$")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,64}$")
+ROLE_OWNER = "owner"
+ROLE_EDITOR = "editor"
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,26 @@ def require_session(request: Request, services: Services = Depends(require_servi
     if _expired(str(session["expires_at"])):
         services.state.delete_session(token)
         raise HTTPException(status_code=401, detail="Session expired.")
+    user = services.state.get_user(str(session["username"]))
+    if user is None:
+        services.state.delete_session(token)
+        raise HTTPException(status_code=401, detail="Invalid session.")
+    return {**session, "role": user["role"]}
+
+
+def _require_role(session: dict[str, Any], allowed_roles: set[str]) -> dict[str, Any]:
+    role = str(session.get("role") or "").strip().lower()
+    if role not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
     return session
+
+
+def require_editor_session(session: dict[str, Any] = Depends(require_session)) -> dict[str, Any]:
+    return _require_role(session, {ROLE_OWNER, ROLE_EDITOR})
+
+
+def require_owner_session(session: dict[str, Any] = Depends(require_session)) -> dict[str, Any]:
+    return _require_role(session, {ROLE_OWNER})
 
 
 def normalize_username(raw: str) -> str:

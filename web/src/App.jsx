@@ -17,6 +17,7 @@ import {
   FILTER_FIELDS,
   FILTER_OPERATORS,
   parseLineEditorContent,
+  userRoleLabel,
 } from "./utils.jsx";
 import Icon from "./components/Icon";
 import RecipeWorkspacePage from "./pages/recipe-workspace/RecipeWorkspacePage";
@@ -27,6 +28,10 @@ import RecipeSourcesPage from "./pages/recipe-sources/RecipeSourcesPage";
 import SettingsPage from "./pages/settings/SettingsPage";
 import OverviewPage from "./pages/overview/OverviewPage";
 import TasksPage from "./pages/tasks/TasksPage";
+
+function canAccessNavItem(item, role) {
+  return !item.ownerOnly || role === "owner";
+}
 
 export default function App() {
   const [error, setError] = useState("");
@@ -123,6 +128,10 @@ export default function App() {
   }, [tasks]);
 
   const activePageMeta = PAGE_META[activePage] || PAGE_META.overview;
+  const visibleNavItems = useMemo(
+    () => NAV_ITEMS.filter((item) => canAccessNavItem(item, session?.role)),
+    [session]
+  );
 
 
 
@@ -166,6 +175,14 @@ export default function App() {
     }
   }, [activePage]);
 
+  useEffect(() => {
+    if (!session) return;
+    const currentNav = NAV_ITEMS.find((item) => item.id === activePage);
+    if (currentNav && !canAccessNavItem(currentNav, session.role)) {
+      navigateTo("overview");
+    }
+  }, [activePage, session]);
+
   function navigateTo(pageId) {
     const base = BASE_PATH.replace(/\/+$/, "");
     const url = pageId === "overview" ? (base || "/") : `${base}/${pageId}`;
@@ -201,7 +218,7 @@ export default function App() {
   const taxonomyLoaded = React.useRef(false);
   useEffect(() => {
     if (!session) return;
-    if (activePage === "recipe-organization" || activePage === "settings") {
+    if (activePage === "recipe-organization" || (activePage === "settings" && session.role === "owner")) {
       if (!taxonomyLoaded.current) {
         taxonomyLoaded.current = true;
         loadTaxonomyContent();
@@ -284,10 +301,10 @@ export default function App() {
       setSession(payload);
       setError("");
       if (payload.force_reset) setForcedResetPending(true);
-      return true;
+      return payload;
     } catch {
       setSession(null);
-      return false;
+      return null;
     }
   }
 
@@ -357,11 +374,14 @@ export default function App() {
     staleTimer.current = setTimeout(() => { loadData(); }, CACHE_TTL);
   }
 
-  function loadCachedData() {
+  function loadCachedData(currentSession) {
     try {
       const raw = sessionStorage.getItem(CACHE_KEY);
       if (!raw) return false;
       const cached = JSON.parse(raw);
+      if (currentSession?.role !== "owner") {
+        cached.users = { items: [] };
+      }
       if (Date.now() - cached.savedAt > CACHE_TTL) return false;
       applyData(cached);
       scheduleAutoRefresh();
@@ -413,6 +433,10 @@ export default function App() {
   }
 
   async function refreshUsers() {
+    if (session?.role !== "owner") {
+      setUsers([]);
+      return;
+    }
     try {
       const payload = await api("/users");
       setUsers(payload?.items || []);
@@ -426,11 +450,12 @@ export default function App() {
     } catch (exc) { handleError(exc); }
   }
 
-  async function loadData() {
+  async function loadData(currentSession = session) {
     if (isLoading) return;
     setIsLoading(true);
     showNotice("Refreshing data\u2026", 30000);
     try {
+      const isOwner = currentSession?.role === "owner";
       const [
         taskPayload, runPayload, schedulePayload, settingsPayload,
         configPayload, usersPayload,
@@ -439,9 +464,9 @@ export default function App() {
         api("/tasks"),
         api("/runs"),
         api("/schedules"),
-        api("/settings"),
+        isOwner ? api("/settings") : Promise.resolve(null),
         api("/config/files"),
-        api("/users"),
+        isOwner ? api("/users") : Promise.resolve({ items: [] }),
         api("/metrics/overview").catch(() => null),
         api("/metrics/quality").catch(() => null),
         api("/about/meta").catch(() => null),
@@ -486,10 +511,10 @@ export default function App() {
           return;
         }
 
-        const ok = await refreshSession();
-        if (ok) {
-          if (!loadCachedData()) {
-            await loadData();
+        const nextSession = await refreshSession();
+        if (nextSession) {
+          if (!loadCachedData(nextSession)) {
+            await loadData(nextSession);
           }
         }
       } catch (exc) {
@@ -523,9 +548,9 @@ export default function App() {
       setRegisterPassword("");
       setRegisterPasswordConfirm("");
       setSetupRequired(false);
-      await refreshSession();
-      await loadData();
-      showNotice("Admin account created.");
+      const nextSession = await refreshSession();
+      await loadData(nextSession);
+      showNotice("Owner account created.");
     } catch (exc) {
       handleError(exc);
     }
@@ -537,8 +562,8 @@ export default function App() {
       clearBanners();
       const loginResult = await api("/auth/login", { method: "POST", body: { username, password } });
       setPassword("");
-      await refreshSession();
-      await loadData();
+      const nextSession = await refreshSession();
+      await loadData(nextSession);
       if (loginResult?.force_reset) {
         setForcedResetPending(true);
       } else {
@@ -557,6 +582,7 @@ export default function App() {
       setRuns([]);
       setSchedules([]);
       setUsers([]);
+      sessionStorage.removeItem(CACHE_KEY);
     } catch (exc) {
       handleError(exc);
     }
@@ -906,6 +932,8 @@ export default function App() {
   }
 
   function renderPage() {
+    if (activePage === "settings" && session?.role !== "owner") return renderOverviewPage();
+    if (activePage === "users" && session?.role !== "owner") return renderOverviewPage();
     if (activePage === "tasks") return renderTasksPage();
     if (activePage === "settings") return renderSettingsPage();
     if (activePage === "recipe-sources") return renderRecipeSourcesPage();
@@ -927,18 +955,18 @@ export default function App() {
             CookDex guides setup, keeps labels human-friendly, and protects secrets by default.
           </p>
           <div className="auth-points">
-            <p>One admin account unlocks the full workspace.</p>
+            <p>One owner account unlocks the full workspace.</p>
             <p>Runtime settings are grouped with plain descriptions.</p>
             <p>No recipe data changes happen until you explicitly run tasks.</p>
           </div>
         </section>
 
         <section className="auth-card">
-          <h2>Create Admin Account</h2>
+          <h2>Create Owner Account</h2>
           <p>This account can manage users, schedules, settings, and runs.</p>
           <form onSubmit={registerFirstUser}>
             <label className="field">
-              <span>Admin Username</span>
+              <span>Owner Username</span>
               <input
                 value={registerUsername}
                 onChange={(event) => setRegisterUsername(event.target.value)}
@@ -967,7 +995,7 @@ export default function App() {
             </label>
             <button type="submit" className="primary">
               <Icon name="users" />
-              Create Admin Account
+              Create Owner Account
             </button>
           </form>
           {error ? <div className="banner error">{error}</div> : null}
@@ -1045,7 +1073,7 @@ export default function App() {
 
         <nav className="sidebar-nav">
           <p className="muted tiny">Workspace</p>
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <button
               key={item.id}
               className={`nav-item ${activePage === item.id ? "active" : ""}`}
@@ -1065,7 +1093,7 @@ export default function App() {
               <p className="tiny muted">Signed in as</p>
               <strong>{session.username}</strong>
             </div>
-            <span className="role-badge">Owner</span>
+            <span className="role-badge">{userRoleLabel(session.role)}</span>
           </div>
 
           <div className="sidebar-actions">

@@ -691,13 +691,13 @@ async function main() {
   });
 
   await check("setup-if-required", async () => {
-    const setupHeading = page.getByRole("heading", { name: /create admin account/i }).first();
+    const setupHeading = page.getByRole("heading", { name: /create owner account/i }).first();
     if (!(await setupHeading.isVisible().catch(() => false))) {
       return;
     }
-    await fillFirstVisible(page.locator('label:has-text("Admin Username") input'), args.username);
+    await fillFirstVisible(page.locator('label:has-text("Owner Username") input'), args.username);
     await fillFirstVisible(page.locator('label:has-text("Password") input'), args.password);
-    await clickButtonByRole("auth", /create admin account/i, "auth:create-admin");
+    await clickButtonByRole("auth", /create owner account/i, "auth:create-owner");
     await ensureNoErrorBanner("Setup flow failed");
   });
 
@@ -1556,7 +1556,9 @@ async function main() {
     // Role dropdown (default: Editor)
     const roleSelect = page.locator('label:has-text("Role") select').first();
     if (await roleSelect.isVisible().catch(() => false)) {
-      await roleSelect.selectOption("Viewer");
+      await roleSelect.selectOption("Editor");
+      await page.waitForTimeout(100);
+      await roleSelect.selectOption("Owner");
       await page.waitForTimeout(100);
       await roleSelect.selectOption("Editor");
       markControl("users", "users:role-dropdown");
@@ -1993,4 +1995,3 @@ main().catch((error) => {
   process.stderr.write(`${String(error?.message || error)}\n`);
   process.exitCode = 1;
 });
-

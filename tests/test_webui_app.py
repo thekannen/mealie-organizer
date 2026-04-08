@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import importlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -33,9 +34,13 @@ _CSRF = {"X-Requested-With": "XMLHttpRequest"}
 
 
 def _login(client: TestClient) -> None:
+    _login_as(client, "admin", "Secret-pass1")
+
+
+def _login_as(client: TestClient, username: str, password: str) -> None:
     response = client.post(
         "/cookdex/api/v1/auth/login",
-        json={"username": "admin", "password": "Secret-pass1"},
+        json={"username": username, "password": password},
         headers=_CSRF,
     )
     assert response.status_code == 200
@@ -79,6 +84,7 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         session = client.get("/cookdex/api/v1/auth/session")
         assert session.status_code == 200
         assert session.json()["authenticated"] is True
+        assert session.json()["role"] == "owner"
 
         users_initial = client.get("/cookdex/api/v1/users")
         assert users_initial.status_code == 200
@@ -91,10 +97,15 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         )
         assert create_user.status_code == 201
         assert create_user.json()["username"] == "kitchen-tablet"
+        assert create_user.json()["role"] == "editor"
 
         users_after_create = client.get("/cookdex/api/v1/users")
         assert users_after_create.status_code == 200
         assert any(item["username"] == "kitchen-tablet" for item in users_after_create.json()["items"])
+        assert any(
+            item["username"] == "kitchen-tablet" and item["role"] == "editor"
+            for item in users_after_create.json()["items"]
+        )
 
         reset_password = client.post(
             "/cookdex/api/v1/users/kitchen-tablet/reset-password",
@@ -226,9 +237,9 @@ def test_schedule_once_and_interval_validation(tmp_path: Path, monkeypatch):
     app = app_module.create_app()
 
     # Short datetime-local format: "YYYY-MM-DDTHH:MM" (no seconds)
-    future_short = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    future_short = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
     # Full ISO format with seconds
-    future_full = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+    future_full = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
 
     with TestClient(app) as client:
         _login(client)
@@ -335,7 +346,7 @@ def test_schedule_update_supports_run_if_missed_and_task_options(tmp_path: Path,
     importlib.reload(app_module)
     app = app_module.create_app()
 
-    future_short = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+    future_short = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
 
     with TestClient(app) as client:
         _login(client)
@@ -374,6 +385,253 @@ def test_schedule_update_supports_run_if_missed_and_task_options(tmp_path: Path,
         assert payload["schedule_data"]["run_at"] == future_short
         assert payload["schedule_data"]["run_if_missed"] is True
         assert payload["options"]["max_recipes"] == 3
+
+
+def test_session_cookie_includes_persistent_ttl(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("WEB_SESSION_TTL_SECONDS", "3600")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/cookdex/api/v1/auth/login",
+            json={"username": "admin", "password": "Secret-pass1"},
+            headers=_CSRF,
+        )
+        assert response.status_code == 200
+        cookie_header = response.headers["set-cookie"]
+        assert "Max-Age=3600" in cookie_header
+        assert "expires=" in cookie_header
+
+        expires_segment = cookie_header.split("expires=", 1)[1].split(";", 1)[0]
+        expires_at = parsedate_to_datetime(expires_segment)
+        expected = datetime.now(timezone.utc) + timedelta(seconds=3600)
+        assert abs((expires_at - expected).total_seconds()) < 10
+
+
+def test_schedule_validation_rejects_bad_payloads_without_persisting(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    past_run_at = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    future_run_at = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    with TestClient(app) as client:
+        _login(client)
+
+        bad_once = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Broken once",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "run_at": "not-a-date",
+                "enabled": True,
+            },
+            headers=_CSRF,
+        )
+        assert bad_once.status_code == 422
+        assert client.get("/cookdex/api/v1/schedules").json()["items"] == []
+
+        past_once = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Past once",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "run_at": past_run_at,
+                "enabled": True,
+            },
+            headers=_CSRF,
+        )
+        assert past_once.status_code == 422
+        assert client.get("/cookdex/api/v1/schedules").json()["items"] == []
+
+        created = client.post(
+            "/cookdex/api/v1/schedules",
+            json={
+                "name": "Valid once",
+                "task_id": "taxonomy-refresh",
+                "kind": "once",
+                "run_at": future_run_at,
+                "enabled": True,
+            },
+            headers=_CSRF,
+        )
+        assert created.status_code == 201, created.text
+        schedule_id = created.json()["schedule_id"]
+
+        invalid_update = client.patch(
+            f"/cookdex/api/v1/schedules/{schedule_id}",
+            json={
+                "kind": "interval",
+                "seconds": 600,
+                "start_at": "2026-04-08T10:00:00Z",
+                "end_at": "2026-04-08T09:00:00Z",
+            },
+            headers=_CSRF,
+        )
+        assert invalid_update.status_code == 422
+
+        schedule_after = client.get("/cookdex/api/v1/schedules").json()["items"][0]
+        assert schedule_after["schedule_id"] == schedule_id
+        assert schedule_after["schedule_kind"] == "once"
+        assert schedule_after["schedule_data"]["run_at"] == future_run_at
+
+
+def test_legacy_invalid_schedule_surfaces_validation_error_and_clears_after_fix(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+        services = app.state.services
+        services.state.create_schedule(
+            schedule_id="legacy-bad",
+            name="Legacy broken",
+            task_id="taxonomy-refresh",
+            schedule_kind="once",
+            schedule_data={"run_at": "not-a-date"},
+            options={"dry_run": True},
+            enabled=True,
+        )
+        services.scheduler._restore_from_db()
+
+        schedules = client.get("/cookdex/api/v1/schedules")
+        assert schedules.status_code == 200
+        legacy = next(item for item in schedules.json()["items"] if item["schedule_id"] == "legacy-bad")
+        assert legacy["validation_error"] == "Invalid isoformat string: 'not-a-date'"
+        assert legacy["next_run_at"] is None
+
+        future_run_at = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        repaired = client.patch(
+            "/cookdex/api/v1/schedules/legacy-bad",
+            json={"run_at": future_run_at},
+            headers=_CSRF,
+        )
+        assert repaired.status_code == 200, repaired.text
+        assert repaired.json()["validation_error"] is None
+        assert repaired.json()["next_run_at"] is not None
+
+
+def test_owner_editor_rbac_and_role_changes_apply_on_next_request(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+    monkeypatch.setenv("MEALIE_URL", "http://127.0.0.1:9000/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "placeholder")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        cookie_name = app.state.services.settings.cookie_name
+        _login(client)
+        owner_token = client.cookies.get(cookie_name)
+
+        create_editor = client.post(
+            "/cookdex/api/v1/users",
+            json={"username": "editor", "password": "Editor-pass01", "role": "editor"},
+            headers=_CSRF,
+        )
+        assert create_editor.status_code == 201, create_editor.text
+
+        _login_as(client, "editor", "Editor-pass01")
+        editor_token = client.cookies.get(cookie_name)
+        editor_session = client.get("/cookdex/api/v1/auth/session")
+        assert editor_session.status_code == 200
+        assert editor_session.json()["role"] == "editor"
+
+        assert client.get("/cookdex/api/v1/tasks").status_code == 200
+        assert client.get("/cookdex/api/v1/schedules").status_code == 200
+        assert client.get("/cookdex/api/v1/users").status_code == 403
+        assert client.get("/cookdex/api/v1/settings").status_code == 403
+        assert client.put(
+            "/cookdex/api/v1/policies",
+            json={"policies": {"ingredient-parse": {"allow_dangerous": True}}},
+            headers=_CSRF,
+        ).status_code == 403
+        assert client.get("/cookdex/api/v1/debug-log").status_code == 403
+
+        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+
+        promote = client.patch(
+            "/cookdex/api/v1/users/editor/role",
+            json={"role": "owner"},
+            headers=_CSRF,
+        )
+        assert promote.status_code == 200, promote.text
+        assert promote.json()["user"]["role"] == "owner"
+        client.cookies.set(cookie_name, editor_token, path="/cookdex")
+        assert client.get("/cookdex/api/v1/auth/session").json()["role"] == "owner"
+        assert client.get("/cookdex/api/v1/users").status_code == 200
+
+        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+        demote = client.patch(
+            "/cookdex/api/v1/users/editor/role",
+            json={"role": "editor"},
+            headers=_CSRF,
+        )
+        assert demote.status_code == 200, demote.text
+        client.cookies.set(cookie_name, editor_token, path="/cookdex")
+        assert client.get("/cookdex/api/v1/auth/session").json()["role"] == "editor"
+        assert client.get("/cookdex/api/v1/users").status_code == 403
+
+        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+        self_demote = client.patch(
+            "/cookdex/api/v1/users/admin/role",
+            json={"role": "editor"},
+            headers=_CSRF,
+        )
+        assert self_demote.status_code == 409
 
 
 def test_master_key_auto_generated(tmp_path: Path, monkeypatch):
@@ -448,6 +706,7 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
         )
         assert register.status_code == 200
         assert register.json()["username"] == "admin"
+        assert register.json()["role"] == "owner"
 
         users = client.get("/cookdex/api/v1/users")
         assert users.status_code == 200

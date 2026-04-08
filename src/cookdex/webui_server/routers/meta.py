@@ -12,7 +12,13 @@ import requests
 from fastapi import APIRouter, Depends, Query
 
 from ... import _read_version
-from ..deps import Services, build_runtime_env, require_services, require_session
+from ..deps import (
+    Services,
+    build_runtime_env,
+    require_editor_session,
+    require_owner_session,
+    require_services,
+)
 
 router = APIRouter(tags=["meta"])
 
@@ -199,7 +205,7 @@ async def health(services: Services = Depends(require_services)) -> dict[str, An
 
 @router.get("/metrics/overview")
 async def get_overview_metrics(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
     refresh: bool = Query(default=False),
 ) -> dict[str, Any]:
@@ -216,7 +222,7 @@ async def get_overview_metrics(
 
 @router.get("/about/meta")
 async def get_about_meta(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {
@@ -235,7 +241,7 @@ async def get_about_meta(
 
 @router.get("/metrics/quality")
 async def get_quality_metrics(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     report_path = services.settings.config_root / "reports" / "quality_audit_report.json"
@@ -266,7 +272,7 @@ async def get_quality_metrics(
 
 @router.get("/help/docs")
 async def get_help_docs(
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_editor_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     return {"items": _build_help_docs_payload(services)}
@@ -381,7 +387,7 @@ def _build_health_report(services: Services) -> dict[str, Any]:
 @router.get("/debug-log")
 async def get_debug_log(
     lines: int = Query(default=300, ge=10, le=2000),
-    _session: dict[str, Any] = Depends(require_session),
+    _session: dict[str, Any] = Depends(require_owner_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
     """Return recent server log lines, live connection tests, and system context for bug reports."""

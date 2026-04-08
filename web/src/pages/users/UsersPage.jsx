@@ -4,13 +4,14 @@ import { api, userRoleLabel } from "../../utils.jsx";
 
 export default function UsersPage({ users, session, onNotice, onError, onConfirm, refreshUsers }) {
   const [newUserUsername, setNewUserUsername] = useState("");
-  const [newUserRole, setNewUserRole] = useState("Editor");
+  const [newUserRole, setNewUserRole] = useState("editor");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserForceReset, setNewUserForceReset] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [resetPasswords, setResetPasswords] = useState({});
   const [resetForceResets, setResetForceResets] = useState({});
+  const [roleDrafts, setRoleDrafts] = useState({});
   const [expandedUser, setExpandedUser] = useState(null);
 
   const filteredUsers = useMemo(() => {
@@ -18,8 +19,8 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     if (!query) return users;
     return users.filter((item) => {
       const username = String(item.username || "");
-      const inferredRole = username === session?.username ? "owner" : "editor";
-      return `${username} ${inferredRole}`.toLowerCase().includes(query);
+      const role = String(item.role || "editor");
+      return `${username} ${role}`.toLowerCase().includes(query);
     });
   }, [users, userSearch, session]);
 
@@ -51,10 +52,15 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
     try {
       await api("/users", {
         method: "POST",
-        body: { username: newUserUsername, password: newUserPassword, force_reset: newUserForceReset },
+        body: {
+          username: newUserUsername,
+          password: newUserPassword,
+          force_reset: newUserForceReset,
+          role: newUserRole,
+        },
       });
       setNewUserUsername("");
-      setNewUserRole("Editor");
+      setNewUserRole("editor");
       setNewUserPassword("");
       setNewUserForceReset(true);
       await refreshUsers();
@@ -79,6 +85,20 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
       setResetForceResets((prev) => ({ ...prev, [usernameValue]: false }));
       await refreshUsers();
       onNotice(`Password reset for ${usernameValue}.`);
+    } catch (exc) {
+      onError(exc);
+    }
+  }
+
+  async function updateRole(usernameValue) {
+    const nextRole = String(roleDrafts[usernameValue] || "").trim().toLowerCase() || "editor";
+    try {
+      await api(`/users/${encodeURIComponent(usernameValue)}/role`, {
+        method: "PATCH",
+        body: { role: nextRole },
+      });
+      await refreshUsers();
+      onNotice(`Updated role for ${usernameValue}.`);
     } catch (exc) {
       onError(exc);
     }
@@ -117,9 +137,8 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
           <label className="field">
             <span>Role</span>
             <select value={newUserRole} onChange={(event) => setNewUserRole(event.target.value)}>
-              <option value="Editor">Editor</option>
-              <option value="Viewer">Viewer</option>
-              <option value="Owner">Owner</option>
+              <option value="editor">Editor</option>
+              <option value="owner">Owner</option>
             </select>
           </label>
 
@@ -185,7 +204,7 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                     <button type="button" className="user-row-toggle" onClick={() => setExpandedUser(isOpen ? null : item.username)}>
                       <strong>{item.username}</strong>
                       <span className="user-row-meta">
-                        <span className="status-pill neutral">{userRoleLabel(item.username, session?.username)}</span>
+                        <span className="status-pill neutral">{userRoleLabel(item.role)}</span>
                         {isMe && <span className="status-pill success">You</span>}
                         {item.force_password_reset && <span className="status-pill warning" title="Must reset password on next login">Reset pending</span>}
                       </span>
@@ -199,6 +218,20 @@ export default function UsersPage({ users, session, onNotice, onError, onConfirm
                   </div>
                   {isOpen && (
                     <div className="user-row-body">
+                      <div className="password-row">
+                        <select
+                          value={roleDrafts[item.username] ?? item.role ?? "editor"}
+                          onChange={(event) =>
+                            setRoleDrafts((prev) => ({ ...prev, [item.username]: event.target.value }))
+                          }
+                        >
+                          <option value="editor">Editor</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <button className="ghost" onClick={() => updateRole(item.username)}>
+                          Update Role
+                        </button>
+                      </div>
                       <div className="password-row">
                         <input
                           type="text"

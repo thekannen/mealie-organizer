@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -14,24 +15,30 @@ router = APIRouter(tags=["auth"])
 _limiter = LoginRateLimiter(max_attempts=5, window_seconds=300)
 
 
-def _set_session_cookie(response: Response, services: Services, token: str) -> None:
+def _set_session_cookie(
+    response: Response,
+    services: Services,
+    token: str,
+    expires_at: datetime,
+) -> None:
     response.set_cookie(
         key=services.settings.cookie_name,
         value=token,
         httponly=True,
+        max_age=services.settings.session_ttl_seconds,
+        expires=format_datetime(expires_at, usegmt=True),
         secure=services.settings.cookie_secure,
         samesite="lax",
         path=services.settings.base_path,
     )
 
 
-def _create_session(services: Services, username: str) -> tuple[str, str]:
+def _create_session(services: Services, username: str) -> tuple[str, str, datetime]:
     token = new_session_token()
-    expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=services.settings.session_ttl_seconds)
-    ).isoformat().replace("+00:00", "Z")
+    expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=services.settings.session_ttl_seconds)
+    expires_at = expires_at_dt.isoformat().replace("+00:00", "Z")
     services.state.create_session(token=token, username=username, expires_at=expires_at)
-    return token, expires_at
+    return token, expires_at, expires_at_dt
 
 
 @router.get("/auth/bootstrap-status")
@@ -59,10 +66,17 @@ async def login(
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     _limiter.clear(client_ip)
-    token, expires_at = _create_session(services, username)
-    _set_session_cookie(response, services, token)
+    token, expires_at, expires_at_dt = _create_session(services, username)
+    _set_session_cookie(response, services, token, expires_at_dt)
     force_reset = services.state.get_force_password_reset(username)
-    return {"ok": True, "username": username, "expires_at": expires_at, "force_reset": force_reset}
+    user = services.state.get_user(username)
+    return {
+        "ok": True,
+        "username": username,
+        "expires_at": expires_at,
+        "force_reset": force_reset,
+        "role": user["role"] if user is not None else "editor",
+    }
 
 
 @router.post("/auth/register")
@@ -74,13 +88,13 @@ async def register_first_user(
     if services.state.has_users():
         raise HTTPException(status_code=409, detail="Setup already completed.")
     username = normalize_username(payload.username)
-    created = services.state.create_user(username, hash_password(payload.password))
+    created = services.state.create_user(username, hash_password(payload.password), role="owner")
     if not created:
         raise HTTPException(status_code=409, detail="Username already exists.")
 
-    token, expires_at = _create_session(services, username)
-    _set_session_cookie(response, services, token)
-    return {"ok": True, "username": username, "expires_at": expires_at}
+    token, expires_at, expires_at_dt = _create_session(services, username)
+    _set_session_cookie(response, services, token, expires_at_dt)
+    return {"ok": True, "username": username, "expires_at": expires_at, "role": "owner"}
 
 
 @router.post("/auth/logout")
@@ -104,4 +118,10 @@ async def session_status(
 ) -> dict[str, Any]:
     username = str(session["username"])
     force_reset = services.state.get_force_password_reset(username)
-    return {"authenticated": True, "username": username, "expires_at": session["expires_at"], "force_reset": force_reset}
+    return {
+        "authenticated": True,
+        "username": username,
+        "expires_at": session["expires_at"],
+        "force_reset": force_reset,
+        "role": session["role"],
+    }
