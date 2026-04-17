@@ -3186,6 +3186,28 @@ button.danger {
   justify-self: start;
 }
 
+.duration-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.duration-part {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.duration-part span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.duration-part input {
+  font-variant-numeric: tabular-nums;
+}
 .settings-groups {
   display: grid;
   gap: 1.1rem;
