@@ -22,7 +22,7 @@ from ..deps import (
     resolve_runtime_value,
     require_services,
 )
-from ..env_catalog import ENV_SPEC_BY_KEY
+from ..env_catalog import ENV_SPEC_BY_KEY, MAX_RUN_DURATION_SECONDS_CAP
 from ..schemas import (
     DbDetectRequest,
     DbTestRequest,
@@ -218,6 +218,31 @@ def _payload_has_secret_values(payload: SettingsUpdateRequest) -> bool:
     return False
 
 
+def _validate_env_value(key_name: str, value: str) -> str:
+    if key_name != "MAX_RUN_DURATION_SECONDS":
+        return value
+
+    try:
+        seconds = int(value.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS must be a whole number of seconds.",
+        ) from exc
+
+    if seconds <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS must be greater than zero.",
+        )
+    if seconds > MAX_RUN_DURATION_SECONDS_CAP:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS cannot exceed 43200 seconds (12 hours).",
+        )
+    return str(seconds)
+
+
 @router.put("/settings")
 async def put_settings(
     payload: SettingsUpdateRequest,
@@ -256,10 +281,11 @@ async def put_settings(
             else:
                 services.state.delete_setting(key_name)
             continue
+        value_text = _validate_env_value(key_name, str(value))
         if spec.secret:
-            services.state.set_secret(key_name, services.cipher.encrypt(str(value)))
+            services.state.set_secret(key_name, services.cipher.encrypt(value_text))
         else:
-            services.state.set_settings({key_name: str(value)})
+            services.state.set_settings({key_name: value_text})
 
     return await get_settings(_session, services)
 

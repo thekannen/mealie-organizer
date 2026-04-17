@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+DEFAULT_MAX_RUN_DURATION_SECONDS = 4 * 60 * 60
+MAX_RUN_DURATION_SECONDS_CAP = 12 * 60 * 60
+
+
 @dataclass(frozen=True)
 class EnvVarSpec:
     key: str
@@ -247,9 +251,9 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         key="MAX_RUN_DURATION_SECONDS",
         label="Max Run Duration (seconds)",
         group="Runner",
-        default="14400",
+        default=str(DEFAULT_MAX_RUN_DURATION_SECONDS),
         secret=False,
-        description="Maximum wall-clock time (in seconds) before a running task is automatically terminated. Default: 14400 (4 hours).",
+        description="Maximum wall-clock time before a running task is terminated. Default: 14400 seconds (4 hours); maximum: 43200 seconds (12 hours).",
     ),
 )
 
