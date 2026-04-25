@@ -21,7 +21,7 @@ const REQUIRED_MARKERS = [
   "global:sidebar-theme",
   "global:sidebar-logout",
   "auth:login-submit",
-  "overview:header-refresh",
+  "overview:sidebar-refresh",
   "tasks:queue-run",
   "tasks:queue-all-discovered",
   "tasks:filter-all",
@@ -757,9 +757,9 @@ async function main() {
 
   await check("overview-page-comprehensive", async () => {
     await clickNav("Overview");
-    await expectVisible(page.getByRole("heading", { name: /system overview/i }), "Overview header missing.");
+    await expectVisible(page.locator(".intro-card"), "Overview status card missing.");
     await expectVisible(page.locator(".coverage-grid"), "Coverage visualization not rendered on overview.");
-    await clickButtonByRole("overview", "Refresh", "overview:header-refresh");
+    await clickButtonByRole("overview", "Refresh", "overview:sidebar-refresh");
     const overviewErrorBanner = page.locator(".banner.error").first();
     if (await overviewErrorBanner.isVisible().catch(() => false)) {
       const overviewErrorText = normalizeText(await overviewErrorBanner.innerText().catch(() => ""));

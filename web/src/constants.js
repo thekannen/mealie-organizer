@@ -11,7 +11,7 @@ export const NAV_ITEMS = [
 
 export const PAGE_META = {
   overview: {
-    title: "System Overview",
+    title: "Overview",
     subtitle: "",
   },
   tasks: {

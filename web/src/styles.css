@@ -1316,8 +1316,9 @@ textarea {
   gap: 0.28rem;
   font-weight: 700;
   font-size: 0.75rem;
+  white-space: nowrap;
 }
-.status-indicator .ui-icon { width: 0.85rem; height: 0.85rem; }
+.status-indicator .ui-icon { width: 0.85rem; height: 0.85rem; flex-shrink: 0; }
 .status-indicator.success { color: var(--success); }
 .status-indicator.running { color: var(--running); }
 .status-indicator.running .ui-icon { animation: spin 1s linear infinite; }
@@ -1421,6 +1422,7 @@ textarea {
 /* ── Indeterminate progress bar on running rows ── */
 .run-progress-bar {
   height: 3px;
+  width: min(4rem, 100%);
   background: var(--line);
   border-radius: 2px;
   overflow: hidden;
@@ -1655,12 +1657,17 @@ th {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+  min-width: 7.5rem;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .run-mode-label {
   font-size: 0.65rem;
   font-weight: 600;
   color: var(--muted);
   padding-left: 0.06rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .run-mode-label.mode-live {
   color: var(--accent-strong);
@@ -2892,6 +2899,12 @@ button.danger {
 
 .runs-table {
   min-width: 0;
+  table-layout: fixed;
+}
+
+.runs-table th:nth-child(2),
+.runs-table td:nth-child(2) {
+  width: 8.5rem;
 }
 
 .tasks-grid .table-wrap {
@@ -2900,9 +2913,14 @@ button.danger {
 }
 
 .run-actions-cell {
-  width: 2rem;
+  width: 5.5rem;
   text-align: right;
   padding-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.run-actions-cell button + button {
+  margin-left: 0.25rem;
 }
 
 .overview-grid {
@@ -2924,7 +2942,7 @@ button.danger {
 
 .overview-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
   grid-column: 1 / -1;
 }
@@ -4267,8 +4285,10 @@ button.danger {
   }
 
   .mobile-header .brand-mark {
-    height: 32px;
-    width: auto;
+    width: min(42vw, 180px);
+    height: 44px;
+    object-fit: cover;
+    object-position: center;
   }
 
   .mobile-sidebar-backdrop {
