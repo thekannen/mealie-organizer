@@ -24,6 +24,10 @@ After login, go to **Settings** and enter:
 - **Mealie Server URL** — e.g. `http://mealie:9000/api`
 - **Mealie API Key** — your Mealie API token
 
+In Mealie, API tokens are created from your user profile under **API Tokens**. Copy the token when Mealie shows it; it is only shown once.
+
+If CookDex and Mealie run in the same Docker network, use the Mealie service name instead of `localhost`. `localhost` inside the CookDex container means the CookDex container itself.
+
 Click **Test Mealie** to verify. The dashboard shows a banner until both values are set.
 
 ## 5) Verify health
