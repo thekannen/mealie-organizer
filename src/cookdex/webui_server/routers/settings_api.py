@@ -131,8 +131,8 @@ def _test_anthropic_connection(api_key: str, model: str) -> tuple[bool, str]:
 def _test_ollama_connection(url: str, model: str) -> tuple[bool, str]:
     try:
         base_url = _validate_service_url(url.strip().rstrip("/"), allow_private=True)
-    except ValueError as exc:
-        return False, str(exc)
+    except ValueError:
+        return False, "Ollama URL is invalid or unreachable."
     if not base_url:
         return False, "Ollama URL is required."
 

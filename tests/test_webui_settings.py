@@ -37,4 +37,6 @@ def test_ollama_connection_validation_error_returns_failure(monkeypatch):
     ok, detail = settings_api._test_ollama_connection("http://host.docker.internal:11434", "llama3")
 
     assert ok is False
-    assert "Could not resolve hostname" in detail
+    assert detail == "Ollama URL is invalid or unreachable."
+    assert "Could not resolve hostname" not in detail
+    assert "host.docker.internal" not in detail
