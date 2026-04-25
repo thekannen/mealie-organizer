@@ -79,6 +79,30 @@ def test_parse_json_response_handles_truncated_array():
     assert parsed[0]["slug"] == "abc"
 
 
+def test_parse_json_response_salvages_complete_items_from_mid_object_truncation():
+    raw = """[
+  {
+    "slug": "chicken-pot-pie",
+    "categories": ["Dinner"],
+    "tags": ["Quick"],
+    "tools": ["Blender"]
+  },
+  {
+    "slug": "mamma-s-meatloa"""
+
+    parsed = parse_json_response(raw)
+
+    assert isinstance(parsed, list)
+    assert parsed == [
+        {
+            "slug": "chicken-pot-pie",
+            "categories": ["Dinner"],
+            "tags": ["Quick"],
+            "tools": ["Blender"],
+        }
+    ]
+
+
 def test_parse_json_response_handles_truncated_after_comma():
     raw = '[{"slug":"abc","categories":["Dinner"]},'
     parsed = parse_json_response(raw)
@@ -250,6 +274,61 @@ def test_process_batch_falls_back_to_per_recipe_when_batch_parse_fails(monkeypat
         ("recipe-one", ["Dinner"], ["Quick"], ["Blender"]),
         ("recipe-two", ["Dinner"], ["Comfort Food"], ["Dutch Oven"]),
     ]
+
+
+def test_process_batch_falls_back_for_missing_entries_from_partial_batch_response(monkeypatch, tmp_path):
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=2,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=lambda _prompt: "[]",
+        provider_name="test",
+        dry_run=True,
+    )
+
+    recipes = [
+        {"slug": "recipe-one", "name": "One", "ingredients": [], "recipeCategory": [], "tags": [], "tools": []},
+        {"slug": "recipe-two", "name": "Two", "ingredients": [], "recipeCategory": [], "tags": [], "tools": []},
+    ]
+
+    def fake_safe_query_with_retry(prompt_text, retries=None):
+        if "slug=recipe-one" in prompt_text and "slug=recipe-two" in prompt_text:
+            return [{"slug": "recipe-one", "categories": ["Dinner"], "tags": ["Quick"], "tools": ["Blender"]}]
+        if "slug=recipe-two" in prompt_text and "slug=recipe-one" not in prompt_text:
+            return [{"slug": "recipe-two", "categories": ["Dinner"], "tags": ["Comfort Food"], "tools": ["Dutch Oven"]}]
+        return None
+
+    updates = []
+
+    def fake_update(recipe_data, categories, tags, tools, categories_lookup, tags_lookup, tools_lookup):
+        updates.append((recipe_data["slug"], categories, tags, tools))
+        return True
+
+    monkeypatch.setattr(categorizer, "safe_query_with_retry", fake_safe_query_with_retry)
+    monkeypatch.setattr(categorizer, "update_recipe_metadata", fake_update)
+
+    categorizer.process_batch(
+        recipes,
+        ["Dinner"],
+        ["Quick", "Comfort Food"],
+        ["Blender", "Dutch Oven"],
+        {"dinner": {"name": "Dinner"}},
+        {
+            "quick": {"name": "Quick"},
+            "comfort food": {"name": "Comfort Food"},
+        },
+        {"blender": {"name": "Blender"}, "dutch oven": {"name": "Dutch Oven"}},
+    )
+
+    assert updates == [
+        ("recipe-one", ["Dinner"], ["Quick"], ["Blender"]),
+        ("recipe-two", ["Dinner"], ["Comfort Food"], ["Dutch Oven"]),
+    ]
+    assert categorizer.stats["model_missing_entry_count"] == 1
+    assert categorizer.stats["per_recipe_fallback_attempts"] == 1
 
 
 def test_process_batch_fallback_uses_split_category_and_tag_prompts(monkeypatch, tmp_path):
