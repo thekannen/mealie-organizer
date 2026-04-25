@@ -339,7 +339,7 @@ def _build_health_report(services: Services) -> dict[str, Any]:
         openai_conn = _conn(False, "Not configured")
 
     if anthropic_api_key:
-        anthropic_conn = _conn(*_test_anthropic_connection(anthropic_api_key, anthropic_model))
+        anthropic_conn = _conn(*_test_anthropic_connection(anthropic_api_key, anthropic_model or "claude-sonnet-4-6"))
     else:
         anthropic_conn = _conn(False, "Not configured")
 

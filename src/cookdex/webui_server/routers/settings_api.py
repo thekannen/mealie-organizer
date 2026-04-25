@@ -143,11 +143,9 @@ def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
 def _test_anthropic_connection(api_key: str, model: str) -> tuple[bool, str]:
     if not api_key:
         return False, "Anthropic API key is required."
-    if not model:
-        return False, "Anthropic model is required."
     endpoint = "https://api.anthropic.com/v1/messages"
     body = {
-        "model": model,
+        "model": model or "claude-haiku-4-5-20251001",
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "ping"}],
     }
@@ -281,6 +279,16 @@ _OPENAI_RECOMMENDED = (
     "gpt-3.5-turbo",
 )
 
+# Anthropic models suitable for recipe categorization, best value first.
+_ANTHROPIC_RECOMMENDED = (
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-5-20250514",
+    "claude-sonnet-4-20250514",
+    "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet-20241022",
+)
+
+
 def _list_openai_models(api_key: str) -> list[str]:
     if not api_key:
         return []
@@ -337,13 +345,14 @@ def _list_anthropic_models(api_key: str) -> list[str]:
         response = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=12)
         response.raise_for_status()
         data = response.json()
-        return sorted(
-            str(m.get("id", ""))
-            for m in (data.get("data") or [])
-            if isinstance(m, dict) and m.get("id")
-        )
+        available = {str(m.get("id", "")) for m in (data.get("data") or []) if isinstance(m, dict)}
+        result = [m for m in _ANTHROPIC_RECOMMENDED if m in available]
+        # Include any available models not in recommended list
+        extras = sorted(mid for mid in available if mid.startswith("claude-") and mid not in result)
+        return result + extras
     except requests.RequestException:
-        return []
+        # Fall back to recommended list without validation
+        return list(_ANTHROPIC_RECOMMENDED)
 
 
 @router.post("/settings/models/openai")
@@ -434,7 +443,7 @@ async def test_anthropic_settings(
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
     anthropic_api_key = resolve_runtime_value(runtime_env, "ANTHROPIC_API_KEY", payload.anthropic_api_key)
-    anthropic_model = resolve_runtime_value(runtime_env, "ANTHROPIC_MODEL", payload.anthropic_model)
+    anthropic_model = resolve_runtime_value(runtime_env, "ANTHROPIC_MODEL", payload.anthropic_model) or "claude-haiku-4-5-20251001"
     ok, detail = _test_anthropic_connection(anthropic_api_key, anthropic_model)
     return {"ok": ok, "detail": detail, "model": anthropic_model}
 
