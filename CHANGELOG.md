@@ -2,6 +2,20 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.4.2] - 2026-04-25
+
+### Security
+- **Dredger SSRF protection** — Sitemap URLs, recipe candidates, and redirect targets are now validated before crawler and verifier requests, blocking private, link-local, metadata, and non-HTTP targets.
+- **Forced password reset enforcement** — Password changes revoke existing sessions for the target user, and accounts with pending forced resets are blocked from non-reset endpoints server-side.
+
+### Fixed
+- **Dredger dry-run isolation** — Preview runs no longer persist imported, rejected, or retry state, preventing dry runs from causing later live imports to skip recipes.
+- **Backup pruning safety** — Backup pruning now requires dangerous-task approval and validates retention with `keep >= 1`.
+- **Release helper** — `scripts/release.sh` now works when run without optional bump arguments.
+
+### Changed
+- **Local-first UI loading** — Tasks, activity, schedules, settings, config, users, quality, about, and health data now load before slower live Mealie overview metrics refresh in the background.
+
 ## [2026.4.1] - 2026-04-07
 
 ### Security

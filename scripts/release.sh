@@ -51,7 +51,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-OUTPUT=$(python3 "$SCRIPT_DIR/bump_version.py" "${BUMP_ARGS[@]}")
+if [ "${#BUMP_ARGS[@]}" -gt 0 ]; then
+  OUTPUT=$(python3 "$SCRIPT_DIR/bump_version.py" "${BUMP_ARGS[@]}")
+else
+  OUTPUT=$(python3 "$SCRIPT_DIR/bump_version.py")
+fi
 echo "$OUTPUT"
 
 # Extract the new version from bump_version.py output
