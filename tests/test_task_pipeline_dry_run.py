@@ -101,6 +101,20 @@ def test_unknown_options_are_rejected(task_id: str) -> None:
         _build(task_id, {"__unknown_key__": "value"})
 
 
+def test_mealie_backup_prune_is_dangerous() -> None:
+    execution = _build("mealie-backup", {"keep": 3})
+    assert "--prune" in execution.command
+    assert execution.dangerous_requested is True
+
+
+def test_mealie_backup_prune_only_requires_positive_keep() -> None:
+    with pytest.raises(ValueError, match="keep.*required"):
+        _build("mealie-backup", {"prune_only": True})
+
+    with pytest.raises(ValueError, match="at least 1"):
+        _build("mealie-backup", {"prune_only": True, "keep": 0})
+
+
 # ---------------------------------------------------------------------------
 # Metadata completeness
 # ---------------------------------------------------------------------------

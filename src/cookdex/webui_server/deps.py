@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fastapi import Depends, HTTPException, Request
 
@@ -55,6 +56,24 @@ def require_services(request: Request) -> Services:
     return services
 
 
+def _force_reset_request_allowed(request: Request, username: str) -> bool:
+    path = request.url.path.rstrip("/")
+    if path.endswith("/auth/session") or path.endswith("/auth/logout"):
+        return True
+
+    if request.method.upper() != "POST":
+        return False
+
+    parts = path.strip("/").split("/")
+    if len(parts) < 3:
+        return False
+    return (
+        parts[-3] == "users"
+        and unquote(parts[-2]) == username
+        and parts[-1] == "reset-password"
+    )
+
+
 def require_session(request: Request, services: Services = Depends(require_services)) -> dict[str, Any]:
     from .state import utc_now_iso
 
@@ -73,6 +92,11 @@ def require_session(request: Request, services: Services = Depends(require_servi
     if user is None:
         services.state.delete_session(token)
         raise HTTPException(status_code=401, detail="Invalid session.")
+    if bool(user.get("force_password_reset")) and not _force_reset_request_allowed(
+        request,
+        str(user["username"]),
+    ):
+        raise HTTPException(status_code=403, detail="Password reset required.")
     return {**session, "role": user["role"]}
 
 

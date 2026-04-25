@@ -147,12 +147,17 @@ def _build_mealie_backup(options: dict[str, Any]) -> TaskExecution:
     _validate_allowed(options, {"prune", "prune_only", "keep"})
     keep = _int_option(options, "keep")
     prune_only = _bool_option(options, "prune_only", False)
+    if keep is not None and keep < 1:
+        raise ValueError("Option 'keep' must be at least 1.")
+    if prune_only and keep is None:
+        raise ValueError("Option 'keep' is required when prune_only is enabled.")
+
     cmd = _py_module("cookdex.mealie_backup")
     if prune_only and keep is not None:
         cmd.extend(["--prune-only", str(keep)])
     elif keep is not None:
         cmd.extend(["--prune", str(keep)])
-    return TaskExecution(cmd, {}, dangerous_requested=False)
+    return TaskExecution(cmd, {}, dangerous_requested=(keep is not None))
 
 
 def _build_tag_categorize(options: dict[str, Any]) -> TaskExecution:

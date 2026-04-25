@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..deps import (
     ROLE_OWNER,
@@ -51,6 +51,7 @@ async def create_user(
 async def reset_user_password(
     username: str,
     payload: UserPasswordResetRequest,
+    request: Request,
     session: dict[str, Any] = Depends(require_session),
     services: Services = Depends(require_services),
 ) -> dict[str, Any]:
@@ -63,6 +64,10 @@ async def reset_user_password(
         raise HTTPException(status_code=404, detail="User not found.")
     if payload.force_reset:
         services.state.set_force_password_reset(normalized, True)
+    current_token = ""
+    if normalized == str(session["username"]):
+        current_token = request.cookies.get(services.settings.cookie_name, "").strip()
+    services.state.delete_sessions_for_user(normalized, except_token=current_token or None)
     return {"ok": True}
 
 

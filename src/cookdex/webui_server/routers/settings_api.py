@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 import shlex
-import socket
 import subprocess
 import tempfile
 from typing import Any
-from urllib.parse import unquote, urlparse, urlunparse
+from urllib.parse import unquote, urlparse
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...url_security import request_with_url_validation, validate_service_url
 from ..deps import (
     Services,
     build_runtime_env,
@@ -43,42 +42,7 @@ def _validate_service_url(url: str, *, allow_private: bool = False) -> str:
     Checks scheme, resolves DNS, and blocks private/link-local/loopback IPs
     unless *allow_private* is True (e.g. for user-configured Mealie/Ollama on LAN).
     """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError("URL must use http or https.")
-    host = (parsed.hostname or "").lower()
-    if not host:
-        raise ValueError("URL must include a hostname.")
-
-    # Block well-known cloud metadata hostnames
-    _blocked_hosts = {"metadata.google.internal"}
-    if host in _blocked_hosts:
-        raise ValueError("Requests to cloud metadata endpoints are not allowed.")
-
-    # Resolve hostname and check IP
-    try:
-        addr_info = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
-        raise ValueError(f"Could not resolve hostname: {host}")
-
-    # Cloud metadata IPs that aren't caught by is_link_local or is_private
-    _blocked_ips = {
-        ipaddress.ip_address("168.63.129.16"),    # Azure metadata
-        ipaddress.ip_address("100.100.100.200"),   # Alibaba Cloud metadata
-    }
-
-    for family, _, _, _, sockaddr in addr_info:
-        ip = ipaddress.ip_address(sockaddr[0])
-        if ip in _blocked_ips:
-            raise ValueError("Requests to cloud metadata endpoints are not allowed.")
-        # Always block link-local (169.254.x.x / fe80::) — covers AWS metadata
-        if ip.is_link_local:
-            raise ValueError("Requests to link-local addresses are not allowed.")
-        if not allow_private and (ip.is_private or ip.is_loopback or ip.is_reserved):
-            raise ValueError("Requests to private/internal addresses are not allowed.")
-
-    # Reconstruct URL from parsed components to break taint propagation
-    return urlunparse(parsed)
+    return validate_service_url(url, allow_private=allow_private)
 
 
 def _safe_request_error(exc: requests.RequestException) -> str:
@@ -1222,7 +1186,7 @@ def _validate_dredger_site_url(url: str) -> dict[str, Any]:
         return result
 
     try:
-        resp = requests.head(validated_url, timeout=10, allow_redirects=True)
+        resp = request_with_url_validation(requests, "HEAD", validated_url, timeout=10)
         result["reachable"] = resp.status_code < 400
         if not result["reachable"]:
             result["error"] = f"HTTP {resp.status_code}"
@@ -1239,7 +1203,7 @@ def _validate_dredger_site_url(url: str) -> dict[str, Any]:
     ]
     for sitemap_url in sitemap_candidates:
         try:
-            resp = requests.head(sitemap_url, timeout=5, allow_redirects=True)
+            resp = request_with_url_validation(requests, "HEAD", sitemap_url, timeout=5)
             if resp.status_code == 200:
                 result["sitemap_found"] = True
                 break

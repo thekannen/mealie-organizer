@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+import socket
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -232,6 +234,7 @@ class TestPatterns:
 # Verifier pre-filter
 # ---------------------------------------------------------------------------
 
+from cookdex.recipe_dredger.crawler import SitemapCrawler
 from cookdex.recipe_dredger.verifier import RecipeVerifier
 
 
@@ -265,6 +268,73 @@ class TestVerifierParanoidSkip:
     def test_normal_recipe_passes(self):
         v = RecipeVerifier.__new__(RecipeVerifier)
         assert v.is_paranoid_skip("https://example.com/chicken-tikka-masala") is None
+
+
+def _fake_getaddrinfo(host, *_args, **_kwargs):
+    ip = "127.0.0.1" if host in {"127.0.0.1", "localhost"} else "8.8.8.8"
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str = "", *, url: str = "https://example.com/sitemap.xml", headers=None):
+        self.status_code = status_code
+        self.text = text
+        self.content = text.encode("utf-8")
+        self.url = url
+        self.headers = headers or {}
+
+    def close(self):
+        pass
+
+
+class _FakeSession:
+    def __init__(self, response: _FakeResponse):
+        self.response = response
+        self.calls: list[tuple[str, str]] = []
+
+    def request(self, method: str, url: str, **_kwargs):
+        self.calls.append((method, url))
+        return self.response
+
+
+def test_crawler_filters_private_urls_from_sitemaps(store, monkeypatch):
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    xml = """
+    <urlset>
+      <url><loc>http://127.0.0.1/admin</loc></url>
+      <url><loc>https://example.com/recipe</loc></url>
+    </urlset>
+    """
+    crawler = SitemapCrawler(_FakeSession(_FakeResponse(200, xml)), store)
+
+    urls = crawler.fetch_sitemap_urls("https://example.com/sitemap.xml")
+
+    assert urls == ["https://example.com/recipe"]
+
+
+def test_verifier_rejects_private_urls_before_request():
+    class _FailingSession:
+        def request(self, *_args, **_kwargs):
+            raise AssertionError("private URL should not be requested")
+
+    verifier = RecipeVerifier(_FailingSession())
+
+    ok, error, transient = verifier.verify_recipe("http://127.0.0.1/admin")
+
+    assert ok is False
+    assert transient is False
+    assert "private/internal" in str(error)
+
+
+def test_safe_request_blocks_redirect_to_private(monkeypatch):
+    from cookdex.url_security import request_with_url_validation
+
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    response = _FakeResponse(302, headers={"location": "http://127.0.0.1/admin"})
+    session = _FakeSession(response)
+
+    with pytest.raises(ValueError, match="private/internal"):
+        request_with_url_validation(session, "GET", "https://example.com/start", timeout=5)
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +375,96 @@ class TestRecipeCandidate:
         b = RecipeCandidate(url="https://example.com/a")
         assert hash(a) == hash(b)
         assert len({a, b}) == 1
+
+
+# ---------------------------------------------------------------------------
+# Dry-run persistence
+# ---------------------------------------------------------------------------
+
+from cookdex.recipe_dredger import __main__ as dredger_main
+
+
+class _NoopRateLimiter:
+    def wait_if_needed(self, _url: str) -> None:
+        return None
+
+
+class _OneUrlCrawler:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def get_urls_for_site(self, _site_url: str, force_refresh: bool = False):
+        return [RecipeCandidate(url="https://example.com/recipe")]
+
+
+class _SuccessfulImporter:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def import_recipe(self, _url: str):
+        return True, None, False
+
+
+class _RecipeVerifier:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def verify_recipe(self, _url: str):
+        return True, None, False
+
+
+class _RejectingVerifier:
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def verify_recipe(self, _url: str):
+        return False, "Not a recipe", False
+
+
+def _dredger_args(**overrides):
+    values = {
+        "dry_run": True,
+        "limit": 1,
+        "depth": 10,
+        "no_cache": False,
+        "workers": 1,
+        "precheck": True,
+        "language_filter": True,
+        "max_retries": 3,
+    }
+    values.update(overrides)
+    return Namespace(**values)
+
+
+def _patch_dredger_runtime(monkeypatch, store: DredgerStore, verifier_cls) -> None:
+    monkeypatch.setenv("MEALIE_URL", "https://mealie.example.com/api")
+    monkeypatch.setenv("MEALIE_API_KEY", "test-key")
+    monkeypatch.setattr(dredger_main, "DredgerStore", lambda: store)
+    monkeypatch.setattr(dredger_main, "get_crawl_session", lambda: object())
+    monkeypatch.setattr(dredger_main, "RateLimiter", lambda default_delay: _NoopRateLimiter())
+    monkeypatch.setattr(dredger_main, "SitemapCrawler", _OneUrlCrawler)
+    monkeypatch.setattr(dredger_main, "RecipeVerifier", verifier_cls)
+    monkeypatch.setattr(dredger_main, "ImportManager", _SuccessfulImporter)
+
+
+def test_dredger_dry_run_does_not_mark_found_urls_imported(store, monkeypatch):
+    store.add_site("https://example.com")
+    _patch_dredger_runtime(monkeypatch, store, _RecipeVerifier)
+
+    assert dredger_main.run(_dredger_args(dry_run=True)) == 0
+
+    assert store.imported_count() == 0
+    assert not store.is_known("https://example.com/recipe")
+
+
+def test_dredger_dry_run_does_not_persist_rejects(store, monkeypatch):
+    store.add_site("https://example.com")
+    _patch_dredger_runtime(monkeypatch, store, _RejectingVerifier)
+
+    assert dredger_main.run(_dredger_args(dry_run=True)) == 0
+
+    assert store.rejected_count() == 0
+    assert not store.is_known("https://example.com/recipe")
 
 
 # ---------------------------------------------------------------------------
