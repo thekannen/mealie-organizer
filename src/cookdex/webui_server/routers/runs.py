@@ -43,7 +43,7 @@ async def list_tasks(
                 if has_openai:
                     provider_choices.append({"value": "chatgpt", "label": "ChatGPT (OpenAI)"})
                 if has_anthropic:
-                    provider_choices.append({"value": "anthropic", "label": "Anthropic"})
+                    provider_choices.append({"value": "anthropic", "label": "Anthropic (Claude)"})
                 if has_ollama:
                     provider_choices.append({"value": "ollama", "label": "Ollama (Local)"})
                 if not provider_choices:

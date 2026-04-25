@@ -299,7 +299,7 @@ export default function SettingsPage({ session, overviewMetrics, qualityMetrics,
   }
 
   const configuredProvider = String(envDraft["CATEGORIZER_PROVIDER"] || "").trim().toLowerCase();
-  const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "anthropic" ? "anthropic" : "chatgpt";
+  const provider = configuredProvider === "ollama" ? "ollama" : configuredProvider === "chatgpt" ? "chatgpt" : "anthropic";
   return (
     <section className="page-grid settings-grid">
       <article className="card">
@@ -374,7 +374,7 @@ export default function SettingsPage({ session, overviewMetrics, qualityMetrics,
                     inputElement = (
                       <select value={provider} onChange={(e) => onChangeDraft(e.target.value)}>
                         <option value="chatgpt">ChatGPT (OpenAI)</option>
-                        <option value="anthropic">Anthropic</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
                         <option value="ollama">Ollama (Local)</option>
                       </select>
                     );

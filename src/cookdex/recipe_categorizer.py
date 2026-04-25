@@ -359,11 +359,9 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.anthropic.base_url",
         )
         model = require_str(
-            env_or_config("ANTHROPIC_MODEL", "providers.anthropic.model", ""),
+            env_or_config("ANTHROPIC_MODEL", "providers.anthropic.model", "claude-haiku-4-5-20251001"),
             "providers.anthropic.model",
-        ).strip()
-        if not model:
-            raise ValueError("providers.anthropic.model is required when provider is anthropic.")
+        )
         request_timeout = require_int(
             env_or_config("ANTHROPIC_REQUEST_TIMEOUT", "providers.anthropic.request_timeout", 120, int),
             "providers.anthropic.request_timeout",
