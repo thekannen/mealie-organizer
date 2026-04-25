@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from ..url_security import request_with_url_validation, validate_service_url
 from .language import detect_language_from_html
 from .patterns import (
     BAD_KEYWORDS,
@@ -175,7 +176,8 @@ class RecipeVerifier:
             return False, pre_filtered_reason, False
 
         try:
-            response = self.session.get(url, timeout=10)
+            validate_service_url(url)
+            response = request_with_url_validation(self.session, "GET", url, timeout=10)
             if response.status_code != 200:
                 is_transient = response.status_code in TRANSIENT_HTTP_CODES
                 return False, f"HTTP {response.status_code}", is_transient
@@ -212,5 +214,7 @@ class RecipeVerifier:
             return False, f"Connection error: {exc}", True
         except requests.exceptions.RequestException as exc:
             return False, f"Request error: {exc}", True
+        except ValueError as exc:
+            return False, str(exc), False
         except Exception as exc:
             return False, f"Exception: {exc}", False

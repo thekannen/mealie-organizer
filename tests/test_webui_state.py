@@ -30,6 +30,20 @@ def test_state_user_and_session_roundtrip(tmp_path: Path):
     assert session["expires_at"] == expires_at
 
 
+def test_delete_sessions_for_user_can_preserve_current_session(tmp_path: Path):
+    store = StateStore(tmp_path / "state.db")
+    store.initialize([])
+    store.upsert_user("admin", "hash-value")
+    store.create_session(token="keep", username="admin", expires_at="2099-01-01T00:00:00Z")
+    store.create_session(token="drop", username="admin", expires_at="2099-01-01T00:00:00Z")
+
+    deleted = store.delete_sessions_for_user("admin", except_token="keep")
+
+    assert deleted == 1
+    assert store.get_session("keep") is not None
+    assert store.get_session("drop") is None
+
+
 def test_state_migrates_existing_users_to_owner_and_editor(tmp_path: Path):
     db_path = tmp_path / "state.db"
     conn = sqlite3.connect(db_path)

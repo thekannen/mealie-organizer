@@ -18,6 +18,13 @@ from .api_client import MealieApiClient
 from .config import resolve_mealie_api_key, resolve_mealie_url
 
 
+def _positive_int(raw: str) -> int:
+    value = int(raw)
+    if value < 1:
+        raise argparse.ArgumentTypeError("value must be at least 1")
+    return value
+
+
 def create_backup(client: MealieApiClient) -> bool:
     """Create a new Mealie backup. Returns True on success."""
     print("[start] Creating Mealie backup...", flush=True)
@@ -42,6 +49,8 @@ def list_backups(client: MealieApiClient) -> list[dict[str, Any]]:
 
 def prune_backups(client: MealieApiClient, keep: int) -> int:
     """Delete oldest backups, keeping the newest *keep*. Returns count deleted."""
+    if keep < 1:
+        raise ValueError("keep must be at least 1.")
     backups = list_backups(client)
     if len(backups) <= keep:
         print(f"[info] {len(backups)} backup(s) exist, keep={keep} — nothing to prune.", flush=True)
@@ -68,13 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create and prune Mealie backups via the admin API.")
     parser.add_argument(
         "--prune",
-        type=int,
+        type=_positive_int,
         metavar="N",
         help="After creating a backup, delete oldest backups keeping only the newest N.",
     )
     parser.add_argument(
         "--prune-only",
-        type=int,
+        type=_positive_int,
         metavar="N",
         help="Skip backup creation and only prune, keeping the newest N.",
     )

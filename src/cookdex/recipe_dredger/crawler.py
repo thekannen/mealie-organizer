@@ -8,6 +8,7 @@ from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
 
+from ..url_security import request_with_url_validation, validate_service_url
 from .models import RecipeCandidate
 from .storage import DredgerStore
 
@@ -23,11 +24,11 @@ class SitemapCrawler:
 
     def find_sitemap(self, base_url: str) -> Optional[str]:
         try:
-            response = self.session.get(f"{base_url}/robots.txt", timeout=5)
+            response = request_with_url_validation(self.session, "GET", f"{base_url}/robots.txt", timeout=5)
             if response.status_code == 200:
                 for line in response.text.splitlines():
                     if line.lower().startswith("sitemap:"):
-                        return line.split(":", 1)[1].strip()
+                        return validate_service_url(line.split(":", 1)[1].strip())
         except Exception:
             pass
 
@@ -41,11 +42,11 @@ class SitemapCrawler:
 
         for url in candidates:
             try:
-                response = self.session.head(url, timeout=5, allow_redirects=True)
+                response = request_with_url_validation(self.session, "HEAD", url, timeout=5)
                 if response.status_code == 200:
                     return response.url
                 if response.status_code in [405, 501]:
-                    fallback = self.session.get(url, timeout=5, allow_redirects=True, stream=True)
+                    fallback = request_with_url_validation(self.session, "GET", url, timeout=5, stream=True)
                     fallback.close()
                     if fallback.status_code == 200:
                         return fallback.url
@@ -59,7 +60,7 @@ class SitemapCrawler:
             return []
 
         try:
-            response = self.session.get(url, timeout=10)
+            response = request_with_url_validation(self.session, "GET", url, timeout=10)
             if response.status_code != 200:
                 return []
 
@@ -88,7 +89,10 @@ class SitemapCrawler:
                         continue
                     loc = loc_tag.text.strip()
                     if loc.startswith("http://") or loc.startswith("https://"):
-                        all_urls.append(loc)
+                        try:
+                            all_urls.append(validate_service_url(loc))
+                        except ValueError:
+                            continue
                 return all_urls
 
             return []

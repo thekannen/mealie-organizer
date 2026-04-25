@@ -46,6 +46,12 @@ def _login_as(client: TestClient, username: str, password: str) -> None:
     assert response.status_code == 200
 
 
+def _use_session_token(client: TestClient, cookie_name: str, token: str | None) -> None:
+    assert token
+    client.cookies.clear()
+    client.cookies.set(cookie_name, token, path="/cookdex")
+
+
 def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
     config_root = tmp_path / "repo"
     _seed_config_root(config_root)
@@ -601,7 +607,7 @@ def test_owner_editor_rbac_and_role_changes_apply_on_next_request(tmp_path: Path
         ).status_code == 403
         assert client.get("/cookdex/api/v1/debug-log").status_code == 403
 
-        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+        _use_session_token(client, cookie_name, owner_token)
 
         promote = client.patch(
             "/cookdex/api/v1/users/editor/role",
@@ -610,22 +616,22 @@ def test_owner_editor_rbac_and_role_changes_apply_on_next_request(tmp_path: Path
         )
         assert promote.status_code == 200, promote.text
         assert promote.json()["user"]["role"] == "owner"
-        client.cookies.set(cookie_name, editor_token, path="/cookdex")
+        _use_session_token(client, cookie_name, editor_token)
         assert client.get("/cookdex/api/v1/auth/session").json()["role"] == "owner"
         assert client.get("/cookdex/api/v1/users").status_code == 200
 
-        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+        _use_session_token(client, cookie_name, owner_token)
         demote = client.patch(
             "/cookdex/api/v1/users/editor/role",
             json={"role": "editor"},
             headers=_CSRF,
         )
         assert demote.status_code == 200, demote.text
-        client.cookies.set(cookie_name, editor_token, path="/cookdex")
+        _use_session_token(client, cookie_name, editor_token)
         assert client.get("/cookdex/api/v1/auth/session").json()["role"] == "editor"
         assert client.get("/cookdex/api/v1/users").status_code == 403
 
-        client.cookies.set(cookie_name, owner_token, path="/cookdex")
+        _use_session_token(client, cookie_name, owner_token)
         self_demote = client.patch(
             "/cookdex/api/v1/users/admin/role",
             json={"role": "editor"},
@@ -711,6 +717,56 @@ def test_webui_first_time_registration_without_bootstrap_password(tmp_path: Path
         users = client.get("/cookdex/api/v1/users")
         assert users.status_code == 200
         assert any(item["username"] == "admin" for item in users.json()["items"])
+
+
+def test_forced_password_reset_blocks_other_endpoints_until_changed(tmp_path: Path, monkeypatch):
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+
+    monkeypatch.setenv("MO_WEBUI_MASTER_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("WEB_BOOTSTRAP_PASSWORD", "Secret-pass1")
+    monkeypatch.setenv("WEB_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("WEB_STATE_DB_PATH", str(tmp_path / "state.db"))
+    monkeypatch.setenv("WEB_BASE_PATH", "/cookdex")
+    monkeypatch.setenv("WEB_CONFIG_ROOT", str(config_root))
+    monkeypatch.setenv("WEB_COOKIE_SECURE", "false")
+
+    app_module = importlib.import_module("cookdex.webui_server.app")
+    importlib.reload(app_module)
+    app = app_module.create_app()
+
+    with TestClient(app) as client:
+        _login(client)
+        created = client.post(
+            "/cookdex/api/v1/users",
+            json={"username": "reset-user", "password": "Reset-pass01", "force_reset": True},
+            headers=_CSRF,
+        )
+        assert created.status_code == 201
+
+        logout = client.post("/cookdex/api/v1/auth/logout", headers=_CSRF)
+        assert logout.status_code == 200
+
+        login = client.post(
+            "/cookdex/api/v1/auth/login",
+            json={"username": "reset-user", "password": "Reset-pass01"},
+            headers=_CSRF,
+        )
+        assert login.status_code == 200
+        assert login.json()["force_reset"] is True
+
+        blocked = client.get("/cookdex/api/v1/tasks")
+        assert blocked.status_code == 403
+
+        reset = client.post(
+            "/cookdex/api/v1/users/reset-user/reset-password",
+            json={"password": "Reset-pass02", "force_reset": False},
+            headers=_CSRF,
+        )
+        assert reset.status_code == 200
+
+        allowed = client.get("/cookdex/api/v1/tasks")
+        assert allowed.status_code == 200
 
 
 def test_csrf_middleware_rejects_missing_header(tmp_path: Path, monkeypatch):

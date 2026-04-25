@@ -10,6 +10,7 @@ from typing import Any, Callable
 import requests
 
 from ..api_client import MealieApiClient
+from ..url_security import request_with_url_validation, validate_service_url
 from .config_files import ConfigFilesManager
 
 TAXONOMY_FILE_NAMES: tuple[str, ...] = (
@@ -448,10 +449,8 @@ class TaxonomyWorkspaceService:
 
     @staticmethod
     def _fetch_json_url(url: str) -> Any:
-        from .routers.settings_api import _validate_service_url
-
-        _validate_service_url(url)
-        response = requests.get(url, timeout=30)
+        validate_service_url(url)
+        response = request_with_url_validation(requests, "GET", url, timeout=30)
         response.raise_for_status()
         try:
             return response.json()

@@ -57,6 +57,7 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [session, setSession] = useState(null);
+  const sessionRef = useRef(null);
 
   const [theme, setTheme] = useState(() => {
     const stored = window.localStorage.getItem("cookdex_webui_theme");
@@ -310,6 +311,7 @@ export default function App() {
   async function refreshSession() {
     try {
       const payload = await api("/auth/session", { method: "GET" });
+      sessionRef.current = payload;
       setSession(payload);
       setError("");
       if (!isOwnerRole(payload.role)) {
@@ -318,6 +320,7 @@ export default function App() {
       if (payload.force_reset) setForcedResetPending(true);
       return payload;
     } catch {
+      sessionRef.current = null;
       setSession(null);
       return null;
     }
@@ -348,6 +351,35 @@ export default function App() {
   const CACHE_KEY = "cookdex_data_cache";
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   const staleTimer = React.useRef(null);
+  const overviewMetricsLoadingRef = React.useRef(false);
+
+  function hasDataKey(data, key) {
+    return Object.prototype.hasOwnProperty.call(data || {}, key);
+  }
+
+  function saveCachedData(partial, currentSession, { merge = false } = {}) {
+    try {
+      let existing = {};
+      if (merge) {
+        const raw = sessionStorage.getItem(CACHE_KEY);
+        existing = raw ? JSON.parse(raw) : {};
+      }
+      const next = sanitizeCachedDataForRole(
+        {
+          ...existing,
+          ...partial,
+          savedAt: partial.savedAt || Date.now(),
+          timestamp: partial.timestamp || existing.timestamp || new Date().toISOString(),
+        },
+        currentSession?.role
+      );
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(next));
+      return next;
+    } catch (e) {
+      console.warn("sessionStorage unavailable:", e);
+      return null;
+    }
+  }
 
   function patchCachedData(mutator) {
     try {
@@ -367,21 +399,36 @@ export default function App() {
   }
 
   function applyData(data) {
-    const nextTasks = data.tasks?.items || [];
-    const nextRuns = data.runs?.items || [];
-    const nextSchedules = data.schedules?.items || [];
-
-    setTasks(nextTasks);
-    setRuns(nextRuns);
-    setSchedules(nextSchedules);
-    setConfigFiles(data.config?.items || []);
-    setUsers(data.users?.items || []);
-    setOverviewMetrics(data.metrics);
-    setQualityMetrics(data.quality);
-    setAboutMeta(data.about);
-    setHealthMeta(data.health);
-    setLastLoadedAt(data.timestamp);
-
+    if (hasDataKey(data, "tasks")) {
+      setTasks(data.tasks?.items || []);
+    }
+    if (hasDataKey(data, "runs")) {
+      setRuns(data.runs?.items || []);
+    }
+    if (hasDataKey(data, "schedules")) {
+      setSchedules(data.schedules?.items || []);
+    }
+    if (hasDataKey(data, "config")) {
+      setConfigFiles(data.config?.items || []);
+    }
+    if (hasDataKey(data, "users")) {
+      setUsers(data.users?.items || []);
+    }
+    if (hasDataKey(data, "metrics")) {
+      setOverviewMetrics(data.metrics);
+    }
+    if (hasDataKey(data, "quality")) {
+      setQualityMetrics(data.quality);
+    }
+    if (hasDataKey(data, "about")) {
+      setAboutMeta(data.about);
+    }
+    if (hasDataKey(data, "health")) {
+      setHealthMeta(data.health);
+    }
+    if (hasDataKey(data, "timestamp")) {
+      setLastLoadedAt(data.timestamp);
+    }
   }
 
   function scheduleAutoRefresh() {
@@ -462,16 +509,43 @@ export default function App() {
     } catch (exc) { handleError(exc); }
   }
 
+  async function refreshOverviewMetrics(currentSession = session) {
+    if (!currentSession || currentSession.force_reset || overviewMetricsLoadingRef.current) {
+      return;
+    }
+    overviewMetricsLoadingRef.current = true;
+    try {
+      const metricsPayload = await api("/metrics/overview").catch(() => null);
+      const activeSession = sessionRef.current;
+      if (
+        !activeSession ||
+        activeSession.force_reset ||
+        activeSession.username !== currentSession.username
+      ) {
+        return;
+      }
+      setOverviewMetrics(metricsPayload);
+      patchCachedData((cached) =>
+        sanitizeCachedDataForRole({ ...cached, metrics: metricsPayload }, currentSession?.role)
+      );
+    } catch {
+      // Live Mealie metrics are useful on the overview page, but they should not
+      // block local task and activity data from loading.
+    } finally {
+      overviewMetricsLoadingRef.current = false;
+    }
+  }
+
   async function loadData(currentSession = session) {
     if (isLoading) return;
     setIsLoading(true);
-    showNotice("Refreshing data\u2026", 30000);
+    showNotice("Refreshing local data\u2026", 30000);
     try {
       const isOwner = isOwnerRole(currentSession?.role);
       const [
         taskPayload, runPayload, schedulePayload, settingsPayload,
         configPayload, usersPayload,
-        metricsPayload, qualityPayload, aboutPayload, healthPayload,
+        qualityPayload, aboutPayload, healthPayload,
       ] = await Promise.all([
         api("/tasks"),
         api("/runs"),
@@ -479,7 +553,6 @@ export default function App() {
         isOwner ? api("/settings") : Promise.resolve(null),
         api("/config/files"),
         isOwner ? api("/users") : Promise.resolve({ items: [] }),
-        api("/metrics/overview").catch(() => null),
         api("/metrics/quality").catch(() => null),
         api("/about/meta").catch(() => null),
         api("/health").catch(() => null),
@@ -488,17 +561,18 @@ export default function App() {
       const data = sanitizeCachedDataForRole({
         tasks: taskPayload, runs: runPayload, schedules: schedulePayload,
         settings: settingsPayload, config: configPayload, users: usersPayload,
-        metrics: metricsPayload, quality: qualityPayload,
+        quality: qualityPayload,
         about: aboutPayload, health: healthPayload,
         timestamp: new Date().toISOString(), savedAt: Date.now(),
       }, currentSession?.role);
 
       applyData(data);
 
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch (e) { console.warn("sessionStorage unavailable:", e); }
+      saveCachedData(data, currentSession, { merge: true });
 
       clearBanners();
       scheduleAutoRefresh();
+      refreshOverviewMetrics(currentSession);
     } catch (exc) {
       handleError(exc);
     } finally {
@@ -525,8 +599,13 @@ export default function App() {
 
         const nextSession = await refreshSession();
         if (nextSession) {
+          if (nextSession.force_reset) {
+            return;
+          }
           if (!loadCachedData(nextSession)) {
             await loadData(nextSession);
+          } else {
+            refreshOverviewMetrics(nextSession);
           }
         }
       } catch (exc) {
@@ -575,10 +654,10 @@ export default function App() {
       const loginResult = await api("/auth/login", { method: "POST", body: { username, password } });
       setPassword("");
       const nextSession = await refreshSession();
-      await loadData(nextSession);
       if (loginResult?.force_reset) {
         setForcedResetPending(true);
       } else {
+        await loadData(nextSession);
         showNotice("Signed in successfully.");
       }
     } catch (exc) {
@@ -590,6 +669,7 @@ export default function App() {
     try {
       clearBanners();
       await api("/auth/logout", { method: "POST" });
+      sessionRef.current = null;
       setSession(null);
       setRuns([]);
       setSchedules([]);
@@ -821,9 +901,11 @@ export default function App() {
         method: "POST",
         body: { password: newPass, force_reset: false },
       });
+      const nextSession = await refreshSession();
       setForcedResetPending(false);
       setForcedResetPassword("");
       setForcedResetShowPass(false);
+      await loadData(nextSession);
       showNotice("Password changed. Welcome!");
     } catch (exc) {
       handleError(exc);
