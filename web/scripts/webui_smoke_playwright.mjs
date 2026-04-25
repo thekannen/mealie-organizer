@@ -500,6 +500,9 @@ async function main() {
           await numberInput.fill(current);
           continue;
         }
+        if (lower.includes("keep newest") || lower === "keep") {
+          continue;
+        }
         if (lower.includes("confidence")) {
           await numberInput.fill("0.75");
         } else if (lower.includes("max")) {
@@ -533,6 +536,9 @@ async function main() {
     for (const option of taskDefinition?.options || []) {
       const key = String(option.key || "");
       const labelText = `${String(option.label || "")} ${key}`.toLowerCase();
+      if (String(taskDefinition?.task_id || "") === "mealie-backup" && key === "keep") {
+        continue;
+      }
       if (option.default !== undefined && option.default !== null) {
         options[key] = option.default;
         continue;
