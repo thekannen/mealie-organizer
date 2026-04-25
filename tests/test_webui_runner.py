@@ -6,7 +6,10 @@ import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from cookdex.webui_server.runner import RunQueueManager
+from cookdex.webui_server.runner import (
+    RunQueueManager,
+    _resolve_max_duration_seconds,
+)
 from cookdex.webui_server.tasks import TaskExecution
 
 
@@ -21,6 +24,22 @@ def _build_manager(*, logs_dir: Path) -> tuple[RunQueueManager, Mock, Mock]:
         max_log_files=50,
     )
     return manager, state, registry
+
+
+def test_resolve_max_duration_uses_runtime_setting() -> None:
+    assert _resolve_max_duration_seconds({"MAX_RUN_DURATION_SECONDS": "21600"}, None) == 21600
+
+
+def test_resolve_max_duration_caps_runtime_setting_at_12_hours() -> None:
+    assert _resolve_max_duration_seconds({"MAX_RUN_DURATION_SECONDS": "999999"}, None) == 43200
+
+
+def test_resolve_max_duration_caps_task_override_at_12_hours() -> None:
+    assert _resolve_max_duration_seconds({"MAX_RUN_DURATION_SECONDS": "21600"}, 999999) == 43200
+
+
+def test_resolve_max_duration_uses_default_for_invalid_runtime_setting() -> None:
+    assert _resolve_max_duration_seconds({"MAX_RUN_DURATION_SECONDS": "not-a-number"}, None) == 14400
 
 
 def test_cancel_running_run_terminates_process_group(tmp_path: Path) -> None:

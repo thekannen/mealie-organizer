@@ -13,7 +13,7 @@ from .config import env_or_config
 
 
 class ProviderUnavailableError(RuntimeError):
-    """Raised when an AI provider is persistently unreachable (e.g. quota exhausted).
+    """Raised when an AI provider rejects or cannot complete requests.
 
     Signals the caller to abort immediately rather than retrying further.
     """
@@ -1120,8 +1120,8 @@ Recipes:
         self.log(self.render_progress_line(done, total, start_time))
         if self._provider_unavailable:
             self.log(
-                "[error] Categorization ABORTED — AI provider is unavailable "
-                "(likely API quota/rate-limit exceeded). Check your provider dashboard."
+                "[error] Categorization ABORTED - AI provider is unavailable or rejected the request; "
+                "check API key, model access, quota/rate limits, and provider dashboard."
             )
             self.print_summary()
             raise SystemExit(1)

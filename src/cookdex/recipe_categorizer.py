@@ -110,6 +110,55 @@ def cache_file_for_provider(provider: str) -> str:
 _MAX_RATE_LIMIT_RETRIES = 5
 
 
+def _http_error_detail(response) -> str:
+    def normalize(value: object) -> str:
+        return " ".join(str(value).split())[:300]
+
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        payload = None
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if message:
+                return normalize(message)
+        if isinstance(error, str):
+            return normalize(error)
+        message = payload.get("message")
+        if message:
+            return normalize(message)
+
+    text = (getattr(response, "text", "") or "").strip()
+    return normalize(text)
+
+
+def _raise_for_non_retryable_provider_error(provider: str, response, credential_name: str | None = None) -> None:
+    status = response.status_code
+    if status == 429 or status < 400 or status >= 500:
+        return
+
+    detail = _http_error_detail(response)
+    detail_suffix = f" Detail: {detail}" if detail else ""
+
+    if status == 401:
+        credential_hint = f" Check {credential_name}." if credential_name else " Check provider credentials."
+        raise ProviderUnavailableError(
+            f"{provider}: HTTP 401 Unauthorized from provider.{credential_hint}{detail_suffix}"
+        )
+    if status == 403:
+        raise ProviderUnavailableError(
+            f"{provider}: HTTP 403 Forbidden from provider. Check API key permissions, project access, "
+            f"and model access.{detail_suffix}"
+        )
+
+    raise ProviderUnavailableError(
+        f"{provider}: non-retryable HTTP {status} from provider. Check provider configuration.{detail_suffix}"
+    )
+
+
 def _rate_limit_wait(provider: str, response, rate_limit_hits: int) -> float:
     """Return seconds to sleep on a 429/5xx, using Retry-After when available."""
     retry_after = response.headers.get("Retry-After")
@@ -174,6 +223,7 @@ def query_chatgpt(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("ChatGPT", response, "OPENAI_API_KEY")
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"].strip()
@@ -255,6 +305,7 @@ def query_ollama(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("Ollama", response)
             response.raise_for_status()
             data = response.json()
             return (data.get("response") or "").strip()
@@ -324,6 +375,7 @@ def query_anthropic(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("Anthropic", response, "ANTHROPIC_API_KEY")
             response.raise_for_status()
             data = response.json()
             content = data.get("content", [])

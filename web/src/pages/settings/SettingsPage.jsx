@@ -3,12 +3,38 @@ import Icon from "../../components/Icon";
 import { api, normalizeErrorMessage } from "../../utils.jsx";
 import { CONFIG_LABELS } from "../../constants";
 
-const GROUP_ICONS = { Connection: "link", AI: "wand", "Direct DB": "database" };
+const RUN_DURATION_KEY = "MAX_RUN_DURATION_SECONDS";
+const DEFAULT_RUN_DURATION_SECONDS = 4 * 60 * 60;
+const MAX_RUN_DURATION_SECONDS = 12 * 60 * 60;
+const MAX_RUN_DURATION_MINUTES = MAX_RUN_DURATION_SECONDS / 60;
+
+const GROUP_ICONS = { Connection: "link", AI: "wand", "Direct DB": "database", Runner: "clock" };
 const GROUP_DESCRIPTIONS = {
   Connection: "Mealie URL and API key",
   AI: "Provider, model, and API keys for recipe categorization",
   "Direct DB": "PostgreSQL and SSH tunnel for bulk operations",
+  Runner: "Task execution limits and log retention",
 };
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function parseRunDurationSeconds(value) {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_RUN_DURATION_SECONDS;
+  return Math.min(parsed, MAX_RUN_DURATION_SECONDS);
+}
+
+function runDurationParts(value) {
+  const seconds = parseRunDurationSeconds(value);
+  const totalMinutes = clampNumber(Math.round(seconds / 60), 1, MAX_RUN_DURATION_MINUTES);
+  return {
+    hours: Math.floor(totalMinutes / 60),
+    minutes: totalMinutes % 60,
+  };
+}
 
 export default function SettingsPage({ session, overviewMetrics, qualityMetrics, onNotice, onError }) {
   const [envSpecs, setEnvSpecs] = useState({});
@@ -365,6 +391,21 @@ export default function SettingsPage({ session, overviewMetrics, qualityMetrics,
                       setEnvClear((prev) => ({ ...prev, [key]: false }));
                     }
                   };
+                  const durationParts = key === RUN_DURATION_KEY ? runDurationParts(draftValue) : null;
+                  const onChangeRunDuration = (part, rawValue) => {
+                    if (!durationParts) return;
+                    const parsed = Number.parseInt(String(rawValue), 10);
+                    let nextHours = durationParts.hours;
+                    let nextMinutes = durationParts.minutes;
+                    if (part === "hours") {
+                      nextHours = clampNumber(parsed, 0, 12);
+                    } else {
+                      nextMinutes = clampNumber(parsed, 0, 59);
+                    }
+                    let totalMinutes = nextHours * 60 + nextMinutes;
+                    totalMinutes = clampNumber(totalMinutes, 1, MAX_RUN_DURATION_MINUTES);
+                    onChangeDraft(String(totalMinutes * 60));
+                  };
 
                   const modelKind = key === "OPENAI_MODEL" ? "openai" : key === "ANTHROPIC_MODEL" ? "anthropic" : key === "OLLAMA_MODEL" ? "ollama" : null;
                   const modelList = modelKind ? availableModels[modelKind] || [] : [];
@@ -413,6 +454,35 @@ export default function SettingsPage({ session, overviewMetrics, qualityMetrics,
                           <option key={c} value={c}>{c === "" ? "— disabled —" : c}</option>
                         ))}
                       </select>
+                    );
+                  } else if (key === RUN_DURATION_KEY && durationParts) {
+                    inputElement = (
+                      <div className="duration-control">
+                        <label className="duration-part">
+                          <span>Hours</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="12"
+                            step="1"
+                            inputMode="numeric"
+                            value={durationParts.hours}
+                            onChange={(e) => onChangeRunDuration("hours", e.target.value)}
+                          />
+                        </label>
+                        <label className="duration-part">
+                          <span>Minutes</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={durationParts.hours >= 12 ? "0" : "59"}
+                            step="1"
+                            inputMode="numeric"
+                            value={durationParts.minutes}
+                            onChange={(e) => onChangeRunDuration("minutes", e.target.value)}
+                          />
+                        </label>
+                      </div>
                     );
                   } else {
                     inputElement = (
