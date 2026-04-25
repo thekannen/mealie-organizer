@@ -69,7 +69,7 @@ def test_ollama_uses_smaller_default_batch_size(monkeypatch):
     monkeypatch.delenv("BATCH_SIZE", raising=False)
     monkeypatch.delenv("OLLAMA_BATCH_SIZE", raising=False)
 
-    assert recipe_categorizer.batch_size_for_provider("ollama") == 10
+    assert recipe_categorizer.batch_size_for_provider("ollama") == 1
     assert recipe_categorizer.batch_size_for_provider("chatgpt") == 50
 
 
@@ -80,15 +80,19 @@ def test_ollama_specific_batch_size_overrides_default(monkeypatch):
     assert recipe_categorizer.batch_size_for_provider("ollama") == 4
 
 
-def test_ollama_uses_larger_default_num_predict(monkeypatch):
+def test_ollama_uses_safe_cpu_defaults(monkeypatch):
     captured = {}
 
     def fake_query_ollama(prompt_text, model, url, request_timeout, http_retries, options):
+        captured["request_timeout"] = request_timeout
         captured.update(options)
         return "[]"
 
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b")
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
     monkeypatch.delenv("OLLAMA_NUM_PREDICT", raising=False)
+    monkeypatch.delenv("OLLAMA_NUM_THREAD", raising=False)
+    monkeypatch.delenv("OLLAMA_REQUEST_TIMEOUT", raising=False)
     monkeypatch.setattr(recipe_categorizer, "query_ollama", fake_query_ollama)
 
     query_text, provider_name = recipe_categorizer.build_provider_query("ollama")
@@ -96,7 +100,10 @@ def test_ollama_uses_larger_default_num_predict(monkeypatch):
 
     query_text("prompt")
 
-    assert captured["num_predict"] == 4096
+    assert captured["request_timeout"] == 300
+    assert captured["num_ctx"] == 2048
+    assert captured["num_predict"] == 512
+    assert captured["num_thread"] == 4
 
 
 def test_derive_target_mode():
