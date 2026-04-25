@@ -918,7 +918,6 @@ export default function App() {
         tasks={tasks}
         runs={runs}
         schedules={schedules}
-        users={users}
         overviewMetrics={overviewMetrics}
         qualityMetrics={qualityMetrics}
         taxonomyCounts={taxonomyCounts}
@@ -1137,6 +1136,7 @@ export default function App() {
     );
   }
 
+  const showPageHeader = activePage !== "overview";
   const showHeaderBreadcrumb = false;
   const showHeaderRefresh = false;
 
@@ -1214,19 +1214,21 @@ export default function App() {
       </aside>
 
       <section className="content-shell">
-        <header className="page-header card">
-          <div>
-            {showHeaderBreadcrumb ? <p className="eyebrow">Home / {activePageMeta.title}</p> : null}
-            <h2>{activePageMeta.title}</h2>
-            <p className="muted">{activePageMeta.subtitle}</p>
-          </div>
-          {showHeaderRefresh ? (
-            <button className="ghost" onClick={loadData}>
-              <Icon name="refresh" />
-              Refresh
-            </button>
-          ) : null}
-        </header>
+        {showPageHeader ? (
+          <header className="page-header card">
+            <div>
+              {showHeaderBreadcrumb ? <p className="eyebrow">Home / {activePageMeta.title}</p> : null}
+              <h2>{activePageMeta.title}</h2>
+              <p className="muted">{activePageMeta.subtitle}</p>
+            </div>
+            {showHeaderRefresh ? (
+              <button className="ghost" onClick={loadData}>
+                <Icon name="refresh" />
+                Refresh
+              </button>
+            ) : null}
+          </header>
+        ) : null}
 
         {error ? <div className="banner error" role="alert"><span>{error}</span><button className="banner-close" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="x" /></button></div> : null}
         {!error && notice ? <div className="banner info" role="status"><span>{notice}</span><button className="banner-close" onClick={clearBanners} aria-label="Dismiss notice"><Icon name="x" /></button></div> : null}

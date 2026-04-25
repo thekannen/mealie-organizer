@@ -7,7 +7,6 @@ export default function OverviewPage({
   tasks,
   runs,
   schedules,
-  users,
   overviewMetrics,
   qualityMetrics,
   taxonomyCounts,
@@ -169,20 +168,12 @@ export default function OverviewPage({
 
       <section className="overview-stats">
         <article className="card stat-card">
-          <p className="label">Tasks</p>
-          <p className="value">{tasks.length}</p>
-        </article>
-        <article className="card stat-card">
           <p className="label">Runs Today</p>
           <p className="value">{runsTodayCount}</p>
         </article>
         <article className="card stat-card">
           <p className="label">Schedules</p>
           <p className="value">{schedules.length}</p>
-        </article>
-        <article className="card stat-card">
-          <p className="label">Users</p>
-          <p className="value">{users.length}</p>
         </article>
       </section>
 

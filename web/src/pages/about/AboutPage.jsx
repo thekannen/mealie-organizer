@@ -62,7 +62,7 @@ export default function AboutPage({ aboutMeta, healthMeta, lastLoadedAt }) {
           <p className="privacy-detail">
             If AI-powered categorization is enabled, recipe names and
             ingredient lists are sent to your configured provider
-            (OpenAI or Ollama). No other recipe data is transmitted.
+            (OpenAI, Anthropic, or Ollama). No other recipe data is transmitted.
           </p>
         </article>
 

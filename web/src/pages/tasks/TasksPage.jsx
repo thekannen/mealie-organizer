@@ -121,6 +121,7 @@ export default function TasksPage({
   // ─── Refs ───────────────────────────────────────────────────────────────────
   const logOffsetRef = useRef(0);
   const logPollRef = useRef(null);
+  const logOutputRef = useRef(null);
   const openConfigRequestRef = useRef(0);
   const selectedRunStatusRef = useRef(null);
 
@@ -339,6 +340,14 @@ export default function TasksPage({
     } catch (exc) {
       onError(exc);
     }
+  }
+
+  function selectRunForLogs(runId) {
+    if (!runId) return;
+    setSelectedRunId(runId);
+    window.requestAnimationFrame(() => {
+      logOutputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   async function togglePolicy(taskId, value) {
@@ -1229,7 +1238,7 @@ export default function TasksPage({
               className="ghost small"
               onClick={() => {
                 const r = runs.find((r) => r.status === "running");
-                if (r) setSelectedRunId(r.run_id);
+                if (r) selectRunForLogs(r.run_id);
               }}
             >
               View Log
@@ -1324,17 +1333,18 @@ export default function TasksPage({
                 filteredRuns.map((run) => {
                   const cancelable = run.status === "queued" || run.status === "running";
                   const isDryRun = run.options?.dry_run !== false;
+                  const taskLabel = taskTitleById.get(run.task_id) || run.task_id;
                   return (
                     <tr
                       key={run.run_id}
                       className={selectedRunId === run.run_id ? "selected-row" : ""}
-                      onClick={() => { if (selectedRunId !== run.run_id) setSelectedRunId(run.run_id); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (selectedRunId !== run.run_id) setSelectedRunId(run.run_id); } }}
+                      onClick={() => selectRunForLogs(run.run_id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRunForLogs(run.run_id); } }}
                       tabIndex={0}
                       role="button"
                       aria-selected={selectedRunId === run.run_id}
                     >
-                      <td>{taskTitleById.get(run.task_id) || run.task_id}</td>
+                      <td>{taskLabel}</td>
                       <td className="run-status-cell">
                         <span className={`status-indicator ${statusClass(run.status)}`}>
                           <Icon name={STATUS_ICONS[run.status]?.icon || "info"} />
@@ -1352,6 +1362,14 @@ export default function TasksPage({
                       <td className="muted hide-mobile">{formatRunTime(run)}</td>
                       <td className="muted hide-mobile">{formatDateTimeShort(run.started_at || run.created_at)}</td>
                       <td className="run-actions-cell">
+                        <button
+                          className="ghost small"
+                          aria-label={`View logs for ${taskLabel}`}
+                          title="View logs"
+                          onClick={(event) => { event.stopPropagation(); selectRunForLogs(run.run_id); }}
+                        >
+                          <Icon name="list" />
+                        </button>
                         {cancelable && (
                           <button
                             className="ghost small danger"
@@ -1372,6 +1390,7 @@ export default function TasksPage({
       </article>
 
       <article
+        ref={logOutputRef}
         className={`card log-output-card${logMaximized ? " log-card-maximized" : ""}`}
         style={logMaximized ? { "--sidebar-offset": sidebarCollapsed ? "72px" : "280px" } : undefined}
       >
