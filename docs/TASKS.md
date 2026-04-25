@@ -1,227 +1,313 @@
 # Tasks and API
 
-## Web UI Route Model
+This is the technical reference for CookDex task execution, scheduling, safety policies, and Web UI API routes.
 
-- Web app: `/cookdex`
-- API: `/cookdex/api/v1`
+All API routes are prefixed with `/cookdex/api/v1` by default. If `WEB_BASE_PATH` changes, replace `/cookdex` with your configured base path.
 
-## API Endpoints
+## Scheduling
+
+CookDex supports two schedule kinds:
+
+| Kind | Required fields | Notes |
+|---|---|---|
+| `interval` | `seconds` | Runs repeatedly. Optional `start_at`, `end_at`, and `run_if_missed` values are stored in UTC. |
+| `once` | `run_at` | Runs one time in the future. Optional `run_if_missed` controls restored missed runs. |
+
+Only `interval` and `once` schedules are supported in the current API.
+
+## Safety Policies
+
+Most write-capable tasks default to `dry_run=true`. Live runs (`dry_run=false`) and other dangerous options are blocked unless an owner enables the task policy through `PUT /policies` or the Web UI unlock flow.
+
+The **Backup First** option is hidden while a task is in dry-run mode. When enabled for a live run, CookDex creates a Mealie backup before the main task starts.
+
+## Task IDs
+
+**Data Pipeline**
+
+| Task ID | Title | Purpose |
+|---|---|---|
+| `data-maintenance` | Data Maintenance Pipeline | Run staged cleanup and audit steps in order, or select a subset of stages. |
+| `recipe-dredger` | Recipe Dredger | Crawl configured recipe sites, verify recipe pages, filter by language, and import verified URLs into Mealie. |
+| `mealie-backup` | Mealie Backup | Create a Mealie backup through the admin API and optionally prune old backups. |
+
+**Actions**
+
+| Task ID | Title | Purpose |
+|---|---|---|
+| `clean-recipes` | Clean Recipe Library | Remove duplicate source URLs, filter junk content, and normalize messy import names. |
+| `slug-repair` | Repair Recipe Slugs | Detect slug/name mismatches and fix them through Direct DB when applying changes. |
+| `ingredient-parse` | Ingredient Parser | Parse raw ingredient text into structured food, unit, and quantity fields. |
+| `yield-normalize` | Yield Normalizer | Fill missing yield text or parse yield text into numeric servings. |
+| `cleanup-duplicates` | Clean Up Duplicates | Merge duplicate food and unit entries. |
+| `reimport-recipes` | Re-import Recipes | Re-scrape source URLs while preserving recipe identity, favorites, and organization. |
+
+**Organizers**
+
+| Task ID | Title | Purpose |
+|---|---|---|
+| `tag-categorize` | Tag & Categorize Recipes | Assign categories, tags, and tools with rule matching and optional AI. |
+| `taxonomy-refresh` | Refresh Taxonomy | Sync categories, tags, labels, and tools from CookDex config into Mealie. |
+| `cookbook-sync` | Cookbook Sync | Create and update cookbooks from cookbook configuration rules. |
+
+**Audits**
+
+| Task ID | Title | Purpose |
+|---|---|---|
+| `health-check` | Health Check | Run read-only recipe quality and taxonomy audits. |
+
+## Options
+
+### `data-maintenance`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `stages` | string list | all stages | Select stages: `dedup`, `junk`, `names`, `parse`, `foods`, `units`, `labels`, `tools`, `taxonomy`, `categorize`, `cookbooks`, `yield`, `quality`, `audit`. |
+| `confidence_threshold` | integer | `70` | Ingredient parser NLP confidence percentage. Lower accepts more NLP results and reduces AI fallback. |
+| `max_recipes` | integer | unset | Limit ingredient parsing when the `parse` stage runs. |
+| `no_cache` | boolean | `false` | Ignore the ingredient parser scan cache. |
+| `reason` | string | all categories | Limit junk filtering to one category. |
+| `force_all` | boolean | `false` | Normalize all names, not only unformatted names. |
+| `provider` | string | configured default | Override AI provider for categorization: `chatgpt`, `anthropic`, or `ollama`. |
+| `taxonomy_mode` | string | configured default | Override taxonomy refresh mode: `merge` or `replace`. |
+| `use_db` | boolean | `false` | Enable Direct DB for the `quality` and `yield` stages. |
+| `nutrition_sample` | integer | `200` | API-mode nutrition sample size for the quality stage. Hidden when `use_db=true`. |
+| `continue_on_error` | boolean | `false` | Keep running later stages if one stage fails. |
+| `apply_cleanups` | boolean | `false` | Dangerous. Allows cleanup stages to write changes. Hidden while `dry_run=true`. |
+
+Default stage order:
+
+`dedup -> junk -> names -> parse -> foods -> units -> labels -> tools -> taxonomy -> categorize -> cookbooks -> yield -> quality -> audit`
+
+### `recipe-dredger`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview imports without writing to Mealie. |
+| `limit` | integer | `50` | Maximum recipes to import per configured site. |
+| `depth` | integer | `1000` | Maximum URLs to scan per site sitemap. |
+| `no_cache` | boolean | `false` | Ignore cached sitemaps and crawl fresh. |
+| `import_workers` | integer | `2` | Concurrent import workers, capped at 4. |
+| `precheck_duplicates` | boolean | `true` | Fetch existing Mealie recipes first and skip duplicates before import. |
+| `language_filter` | boolean | `true` | Skip recipes that do not match `DREDGER_TARGET_LANGUAGE`. |
+| `max_retry_attempts` | integer | `3` | Retry transient failures before marking a URL rejected. |
+
+### `mealie-backup`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `keep` | integer | unset | After creating a backup, prune older backups and keep only this many. |
+| `prune_only` | boolean | `false` | Skip backup creation and only prune old backups. Requires `keep`. |
+
+### `clean-recipes`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `run_dedup` | boolean | `true` | Remove imported duplicates with the same source URL. |
+| `run_junk` | boolean | `true` | Remove non-recipe content such as listicles, how-to articles, and placeholder pages. |
+| `run_names` | boolean | `true` | Normalize names derived from URL slugs. |
+| `reason` | string | all categories | Limit junk filtering to one category. |
+| `force_all` | boolean | `false` | Normalize all recipe names, not only unformatted names. |
+| `use_db` | boolean | `false` | Advanced fallback for deleting corrupted duplicate recipes when the API returns 500. Requires Direct DB settings. |
+
+### `slug-repair`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Scan only and print mismatches plus SQL fix statements. |
+| `use_db` | boolean | `false` | Apply fixes directly through Mealie's database. Required for writing. |
+
+### `ingredient-parse`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `max_recipes` | integer | unset | Limit parsing to at most N recipes. |
+| `no_cache` | boolean | `false` | Ignore the scan cache and reprocess all unparsed recipes. |
+| `confidence_threshold` | integer | `70` | Minimum NLP confidence percentage before accepting a parse. Low-confidence lines fall back to AI parsing. |
+
+### `yield-normalize`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `use_db` | boolean | `false` | Write changes in one DB transaction instead of many API calls. |
+
+### `cleanup-duplicates`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview merges without writing anything. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `target` | string | `both` | Deduplicate `both`, `foods`, or `units`. |
+
+### `reimport-recipes`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview eligible recipes. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `max_recipes` | integer | unset | Limit reimport to at most N recipes. |
+| `workers` | integer | `2` | Concurrent scrape workers, capped at 4. |
+| `delay` | number | `0.5` | Seconds between requests per worker. |
+| `resume` | boolean | `false` | Skip recipes completed in the previous run. |
+| `slugs` | string | unset | Comma-separated recipe slugs to reimport. Leave blank for all eligible recipes. |
+
+Reimport normally uses the Mealie API. If Direct DB is configured, it can repair a slug mismatch fallback when Mealie rejects an update with a 403.
+
+### `tag-categorize`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `backup_first` | boolean | `false` | Create a Mealie backup before a live run. Hidden while `dry_run=true`. |
+| `method` | string | `both` | `both` runs rules first then AI, `rules` uses rules only, `ai` skips rules. |
+| `recat` | boolean | `false` | Re-process every recipe, including recipes that already have organization data. Hidden for `rules`. |
+| `provider` | string | configured default | Override AI provider for this run. Hidden for `rules`. |
+| `use_db` | boolean | `false` | Enable Direct DB matching for rules, including ingredient and tool matching. Hidden for `ai`. |
+| `missing_targets` | string | `skip` | `skip` missing taxonomy targets or `create` them automatically. Hidden for `ai`. |
+
+### `taxonomy-refresh`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+| `sync_labels` | boolean | `true` | Sync labels along with categories and tags. |
+| `sync_tools` | boolean | `true` | Sync tools and merge duplicates from taxonomy config. |
+| `mode` | string | `merge` | `merge` keeps existing entries; `replace` matches source files exactly. |
+| `cleanup_apply` | boolean | `false` | Dangerous. Permanently delete unused categories/tags. Hidden while `dry_run=true`. |
+
+### `cookbook-sync`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `dry_run` | boolean | `true` | Preview changes without writing anything. |
+
+### `health-check`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `scope_quality` | boolean | `true` | Score recipe completeness for categories, tags, tools, ingredients, cook time, yield, and nutrition. |
+| `scope_taxonomy` | boolean | `true` | Scan taxonomy for unused entries, duplicate names, and recipes missing categories or tags. |
+| `use_db` | boolean | `false` | Fetch all recipe data in one query for faster and exact nutrition coverage. |
+| `nutrition_sample` | integer | `200` | API-mode nutrition sample size. Hidden when `use_db=true`. |
+
+`health-check` is read-only and does not expose a `dry_run` option.
+
+## Direct DB
+
+Docker images include the Direct DB dependencies. Configure DB settings in **Settings -> Direct DB** and use **Auto-detect DB** when possible.
+
+For local source installs only, install the optional DB extras before using Direct DB:
+
+```bash
+pip install -e ".[db]"
+```
+
+See [Direct DB Access](DIRECT_DB.md) for the wizard, manual setup, and table access notes.
+
+## Runtime Settings
+
+Runtime settings are managed through `GET /settings` and `PUT /settings`.
+
+- Non-secret values are stored in the app state database.
+- Secret values are encrypted at rest.
+- Task runs receive the effective runtime environment built from the settings catalog.
+- `.env` is optional and mainly useful for server overrides, pre-seeding values, or headless deployments.
+
+Main setting groups:
+
+| Group | Examples |
+|---|---|
+| Connection | `MEALIE_URL`, `MEALIE_API_KEY` |
+| AI | `CATEGORIZER_PROVIDER`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_URL`, model settings |
+| Dredger | `DREDGER_TARGET_LANGUAGE`, `DREDGER_CRAWL_DELAY`, `DREDGER_CACHE_EXPIRY_DAYS` |
+| Web UI | `WEB_BIND_PORT`, `WEB_BASE_PATH`, `WEB_SESSION_TTL_SECONDS` |
+| Direct DB | `MEALIE_DB_TYPE`, Postgres credentials, SSH tunnel settings |
+| Runner | `MAX_RUN_DURATION_SECONDS` |
+
+## API Routes
 
 **Auth**
+
 - `GET /auth/bootstrap-status`
 - `POST /auth/register`
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/session`
 
-**Tasks and Runs**
+**Tasks, Runs, Policies**
+
 - `GET /tasks`
 - `POST /runs`
 - `GET /runs`
 - `GET /runs/{run_id}`
 - `GET /runs/{run_id}/log`
+- `GET /runs/{run_id}/log/tail`
 - `POST /runs/{run_id}/cancel`
-
-**Policies**
 - `GET /policies`
 - `PUT /policies`
 
 **Schedules**
+
 - `GET /schedules`
 - `POST /schedules`
 - `PATCH /schedules/{schedule_id}`
 - `DELETE /schedules/{schedule_id}`
 
 **Settings**
+
 - `GET /settings`
 - `PUT /settings`
+- `POST /settings/models/openai`
+- `POST /settings/models/anthropic`
+- `POST /settings/models/ollama`
 - `POST /settings/test/mealie`
 - `POST /settings/test/openai`
+- `POST /settings/test/anthropic`
 - `POST /settings/test/ollama`
-- `GET /settings/dredger-sites` / `POST /settings/dredger-sites`
-- `PUT /settings/dredger-sites/{id}` / `DELETE /settings/dredger-sites/{id}`
-- `POST /settings/dredger-sites/seed` / `POST /settings/dredger-sites/validate`
+- `POST /settings/test/db`
+- `POST /settings/detect/db`
+- `GET /settings/dredger-sites`
+- `POST /settings/dredger-sites`
+- `PUT /settings/dredger-sites/{site_id}`
+- `DELETE /settings/dredger-sites/{site_id}`
+- `POST /settings/dredger-sites/seed`
+- `POST /settings/dredger-sites/validate`
 
 **Users**
+
 - `GET /users`
 - `POST /users`
 - `POST /users/{username}/reset-password`
+- `PATCH /users/{username}/role`
 - `DELETE /users/{username}`
 
-**Config Files**
+**Config And Taxonomy Workspace**
+
 - `GET /config/files`
 - `GET /config/files/{name}`
 - `PUT /config/files/{name}`
+- `GET /config/taxonomy/starter-pack`
+- `POST /config/taxonomy/initialize-from-mealie`
+- `POST /config/taxonomy/import-starter-pack`
+- `GET /config/workspace/lookups`
+- `GET /config/workspace/draft`
+- `PUT /config/workspace/draft`
+- `POST /config/workspace/validate`
+- `POST /config/workspace/reset`
+- `POST /config/workspace/publish`
 
 **Meta**
+
 - `GET /health`
 - `GET /metrics/overview`
+- `GET /metrics/quality`
 - `GET /about/meta`
 - `GET /help/docs`
-
-All endpoints above are prefixed with `/cookdex/api/v1`.
-
-## Task IDs (Queue Runner)
-
-**Data Pipeline**
-| Task ID | Title | Description |
-|---|---|---|
-| `data-maintenance` | Data Maintenance Pipeline | Run all maintenance stages in order: Dedup → Junk Filter → Name Normalize → Ingredient Parse → Foods Cleanup → Units Cleanup → Labels Sync → Tools Sync → Taxonomy Refresh → Categorize → Cookbook Sync → Yield Normalize → Quality Audit → Taxonomy Audit |
-| `recipe-dredger` | Recipe Dredger | Discover and import recipes from curated sites — crawls sitemaps, verifies JSON-LD recipe schema, filters by language, and imports to Mealie |
-| `mealie-backup` | Mealie Backup | Create a Mealie backup via the admin API, with optional pruning to keep only the newest N backups |
-
-**Actions**
-| Task ID | Title | Description |
-|---|---|---|
-| `clean-recipes` | Clean Recipe Library | Remove duplicates, filter junk content, and normalize messy import names |
-| `slug-repair` | Repair Recipe Slugs | Detect and fix recipe slug mismatches caused by name normalization. Scan runs via API; fixes require direct DB access |
-| `ingredient-parse` | Ingredient Parser | Parse ingredients using NLP with AI fallback |
-| `yield-normalize` | Yield Normalizer | Fill missing yield text from servings count, or parse yield text to set numeric servings |
-| `cleanup-duplicates` | Clean Up Duplicates | Merge duplicate food and/or unit entries |
-| `reimport-recipes` | Re-import Recipes | Re-scrape recipes from their original URLs. Overwrites content but preserves tags, categories, and favorites |
-
-**Organizers**
-| Task ID | Title | Description |
-|---|---|---|
-| `tag-categorize` | Tag & Categorize Recipes | Assign categories, tags, and tools — Both (default) runs rules then AI, Rules Only needs no LLM, AI Only skips rules |
-| `taxonomy-refresh` | Refresh Taxonomy | Sync categories, tags, labels, and tools from config files into Mealie |
-| `cookbook-sync` | Cookbook Sync | Create and update cookbooks from cookbook configuration |
-
-**Audits**
-| Task ID | Title | Description |
-|---|---|---|
-| `health-check` | Health Check | Run diagnostic audits on your recipe library and taxonomy — surface missing metadata, unused entries, and duplicates |
-
-### mealie-backup options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `keep` | integer | *(unset)* | After creating a backup, prune older backups keeping only this many. Leave blank to keep all |
-| `prune_only` | boolean | `false` | Skip backup creation and only prune old backups |
-
-### data-maintenance options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `backup_first` | boolean | `false` | Create a Mealie backup before running (hidden in dry-run mode) |
-| `stages` | string (multi) | *(all)* | Select specific stages: `dedup`, `junk`, `names`, `parse`, `foods`, `units`, `labels`, `tools`, `taxonomy`, `categorize`, `cookbooks`, `yield`, `quality`, `audit` |
-| `provider` | string | *(configured default)* | Override categorizer provider for this run: `chatgpt` or `ollama` |
-| `use_db` | boolean | `false` | Enable direct DB mode for `quality` and `yield` stages (requires DB settings) |
-| `nutrition_sample` | integer | `200` | Quality-stage nutrition sample size (API mode only) |
-| `reason` | string | *(all)* | Junk-stage category filter: `how_to`, `listicle`, `digest`, `keyword`, `utility`, `bad_instructions` |
-| `force_all` | boolean | `false` | Normalize all recipe names when `names` stage runs |
-| `confidence_threshold` | integer | `75` | Ingredient parser confidence % (0–100) for `parse` stage |
-| `max_recipes` | integer | *(unset)* | Ingredient parser max recipes for `parse` stage |
-| `after_slug` | string | *(unset)* | Ingredient parser resume cursor for `parse` stage |
-| `parsers` | string | *(unset)* | Ingredient parser strategy list (e.g. `nlp,openai`) for `parse` stage |
-| `force_parser` | string | *(unset)* | Force one ingredient parser strategy for `parse` stage |
-| `page_size` | integer | *(unset)* | Ingredient parser page size for `parse` stage |
-| `delay_seconds` | number | *(unset)* | Ingredient parser delay between writes for `parse` stage |
-| `timeout_seconds` | integer | *(unset)* | Ingredient parser request timeout for `parse` stage |
-| `retries` | integer | *(unset)* | Ingredient parser request retries for `parse` stage |
-| `backoff_seconds` | number | *(unset)* | Ingredient parser retry backoff for `parse` stage |
-| `taxonomy_mode` | string | *(configured default)* | Taxonomy stage mode override: `merge` or `replace` |
-| `continue_on_error` | boolean | `false` | Keep running remaining stages if one fails |
-| `apply_cleanups` | boolean | `false` | Write deduplication and cleanup results (dangerous) |
-
-### clean-recipes options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `run_dedup` | boolean | `true` | Remove recipes with duplicate source URLs |
-| `run_junk` | boolean | `true` | Filter listicles, how-to articles, and non-recipe content |
-| `run_names` | boolean | `true` | Normalize lowercase/unformatted recipe names |
-| `reason` | string | *(all)* | Only scan a specific junk category: `how_to`, `listicle`, `digest`, `keyword`, `utility`, `bad_instructions` |
-| `force_all` | boolean | `false` | Normalize all recipe names, not just lowercase/unformatted ones |
-
-### slug-repair options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Scan only — print mismatches and SQL fix statements |
-| `use_db` | boolean | `false` | Apply fixes directly via Mealie's database. Required for writing — the API cannot update these recipes |
-
-### ingredient-parse options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `max_recipes` | integer | *(unset)* | Limit parsing to at most N recipes. Leave blank to parse all candidates |
-| `no_cache` | boolean | `false` | Ignore the scan cache and reprocess all unparsed recipes |
-| `confidence_threshold` | integer | `80` | Minimum NLP confidence % (0–100); results below this fall back to AI parsing |
-
-### yield-normalize options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `use_db` | boolean | `false` | Write changes in a single DB transaction instead of per-recipe API calls; requires `MEALIE_DB_TYPE` |
-
-### cleanup-duplicates options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `target` | string | `both` | Which table to deduplicate: `both`, `foods`, `units` |
-
-### tag-categorize options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `method` | string | `both` | Classification method: `both` (rules then AI, recommended), `rules` (regex only, no LLM), or `ai` (LLM only) |
-| `recat` | boolean | `false` | Re-process every recipe, even those that already have categories/tags/tools assigned (AI/Both modes) |
-| `provider` | string | *(configured default)* | Override AI provider (AI method only) |
-| `use_db` | boolean | `false` | Match ingredients via direct DB queries (rule-based method only); requires `MEALIE_DB_TYPE` |
-
-### taxonomy-refresh options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-| `sync_labels` | boolean | `true` | Create missing labels and remove unlisted ones |
-| `sync_tools` | boolean | `true` | Create new tools and merge duplicates |
-| `mode` | string | `merge` | `merge` keeps existing entries; `replace` overwrites to match source files exactly |
-| `cleanup_apply` | boolean | `false` | Permanently delete categories/tags not referenced by any recipe (dangerous) |
-
-### cookbook-sync options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview changes without writing anything |
-
-### reimport-recipes options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `dry_run` | boolean | `true` | Preview which recipes would be reimported |
-| `max_recipes` | integer | *(unset)* | Limit reimport to at most N recipes. Leave blank for all |
-| `workers` | integer | `2` | Concurrent scrape workers (1–4). More is faster but heavier on Mealie |
-| `delay` | number | `0.5` | Seconds between requests per worker |
-| `resume` | boolean | `false` | Skip recipes already reimported in the previous run |
-| `slugs` | string | *(unset)* | Comma-separated list of recipe slugs to reimport. Leave blank for all eligible recipes |
-
-### health-check options
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `scope_quality` | boolean | `true` | Score all recipes on completeness: categories, tags, tools, ingredients, cook time, yield, nutrition |
-| `scope_taxonomy` | boolean | `true` | Scan for unused taxonomy entries, duplicate names, and recipes missing categories or tags |
-| `use_db` | boolean | `false` | Fetch all recipe data in one query — faster and gives exact nutrition coverage; requires `MEALIE_DB_TYPE` |
-| `nutrition_sample` | integer | `200` | Recipes sampled for nutrition coverage estimate (API mode only, quality scope only) |
-
-The `use_db` option requires the `db` extras (`pip install 'cookdex[db]'`) and DB credentials in `.env`. See [Direct DB Access](DIRECT_DB.md) for setup.
-
-## Environment Variable Management
-
-Runtime values are managed in the Web UI through `GET/PUT /settings`.
-
-- Non-secret keys are stored in app settings.
-- Secret keys are encrypted at rest.
-- Task executions consume the effective runtime environment built from these values.
-
-## Safety Policies
-
-Dangerous options are blocked by default and unlocked per task via `PUT /policies`.
+- `GET /debug-log`

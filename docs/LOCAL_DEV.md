@@ -4,9 +4,9 @@ Run the web UI locally without building a Docker image. This starts the Python b
 
 ## Prerequisites
 
-- Python 3.11+ with the repo installed (`pip install -e .`)
+- Python 3.9+ with the repo installed (`pip install -e .`)
 - Node 18+ (for frontend builds)
-- A `.env` file in the repo root (copy from `.env.example`)
+- Optional: a `.env` file in the repo root (copy from `.env.example` if you want local overrides)
 
 ## 1. Install dependencies (one-time)
 
@@ -23,9 +23,11 @@ cd web && npm run build && cd ..
 
 The backend serves files from `web/dist/` automatically when the directory exists.
 
-## 3. Set minimal env vars
+## 3. Optional local env vars
 
-Your `.env` needs at least these for the UI to start. For local testing without a real Mealie instance, use placeholder values:
+The UI can start without a `.env` file. It will show the setup screen and auto-generate a local encryption key.
+
+For local testing with a pre-created admin account and placeholder Mealie connection, use:
 
 ```bash
 # .env
@@ -75,7 +77,7 @@ python -m cookdex.webui_server.main
 cd web && npm run dev
 ```
 
-Then open the Vite URL (usually `http://localhost:5173`). You'll need to add a proxy config to `web/vite.config.js` for API calls to reach the backend:
+Then open the Vite URL (usually `http://localhost:5173`). If you need API calls to go through the Vite dev server, add a local proxy config to `web/vite.config.js`:
 
 ```js
 // web/vite.config.js
@@ -113,7 +115,7 @@ This requires Playwright browsers to be installed (`cd web && npx playwright ins
 
 | Problem | Fix |
 |---|---|
-| `MO_WEBUI_MASTER_KEY is required` | Set it in `.env` |
+| Weak master key warning | Set a stronger `MO_WEBUI_MASTER_KEY` in `.env`, or let CookDex auto-generate one |
 | 401 on login (cookie not sticking) | Set `WEB_COOKIE_SECURE=false` in `.env` |
 | UI shows "build missing" | Run `cd web && npm run build` |
 | Port already in use | Set `WEB_BIND_PORT=4821` in `.env` |

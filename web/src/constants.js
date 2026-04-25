@@ -66,8 +66,8 @@ export const HELP_SETUP_GUIDES = [
       "Your Mealie URL is the address you use to open Mealie in a browser, followed by /api. For example: http://192.168.1.50:9925/api or http://mealie:9000/api (if CookDex and Mealie share a Docker network).",
       "Log into Mealie and click your user icon in the top-right corner.",
       "Open your user profile or account settings page.",
-      "Scroll to API Tokens and click Create.",
-      "Give the token a name (e.g. 'cookdex') and click Generate.",
+      "Find API Tokens and create a new token for CookDex.",
+      "Give the token a clear name, such as cookdex, and generate it.",
       "Copy the token immediately \u2014 Mealie only shows it once.",
       "Paste both values into CookDex Settings under the Connection group, then click Test Mealie to verify.",
     ],
@@ -84,9 +84,10 @@ export const HELP_SETUP_GUIDES = [
       "Click Create new secret key, give it a name, and click Create.",
       "Copy the key immediately \u2014 OpenAI only shows it once.",
       "In CookDex Settings, paste the key into the OpenAI API Key field under the AI group.",
+      "Choose an OpenAI model or keep the default.",
       "Click Test OpenAI to verify it works.",
     ],
-    tip: "OpenAI charges per API call. The default model (gpt-4o-mini) is inexpensive \u2014 categorizing 1,000 recipes typically costs under $0.50.",
+    tip: "OpenAI billing and quota must be active for live requests. Use dry runs and small batches when trying a new model.",
   },
   {
     id: "anthropic-api-key",
@@ -100,9 +101,10 @@ export const HELP_SETUP_GUIDES = [
       "Copy the key immediately \u2014 Anthropic only shows it once.",
       "In CookDex Settings, set AI Provider to Anthropic.",
       "Paste the key into the Anthropic API Key field under the AI group.",
+      "Choose an Anthropic model before testing the connection.",
       "Click Test Anthropic to verify it works.",
     ],
-    tip: "Anthropic charges per API call. Choose a cost-effective Anthropic model for categorization.",
+    tip: "Anthropic billing and quota must be active for live requests. Rule-based categorization still works without any AI key.",
   },
   {
     id: "direct-db-quick-setup",
@@ -112,9 +114,9 @@ export const HELP_SETUP_GUIDES = [
     steps: [
       "SSH into the machine running CookDex (your Docker host).",
       "Run the setup wizard: docker cp cookdex:/app/scripts/setup-db-tunnel.sh /tmp/setup-db-tunnel.sh && bash /tmp/setup-db-tunnel.sh",
-      "The wizard will ask for your Mealie host IP and SSH user, generate a key, copy it, enable the volume mount, and restart the container.",
-      "Once complete, open CookDex Settings and expand Direct DB. Set SSH Tunnel Host and SSH Tunnel User to the values the wizard printed. Click Apply Changes.",
-      "Click Auto-detect DB in the Connection Tests sidebar \u2014 CookDex will SSH in and fill in all DB credentials automatically.",
+      "The wizard will ask for your Mealie host IP and SSH user, generate a key, copy it, enable the volume mount, save SSH settings when possible, and restart the container.",
+      "Once complete, open CookDex Settings and confirm the Direct DB SSH fields are filled in. If the wizard could not save them, enter the printed values manually and click Apply Changes.",
+      "Click Auto-detect DB in the Connection Tests sidebar. CookDex will SSH in and fill in Postgres credentials automatically when it can find them.",
       "Review the populated fields, click Apply Changes again, then click Test DB to confirm.",
     ],
     tip: "The wizard only needs to run once. After that, CookDex opens and closes the SSH tunnel automatically for each task run.",
@@ -131,7 +133,7 @@ export const HELP_SETUP_GUIDES = [
       "If Postgres is only reachable via SSH, also fill in SSH Tunnel Host, SSH User, and SSH Key Path (see the Quick Path guide for key setup).",
       "Click Apply Changes, then Test DB to verify the connection.",
     ],
-    tip: "For Mealie Docker installs using SQLite instead of Postgres, set DB Type to sqlite. No SSH tunnel or credentials needed \u2014 just the path to mealie.db.",
+    tip: "SQLite Direct DB is advanced and path-based. Set MEALIE_SQLITE_PATH in .env and mount the Mealie database file into the CookDex container before using DB Type = sqlite.",
   },
 ];
 
@@ -146,7 +148,7 @@ export const HELP_FAQ = [
     question: "Why did my JSON import skip values?",
     icon: "upload",
     answer:
-      "Import replaces the selected taxonomy file with your JSON payload. If entries are malformed or duplicated the server will silently drop them. Validate your JSON and check the run log for details.",
+      "Import replaces the selected taxonomy file with your JSON payload. Malformed or duplicated entries may be rejected or omitted during validation. Validate the draft and check the validation messages before publishing.",
   },
   {
     question: "How do permissions work for team members?",
@@ -158,7 +160,7 @@ export const HELP_FAQ = [
     question: "How do I schedule recurring tasks?",
     icon: "calendar",
     answer:
-      "Open the Tasks page, pick a task, choose an interval or one-time run, and save. Scheduled runs appear in the activity table alongside manual runs.",
+      "Open the Tasks page, pick a task, switch to Schedule mode, choose an interval or one-time run, and save. Scheduled runs appear in the activity table alongside manual runs.",
   },
   {
     question: "Can I tag recipes without an AI provider?",
@@ -170,7 +172,7 @@ export const HELP_FAQ = [
     question: "What does 'Use Direct DB' do?",
     icon: "database",
     answer:
-      "Tasks with a Use Direct DB option bypass the Mealie HTTP API and read or write the database directly. This is much faster for large libraries and unlocks ingredient-level matching for tag-categorize. Configure MEALIE_DB_TYPE and credentials in Settings under the Direct DB group. An SSH tunnel is available if Postgres is not directly reachable.",
+      "Tasks with a Use Direct DB option can bypass parts of the Mealie HTTP API and read or write the database directly. This is faster for large libraries, unlocks ingredient/tool matching for tag-categorize, and enables slug repair. Configure Direct DB in Settings; an SSH tunnel is available if Postgres is not directly reachable.",
   },
 ];
 
@@ -180,7 +182,7 @@ export const HELP_TROUBLESHOOTING = [
     icon: "shield",
     items: [
       "Verify MEALIE_URL and MEALIE_API_KEY are correct in Settings.",
-      "Use the Test Connection button to confirm the backend can reach Mealie.",
+      "Use Test Mealie to confirm the backend can reach Mealie.",
       "If login fails, check that WEB_COOKIE_SECURE matches your protocol (false for HTTP).",
     ],
   },
@@ -199,7 +201,7 @@ export const HELP_TROUBLESHOOTING = [
     items: [
       "Click any row in the run history table to load its log output.",
       "Cancelled runs stop at the next safe checkpoint, not immediately.",
-      "Scheduled runs use the server clock \u2014 cron expressions follow UTC unless configured otherwise.",
+      "Schedules support interval and once runs. Date/time values are stored and executed in UTC.",
     ],
   },
   {
@@ -207,8 +209,9 @@ export const HELP_TROUBLESHOOTING = [
     icon: "database",
     items: [
       "Use Auto-detect DB in Connection Tests to discover credentials automatically via SSH \u2014 no manual entry needed.",
-      "If auto-detect fails, set DB Type to 'postgres' or 'sqlite' in Settings and enter credentials manually.",
+      "If auto-detect fails for Postgres, set DB Type to 'postgres' in Settings and enter credentials manually.",
       "The SSH key must be mounted into the Docker container \u2014 host paths like ~/.ssh/ are not visible inside Docker. Use the container path (e.g. /app/.ssh/cookdex_mealie).",
+      "For SQLite, set MEALIE_SQLITE_PATH in .env and mount the Mealie database file into the CookDex container.",
       "Run health-check with Use Direct DB enabled as a smoke test \u2014 it only reads data and reports results without making changes.",
     ],
   },
@@ -235,10 +238,10 @@ export const HELP_TASK_GUIDES = [
     title: "Data Maintenance Pipeline",
     icon: "database",
     group: "Data Pipeline",
-    what: "Runs the full cleanup pipeline end-to-end in a fixed stage order: dedup \u2192 junk filter \u2192 name normalize \u2192 ingredient parse \u2192 foods and units cleanup \u2192 labels and tools sync \u2192 taxonomy refresh \u2192 AI categorize \u2192 cookbook sync \u2192 yield normalize \u2192 quality audit \u2192 taxonomy audit. Select specific stages to run a targeted subset.",
+    what: "Runs the full cleanup pipeline end-to-end in a fixed stage order: dedup \u2192 junk filter \u2192 name normalize \u2192 ingredient parse \u2192 foods and units cleanup \u2192 labels and tools sync \u2192 taxonomy refresh \u2192 categorize \u2192 cookbook sync \u2192 yield normalize \u2192 quality audit \u2192 taxonomy audit. Select specific stages to run a targeted subset.",
     steps: [
       "Run with Dry Run enabled (the default) and review the log \u2014 no data is changed.",
-      "Set the AI Provider dropdown if you want to force ChatGPT or Ollama for this run.",
+      "Set the AI Provider dropdown if you want to force ChatGPT, Anthropic, or Ollama for this run.",
       "Enable Apply Cleanup Writes to allow deduplication and cleanup stages to write changes, then re-run.",
       "Use Continue on Error to keep remaining stages running even if one fails.",
     ],
@@ -331,11 +334,12 @@ export const HELP_TASK_GUIDES = [
     title: "Tag and Categorize Recipes",
     icon: "tag",
     group: "Organizers",
-    what: "Assigns categories, tags, and kitchen tools to recipes. Both mode runs fast rule-matching first then AI to fill gaps. Rules Only works without any AI provider. AI Only skips rules and sends everything to your LLM.",
+    what: "Assigns categories, tags, and kitchen tools to recipes. Both mode runs fast rule-matching first then AI to fill gaps. Rules Only works without any AI provider. AI Only skips rules and sends everything to your configured AI provider.",
     steps: [
       "Start with Method = Both (recommended) and Dry Run on to preview what each layer matches.",
       "Rules Only is free and instant \u2014 patterns are derived automatically from your taxonomy item names.",
       "Enable Use Direct DB to unlock ingredient and tool-detection matching in addition to text rules.",
+      "Keep Missing Target Handling set to Skip unless you want rules to create missing taxonomy entries automatically.",
       "Override AI Provider for this run, or leave blank to use your configured default.",
     ],
     tip: "Both mode gives the best coverage: rules handle obvious name matches for free, then AI catches everything else.",
