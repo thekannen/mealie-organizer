@@ -16,9 +16,13 @@ All notable changes to CookDex are documented here.
 - **Web UI QA smoke** — The local smoke test keeps the backup retention default intact when exercising the task options flow.
 - **Ollama settings test** — Invalid Ollama URLs now return a validation failure instead of raising from the settings API.
 - **Ollama categorizer recovery** — JSON recovery handles Ollama-style responses more reliably.
+- **Favicon safe area** — Browser, PWA, and app icons were regenerated with safer padding so the CookDex mark is no longer clipped.
 
 ### Changed
 - **Local-first UI loading** — Tasks, activity, schedules, settings, config, users, quality, about, and health data now load before slower live Mealie overview metrics refresh in the background.
+- **Dashboard and task activity polish** — The Overview page now uses the refreshed dashboard treatment, and task rows include clearer log access that scrolls directly to the selected run output.
+- **Ollama categorizer progress visibility** — Long-running local model categorization now reports progress more clearly, with additional Ollama tuning settings for context, output size, and batch size.
+- **Documentation refresh** — The README is now onboarding-focused, technical docs and in-app Help Center content were checked against current behavior, and static documentation accuracy tests were added.
 - **Web dependency refresh** — PostCSS was updated through the Dependabot npm group.
 
 ## [2026.4.1] - 2026-04-07
