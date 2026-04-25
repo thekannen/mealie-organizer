@@ -7,14 +7,19 @@ All notable changes to CookDex are documented here.
 ### Security
 - **Dredger SSRF protection** — Sitemap URLs, recipe candidates, and redirect targets are now validated before crawler and verifier requests, blocking private, link-local, metadata, and non-HTTP targets.
 - **Forced password reset enforcement** — Password changes revoke existing sessions for the target user, and accounts with pending forced resets are blocked from non-reset endpoints server-side.
+- **Ollama validation detail hardening** — Settings connection tests now return a generic validation failure instead of exposing hostname resolution or validation exception details.
 
 ### Fixed
 - **Dredger dry-run isolation** — Preview runs no longer persist imported, rejected, or retry state, preventing dry runs from causing later live imports to skip recipes.
 - **Backup pruning safety** — Backup pruning now requires dangerous-task approval and validates retention with `keep >= 1`.
 - **Release helper** — `scripts/release.sh` now works when run without optional bump arguments.
+- **Web UI QA smoke** — The local smoke test keeps the backup retention default intact when exercising the task options flow.
+- **Ollama settings test** — Invalid Ollama URLs now return a validation failure instead of raising from the settings API.
+- **Ollama categorizer recovery** — JSON recovery handles Ollama-style responses more reliably.
 
 ### Changed
 - **Local-first UI loading** — Tasks, activity, schedules, settings, config, users, quality, about, and health data now load before slower live Mealie overview metrics refresh in the background.
+- **Web dependency refresh** — PostCSS was updated through the Dependabot npm group.
 
 ## [2026.4.1] - 2026-04-07
 
