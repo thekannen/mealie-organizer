@@ -103,9 +103,17 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
         key="OLLAMA_NUM_PREDICT",
         label="Ollama Max Output Tokens",
         group="AI",
-        default="1024",
+        default="4096",
         secret=False,
         description="Maximum tokens the model can generate per request. Too low truncates JSON responses.",
+    ),
+    EnvVarSpec(
+        key="OLLAMA_BATCH_SIZE",
+        label="Ollama Batch Size",
+        group="AI",
+        default="10",
+        secret=False,
+        description="Recipes per Ollama categorizer request. Smaller batches reduce local model JSON truncation.",
     ),
     EnvVarSpec(
         key="TAXONOMY_REFRESH_MODE",

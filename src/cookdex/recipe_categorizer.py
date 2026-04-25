@@ -40,7 +40,13 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 50, int), "categorizer.batch_size")
+DEFAULT_BATCH_SIZE = 50
+OLLAMA_DEFAULT_BATCH_SIZE = 10
+
+BATCH_SIZE: int = require_int(
+    env_or_config("BATCH_SIZE", "categorizer.batch_size", DEFAULT_BATCH_SIZE, int),
+    "categorizer.batch_size",
+)
 MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 1, int), "categorizer.max_workers")
 INTER_REQUEST_DELAY: float = require_float(
     env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 3.0, float),
@@ -104,6 +110,21 @@ def cache_file_for_provider(provider: str) -> str:
     return require_str(
         env_or_config("CACHE_FILE", f"categorizer.cache_files.{provider}", f"cache/results_{provider}.json"),
         f"categorizer.cache_files.{provider}",
+    )
+
+
+def batch_size_for_provider(provider: str) -> int:
+    if provider == "ollama":
+        ollama_batch_size = env_or_config("OLLAMA_BATCH_SIZE", "providers.ollama.batch_size", None, int)
+        if ollama_batch_size is not None:
+            return require_int(ollama_batch_size, "providers.ollama.batch_size")
+        return require_int(
+            env_or_config("BATCH_SIZE", "categorizer.batch_size", OLLAMA_DEFAULT_BATCH_SIZE, int),
+            "categorizer.batch_size",
+        )
+    return require_int(
+        env_or_config("BATCH_SIZE", "categorizer.batch_size", DEFAULT_BATCH_SIZE, int),
+        "categorizer.batch_size",
     )
 
 
@@ -498,7 +519,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.ollama.options.temperature",
         ),
         "num_predict": require_int(
-            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 1024, int),
+            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 4096, int),
             "providers.ollama.options.num_predict",
         ),
         "top_p": require_float(
@@ -530,7 +551,7 @@ def main(forced_provider: str | None = None) -> None:
     categorizer = MealieCategorizer(
         mealie_url=mealie_url,
         mealie_api_key=mealie_api_key,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size_for_provider(provider),
         max_workers=MAX_WORKERS,
         replace_existing=args.recat,
         cache_file=cache_file_for_provider(provider),

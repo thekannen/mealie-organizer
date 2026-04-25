@@ -3,6 +3,7 @@ import types
 import pytest
 
 from cookdex.categorizer_core import ProviderUnavailableError
+from cookdex import recipe_categorizer
 from cookdex.recipe_categorizer import cache_file_for_provider, derive_target_mode, query_chatgpt, resolve_provider
 
 
@@ -62,6 +63,40 @@ def test_query_chatgpt_auth_error_fails_fast(monkeypatch):
         )
 
     assert len(calls) == 1
+
+
+def test_ollama_uses_smaller_default_batch_size(monkeypatch):
+    monkeypatch.delenv("BATCH_SIZE", raising=False)
+    monkeypatch.delenv("OLLAMA_BATCH_SIZE", raising=False)
+
+    assert recipe_categorizer.batch_size_for_provider("ollama") == 10
+    assert recipe_categorizer.batch_size_for_provider("chatgpt") == 50
+
+
+def test_ollama_specific_batch_size_overrides_default(monkeypatch):
+    monkeypatch.delenv("BATCH_SIZE", raising=False)
+    monkeypatch.setenv("OLLAMA_BATCH_SIZE", "4")
+
+    assert recipe_categorizer.batch_size_for_provider("ollama") == 4
+
+
+def test_ollama_uses_larger_default_num_predict(monkeypatch):
+    captured = {}
+
+    def fake_query_ollama(prompt_text, model, url, request_timeout, http_retries, options):
+        captured.update(options)
+        return "[]"
+
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b")
+    monkeypatch.delenv("OLLAMA_NUM_PREDICT", raising=False)
+    monkeypatch.setattr(recipe_categorizer, "query_ollama", fake_query_ollama)
+
+    query_text, provider_name = recipe_categorizer.build_provider_query("ollama")
+    assert provider_name == "Ollama (llama3.1:8b)"
+
+    query_text("prompt")
+
+    assert captured["num_predict"] == 4096
 
 
 def test_derive_target_mode():
