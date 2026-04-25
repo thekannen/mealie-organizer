@@ -91,6 +91,14 @@ def parse_json_response(result_text):
         if result is not None:
             return result
 
+    # Ollama can stop mid-object when num_predict is too low. Preserve any
+    # complete top-level array entries so batch fallback can re-query the rest.
+    salvaged = _salvage_complete_array_prefix(fixed)
+    if salvaged is not None:
+        result = _parse_stage(salvaged)
+        if result is not None:
+            return result
+
     return None
 
 
@@ -221,6 +229,57 @@ def _repair_truncated_json(text):
 
     base = base.rstrip().rstrip(",")
     return base + "".join(reversed(stack))
+
+
+def _salvage_complete_array_prefix(text):
+    """Return a JSON array containing complete top-level items before truncation."""
+    if not text:
+        return None
+
+    start = text.find("[")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+    last_item_end = None
+
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+
+        if ch in ("[", "{"):
+            depth += 1
+            continue
+        if ch == "}":
+            if depth <= 0:
+                return None
+            depth -= 1
+            if depth == 1:
+                last_item_end = i + 1
+            continue
+        if ch == "]":
+            if depth == 1:
+                return None
+            if depth <= 0:
+                return None
+            depth -= 1
+
+    if last_item_end is None:
+        return None
+
+    return text[start:last_item_end].rstrip().rstrip(",") + "]"
 
 
 class MealieCategorizer:
@@ -857,6 +916,7 @@ Recipes:
         self,
         batch,
         parsed,
+        category_names,
         tag_names,
         tool_names,
         categories_by_name,
@@ -889,7 +949,15 @@ Recipes:
         if missing:
             self.log(f"[warn] Model returned no data for: {', '.join(missing)}")
             self.increment_stat("model_missing_entry_count", len(missing))
-            self.advance_progress(len(missing))
+            self.process_batch_with_fallback(
+                [recipes_by_slug[slug] for slug in missing],
+                category_names,
+                tag_names,
+                tool_names,
+                categories_by_name,
+                tags_by_name,
+                tools_by_name,
+            )
 
     def classify_single_recipe_with_fallback(self, recipe, category_names, tag_names, tool_names):
         slug = (recipe.get("slug") or "").strip()
@@ -1041,6 +1109,7 @@ Recipes:
         self.apply_parsed_entries_to_batch(
             batch,
             parsed,
+            category_names,
             tag_names,
             tool_names,
             categories_by_name,
