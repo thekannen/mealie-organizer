@@ -41,7 +41,11 @@ def require_float(value: object, field: str) -> float:
 
 
 DEFAULT_BATCH_SIZE = 50
-OLLAMA_DEFAULT_BATCH_SIZE = 10
+OLLAMA_DEFAULT_BATCH_SIZE = 1
+OLLAMA_DEFAULT_REQUEST_TIMEOUT = 300
+OLLAMA_DEFAULT_NUM_CTX = 2048
+OLLAMA_DEFAULT_NUM_PREDICT = 512
+OLLAMA_DEFAULT_NUM_THREAD = 4
 
 BATCH_SIZE: int = require_int(
     env_or_config("BATCH_SIZE", "categorizer.batch_size", DEFAULT_BATCH_SIZE, int),
@@ -499,7 +503,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
         "providers.ollama.url",
     )
     request_timeout = require_int(
-        env_or_config("OLLAMA_REQUEST_TIMEOUT", "providers.ollama.request_timeout", 180, int),
+        env_or_config("OLLAMA_REQUEST_TIMEOUT", "providers.ollama.request_timeout", OLLAMA_DEFAULT_REQUEST_TIMEOUT, int),
         "providers.ollama.request_timeout",
     )
     http_retries = max(
@@ -511,7 +515,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
     )
     options = {
         "num_ctx": require_int(
-            env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", 4096, int),
+            env_or_config("OLLAMA_NUM_CTX", "providers.ollama.options.num_ctx", OLLAMA_DEFAULT_NUM_CTX, int),
             "providers.ollama.options.num_ctx",
         ),
         "temperature": require_float(
@@ -519,7 +523,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.ollama.options.temperature",
         ),
         "num_predict": require_int(
-            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 4096, int),
+            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", OLLAMA_DEFAULT_NUM_PREDICT, int),
             "providers.ollama.options.num_predict",
         ),
         "top_p": require_float(
@@ -527,7 +531,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.ollama.options.top_p",
         ),
         "num_thread": require_int(
-            env_or_config("OLLAMA_NUM_THREAD", "providers.ollama.options.num_thread", 8, int),
+            env_or_config("OLLAMA_NUM_THREAD", "providers.ollama.options.num_thread", OLLAMA_DEFAULT_NUM_THREAD, int),
             "providers.ollama.options.num_thread",
         ),
     }

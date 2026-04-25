@@ -298,6 +298,7 @@ class MealieCategorizer:
         tag_min_usage=0,
         dry_run=False,
         inter_request_delay=0.0,
+        provider_heartbeat_seconds=None,
     ):
         self.mealie_url = mealie_url.rstrip("/")
         self.batch_size = batch_size
@@ -311,6 +312,17 @@ class MealieCategorizer:
         self.tag_min_usage = tag_min_usage
         self.dry_run = dry_run
         self.inter_request_delay = inter_request_delay
+        if provider_heartbeat_seconds is None:
+            provider_heartbeat_seconds = env_or_config(
+                "AI_BATCH_HEARTBEAT_SECONDS",
+                "categorizer.provider_heartbeat_seconds",
+                30,
+                float,
+            )
+        self.provider_heartbeat_seconds = max(
+            0.0,
+            require_float(provider_heartbeat_seconds, "categorizer.provider_heartbeat_seconds"),
+        )
         self.query_retries = max(
             1,
             require_int(
@@ -468,6 +480,57 @@ class MealieCategorizer:
         remaining = (max(total - done, 0) / rate) if rate else float("inf")
         eta = f"{(remaining / 60):.1f} min" if rate else "inf min"
         return f"[info] {done}/{total} ({rate:.2f}/s) ETA: {eta}"
+
+    @staticmethod
+    def _format_wait_duration(seconds):
+        seconds = max(0.0, seconds)
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs:02d}s"
+
+    def _provider_label(self):
+        name = str(self.provider_name or "").strip()
+        return name.split(" (", 1)[0] if name else "AI provider"
+
+    @staticmethod
+    def _batch_label(batch_number=None, batch_total=None):
+        if batch_number is not None and batch_total is not None:
+            return f"Batch {batch_number}/{batch_total}"
+        return "Batch"
+
+    def _start_provider_heartbeat(self, batch_label, recipe_count, started_at):
+        if self.provider_heartbeat_seconds <= 0:
+            return None, None
+
+        stop_event = threading.Event()
+        provider = self._provider_label()
+        if provider.lower() == "ollama":
+            wait_note = "This is normal for local Ollama batches; progress updates when this batch returns."
+        else:
+            wait_note = "The provider request is still in flight; progress updates when this batch returns."
+
+        def report_waiting():
+            while not stop_event.wait(self.provider_heartbeat_seconds):
+                elapsed = self._format_wait_duration(time.time() - started_at)
+                done, total, _ = self.progress_snapshot()
+                self.log(
+                    f"[info] {batch_label} still waiting on {provider} after {elapsed}; "
+                    f"{recipe_count} recipe(s) in flight; completed {done}/{total}. "
+                    f"{wait_note}"
+                )
+
+        thread = threading.Thread(target=report_waiting, daemon=True)
+        thread.start()
+        return stop_event, thread
+
+    @staticmethod
+    def _stop_provider_heartbeat(stop_event, thread):
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join(timeout=1)
 
     def eta_reporter(self):
         last_done = -1
@@ -1045,7 +1108,18 @@ Recipes:
                 tools_by_name,
             )
 
-    def process_batch(self, batch, category_names, tag_names, tool_names, categories_by_name, tags_by_name, tools_by_name):
+    def process_batch(
+        self,
+        batch,
+        category_names,
+        tag_names,
+        tool_names,
+        categories_by_name,
+        tags_by_name,
+        tools_by_name,
+        batch_number=None,
+        batch_total=None,
+    ):
         if not batch or self._provider_unavailable:
             return
 
@@ -1074,13 +1148,31 @@ Recipes:
             if not batch:
                 return
 
+        batch_label = self._batch_label(batch_number, batch_total)
+        provider = self._provider_label()
+        started_at = time.time()
+        self.log(
+            f"[info] {batch_label} started: sending {len(batch)} recipe(s) to {provider}; "
+            "completed progress updates when this batch returns."
+        )
+        heartbeat_stop, heartbeat_thread = self._start_provider_heartbeat(batch_label, len(batch), started_at)
+        provider_error = None
         try:
             parsed = self.safe_query_with_retry(self.make_prompt(batch, category_names, tag_names, tool_names))
         except ProviderUnavailableError as exc:
+            provider_error = exc
+            parsed = None
+        finally:
+            self._stop_provider_heartbeat(heartbeat_stop, heartbeat_thread)
+        if provider_error is not None:
             self._provider_unavailable = True
-            self.log(f"[error] Provider unavailable — aborting: {exc}")
+            self.log(f"[error] Provider unavailable — aborting: {provider_error}")
             self.advance_progress(len(batch))
             return
+        self.log(
+            f"[info] {batch_label} finished waiting on {provider} after "
+            f"{self._format_wait_duration(time.time() - started_at)}; processing response."
+        )
 
         if not isinstance(parsed, list):
             self._consecutive_failures += 1
@@ -1172,8 +1264,10 @@ Recipes:
                     categories_by_name,
                     tags_by_name,
                     tools_by_name,
+                    batch_number=index,
+                    batch_total=len(batches),
                 )
-                for batch in batches
+                for index, batch in enumerate(batches, start=1)
             ]
             for future in as_completed(futures):
                 try:

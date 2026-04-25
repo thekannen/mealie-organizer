@@ -1,3 +1,5 @@
+import threading
+
 from cookdex.categorizer_core import MealieCategorizer, parse_json_response
 
 
@@ -129,6 +131,59 @@ def test_parse_json_response_nested_brackets_in_values():
     parsed = parse_json_response(raw)
     assert isinstance(parsed, list)
     assert parsed[0]["note"] == "uses [brackets] in text"
+
+
+def test_process_batch_logs_provider_heartbeat_for_long_ollama_batch(monkeypatch, tmp_path, capsys):
+    release_query = threading.Event()
+    heartbeat_seen = threading.Event()
+
+    def fake_query(_prompt):
+        assert heartbeat_seen.wait(timeout=1), "heartbeat did not log while provider request was in flight"
+        release_query.set()
+        return '[{"slug":"slow-recipe","categories":["Dinner"],"tags":["Weeknight"],"tools":[]}]'
+
+    categorizer = MealieCategorizer(
+        mealie_url="http://example/api",
+        mealie_api_key="token",
+        batch_size=1,
+        max_workers=1,
+        replace_existing=False,
+        cache_file=tmp_path / "cache.json",
+        query_text=fake_query,
+        provider_name="Ollama (gemma3:4b)",
+        dry_run=True,
+        provider_heartbeat_seconds=0.01,
+    )
+
+    original_log = categorizer.log
+
+    def tracking_log(message):
+        if "still waiting on Ollama" in message and "progress updates when this batch returns" in message:
+            heartbeat_seen.set()
+        original_log(message)
+
+    monkeypatch.setattr(categorizer, "log", tracking_log)
+
+    categorizer.set_progress_total(1)
+    categorizer.process_batch(
+        [{"slug": "slow-recipe", "name": "Slow Recipe", "ingredients": []}],
+        ["Dinner"],
+        ["Weeknight"],
+        [],
+        {"dinner": {"name": "Dinner"}},
+        {"weeknight": {"name": "Weeknight"}},
+        {},
+        batch_number=1,
+        batch_total=1,
+    )
+
+    out = capsys.readouterr().out
+
+    assert release_query.is_set()
+    assert "Batch 1/1 started: sending 1 recipe(s) to Ollama" in out
+    assert "still waiting on Ollama" in out
+    assert "progress updates when this batch returns" in out
+    assert "Batch 1/1 finished" in out
 
 
 def test_update_recipe_metadata_dry_run_does_not_patch(monkeypatch, tmp_path, capsys):
