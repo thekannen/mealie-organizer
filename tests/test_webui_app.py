@@ -185,7 +185,13 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
 
         settings_put = client.put(
             "/cookdex/api/v1/settings",
-            json={"env": {"MEALIE_URL": "http://example/api", "MEALIE_API_KEY": "abc123"}},
+            json={
+                "env": {
+                    "MEALIE_URL": "http://example/api",
+                    "MEALIE_API_KEY": "abc123",
+                    "MAX_RUN_DURATION_SECONDS": "43200",
+                }
+            },
             headers=_CSRF,
         )
         assert settings_put.status_code == 200
@@ -194,8 +200,16 @@ def test_webui_auth_runs_settings_and_config(tmp_path: Path, monkeypatch):
         payload = settings_get.json()
         assert payload["env"]["MEALIE_URL"]["value"] == "http://example/api"
         assert payload["env"]["MEALIE_URL"]["source"] == "ui_setting"
+        assert payload["env"]["MAX_RUN_DURATION_SECONDS"]["value"] == "43200"
         assert payload["secrets"]["MEALIE_API_KEY"] == "********"
         assert payload["env"]["MEALIE_API_KEY"]["has_value"] is True
+
+        excessive_run_duration = client.put(
+            "/cookdex/api/v1/settings",
+            json={"env": {"MAX_RUN_DURATION_SECONDS": "43201"}},
+            headers=_CSRF,
+        )
+        assert excessive_run_duration.status_code == 422
 
         unsupported_env = client.put(
             "/cookdex/api/v1/settings",

@@ -11,19 +11,31 @@ from threading import Event, Lock, Thread
 from typing import Any, Callable
 from uuid import uuid4
 
-from ..config import REPO_ROOT, env_or_config
+from ..config import REPO_ROOT
+from .env_catalog import DEFAULT_MAX_RUN_DURATION_SECONDS, MAX_RUN_DURATION_SECONDS_CAP
 from .state import StateStore, utc_now_iso
 from .tasks import TaskRegistry
 
 logger = logging.getLogger(__name__)
 
-# Default max run duration: 4 hours.  Override via MAX_RUN_DURATION_SECONDS env
-# or config key.  Individual TaskExecution objects can also carry their own limit.
-_DEFAULT_MAX_DURATION: int = int(
-    env_or_config("MAX_RUN_DURATION_SECONDS", "runner.max_run_duration_seconds", 14400, int)
-)
-
 ENVProvider = Callable[[], dict[str, str]]
+
+
+def _coerce_max_duration_seconds(value: object, default: int = DEFAULT_MAX_RUN_DURATION_SECONDS) -> int:
+    try:
+        seconds = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    if seconds <= 0:
+        return default
+    return min(seconds, MAX_RUN_DURATION_SECONDS_CAP)
+
+
+def _resolve_max_duration_seconds(runtime_env: dict[str, str], execution_max_duration: int | None) -> int:
+    configured = _coerce_max_duration_seconds(runtime_env.get("MAX_RUN_DURATION_SECONDS"))
+    if execution_max_duration is None:
+        return configured
+    return _coerce_max_duration_seconds(execution_max_duration, default=configured)
 
 
 class RunQueueManager:
@@ -289,7 +301,7 @@ class RunQueueManager:
             with self._active_lock:
                 self._active[run_id] = process
 
-            max_duration = execution.max_duration or _DEFAULT_MAX_DURATION
+            max_duration = _resolve_max_duration_seconds(env, execution.max_duration)
             timed_out = False
             try:
                 # Stream stdout in a background thread so the main thread can

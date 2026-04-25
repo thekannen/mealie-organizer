@@ -40,7 +40,13 @@ def require_float(value: object, field: str) -> float:
     raise ValueError(f"Invalid value for '{field}': expected float-like, got {type(value).__name__}")
 
 
-BATCH_SIZE: int = require_int(env_or_config("BATCH_SIZE", "categorizer.batch_size", 50, int), "categorizer.batch_size")
+DEFAULT_BATCH_SIZE = 50
+OLLAMA_DEFAULT_BATCH_SIZE = 10
+
+BATCH_SIZE: int = require_int(
+    env_or_config("BATCH_SIZE", "categorizer.batch_size", DEFAULT_BATCH_SIZE, int),
+    "categorizer.batch_size",
+)
 MAX_WORKERS: int = require_int(env_or_config("MAX_WORKERS", "categorizer.max_workers", 1, int), "categorizer.max_workers")
 INTER_REQUEST_DELAY: float = require_float(
     env_or_config("INTER_REQUEST_DELAY", "categorizer.inter_request_delay", 3.0, float),
@@ -107,7 +113,71 @@ def cache_file_for_provider(provider: str) -> str:
     )
 
 
+def batch_size_for_provider(provider: str) -> int:
+    if provider == "ollama":
+        ollama_batch_size = env_or_config("OLLAMA_BATCH_SIZE", "providers.ollama.batch_size", None, int)
+        if ollama_batch_size is not None:
+            return require_int(ollama_batch_size, "providers.ollama.batch_size")
+        return require_int(
+            env_or_config("BATCH_SIZE", "categorizer.batch_size", OLLAMA_DEFAULT_BATCH_SIZE, int),
+            "categorizer.batch_size",
+        )
+    return require_int(
+        env_or_config("BATCH_SIZE", "categorizer.batch_size", DEFAULT_BATCH_SIZE, int),
+        "categorizer.batch_size",
+    )
+
+
 _MAX_RATE_LIMIT_RETRIES = 5
+
+
+def _http_error_detail(response) -> str:
+    def normalize(value: object) -> str:
+        return " ".join(str(value).split())[:300]
+
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        payload = None
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if message:
+                return normalize(message)
+        if isinstance(error, str):
+            return normalize(error)
+        message = payload.get("message")
+        if message:
+            return normalize(message)
+
+    text = (getattr(response, "text", "") or "").strip()
+    return normalize(text)
+
+
+def _raise_for_non_retryable_provider_error(provider: str, response, credential_name: str | None = None) -> None:
+    status = response.status_code
+    if status == 429 or status < 400 or status >= 500:
+        return
+
+    detail = _http_error_detail(response)
+    detail_suffix = f" Detail: {detail}" if detail else ""
+
+    if status == 401:
+        credential_hint = f" Check {credential_name}." if credential_name else " Check provider credentials."
+        raise ProviderUnavailableError(
+            f"{provider}: HTTP 401 Unauthorized from provider.{credential_hint}{detail_suffix}"
+        )
+    if status == 403:
+        raise ProviderUnavailableError(
+            f"{provider}: HTTP 403 Forbidden from provider. Check API key permissions, project access, "
+            f"and model access.{detail_suffix}"
+        )
+
+    raise ProviderUnavailableError(
+        f"{provider}: non-retryable HTTP {status} from provider. Check provider configuration.{detail_suffix}"
+    )
 
 
 def _rate_limit_wait(provider: str, response, rate_limit_hits: int) -> float:
@@ -174,6 +244,7 @@ def query_chatgpt(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("ChatGPT", response, "OPENAI_API_KEY")
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"].strip()
@@ -255,6 +326,7 @@ def query_ollama(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("Ollama", response)
             response.raise_for_status()
             data = response.json()
             return (data.get("response") or "").strip()
@@ -324,6 +396,7 @@ def query_anthropic(
                 attempt += 1
                 continue
 
+            _raise_for_non_retryable_provider_error("Anthropic", response, "ANTHROPIC_API_KEY")
             response.raise_for_status()
             data = response.json()
             content = data.get("content", [])
@@ -359,9 +432,11 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.anthropic.base_url",
         )
         model = require_str(
-            env_or_config("ANTHROPIC_MODEL", "providers.anthropic.model", "claude-haiku-4-5-20251001"),
+            env_or_config("ANTHROPIC_MODEL", "providers.anthropic.model", ""),
             "providers.anthropic.model",
-        )
+        ).strip()
+        if not model:
+            raise ValueError("providers.anthropic.model is required when provider is anthropic.")
         request_timeout = require_int(
             env_or_config("ANTHROPIC_REQUEST_TIMEOUT", "providers.anthropic.request_timeout", 120, int),
             "providers.anthropic.request_timeout",
@@ -444,7 +519,7 @@ def build_provider_query(provider: str) -> tuple[Callable[[str], str | None], st
             "providers.ollama.options.temperature",
         ),
         "num_predict": require_int(
-            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 1024, int),
+            env_or_config("OLLAMA_NUM_PREDICT", "providers.ollama.options.num_predict", 4096, int),
             "providers.ollama.options.num_predict",
         ),
         "top_p": require_float(
@@ -476,7 +551,7 @@ def main(forced_provider: str | None = None) -> None:
     categorizer = MealieCategorizer(
         mealie_url=mealie_url,
         mealie_api_key=mealie_api_key,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size_for_provider(provider),
         max_workers=MAX_WORKERS,
         replace_existing=args.recat,
         cache_file=cache_file_for_provider(provider),

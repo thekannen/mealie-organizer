@@ -21,7 +21,7 @@ from ..deps import (
     resolve_runtime_value,
     require_services,
 )
-from ..env_catalog import ENV_SPEC_BY_KEY
+from ..env_catalog import ENV_SPEC_BY_KEY, MAX_RUN_DURATION_SECONDS_CAP
 from ..schemas import (
     DbDetectRequest,
     DbTestRequest,
@@ -107,9 +107,11 @@ def _test_openai_connection(api_key: str, model: str) -> tuple[bool, str]:
 def _test_anthropic_connection(api_key: str, model: str) -> tuple[bool, str]:
     if not api_key:
         return False, "Anthropic API key is required."
+    if not model:
+        return False, "Anthropic model is required."
     endpoint = "https://api.anthropic.com/v1/messages"
     body = {
-        "model": model or "claude-haiku-4-5-20251001",
+        "model": model,
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "ping"}],
     }
@@ -182,6 +184,31 @@ def _payload_has_secret_values(payload: SettingsUpdateRequest) -> bool:
     return False
 
 
+def _validate_env_value(key_name: str, value: str) -> str:
+    if key_name != "MAX_RUN_DURATION_SECONDS":
+        return value
+
+    try:
+        seconds = int(value.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS must be a whole number of seconds.",
+        ) from exc
+
+    if seconds <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS must be greater than zero.",
+        )
+    if seconds > MAX_RUN_DURATION_SECONDS_CAP:
+        raise HTTPException(
+            status_code=422,
+            detail="MAX_RUN_DURATION_SECONDS cannot exceed 43200 seconds (12 hours).",
+        )
+    return str(seconds)
+
+
 @router.put("/settings")
 async def put_settings(
     payload: SettingsUpdateRequest,
@@ -220,10 +247,11 @@ async def put_settings(
             else:
                 services.state.delete_setting(key_name)
             continue
+        value_text = _validate_env_value(key_name, str(value))
         if spec.secret:
-            services.state.set_secret(key_name, services.cipher.encrypt(str(value)))
+            services.state.set_secret(key_name, services.cipher.encrypt(value_text))
         else:
-            services.state.set_settings({key_name: str(value)})
+            services.state.set_settings({key_name: value_text})
 
     return await get_settings(_session, services)
 
@@ -242,16 +270,6 @@ _OPENAI_RECOMMENDED = (
     "o3-mini",
     "gpt-3.5-turbo",
 )
-
-# Anthropic models suitable for recipe categorization, best value first.
-_ANTHROPIC_RECOMMENDED = (
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-5-20250514",
-    "claude-sonnet-4-20250514",
-    "claude-3-5-haiku-20241022",
-    "claude-3-5-sonnet-20241022",
-)
-
 
 def _list_openai_models(api_key: str) -> list[str]:
     if not api_key:
@@ -309,14 +327,13 @@ def _list_anthropic_models(api_key: str) -> list[str]:
         response = requests.get("https://api.anthropic.com/v1/models", headers=headers, timeout=12)
         response.raise_for_status()
         data = response.json()
-        available = {str(m.get("id", "")) for m in (data.get("data") or []) if isinstance(m, dict)}
-        result = [m for m in _ANTHROPIC_RECOMMENDED if m in available]
-        # Include any available models not in recommended list
-        extras = sorted(mid for mid in available if mid.startswith("claude-") and mid not in result)
-        return result + extras
+        return sorted(
+            str(m.get("id", ""))
+            for m in (data.get("data") or [])
+            if isinstance(m, dict) and m.get("id")
+        )
     except requests.RequestException:
-        # Fall back to recommended list without validation
-        return list(_ANTHROPIC_RECOMMENDED)
+        return []
 
 
 @router.post("/settings/models/openai")
@@ -407,7 +424,7 @@ async def test_anthropic_settings(
 ) -> dict[str, Any]:
     runtime_env = build_runtime_env(services.state, services.cipher)
     anthropic_api_key = resolve_runtime_value(runtime_env, "ANTHROPIC_API_KEY", payload.anthropic_api_key)
-    anthropic_model = resolve_runtime_value(runtime_env, "ANTHROPIC_MODEL", payload.anthropic_model) or "claude-haiku-4-5-20251001"
+    anthropic_model = resolve_runtime_value(runtime_env, "ANTHROPIC_MODEL", payload.anthropic_model)
     ok, detail = _test_anthropic_connection(anthropic_api_key, anthropic_model)
     return {"ok": ok, "detail": detail, "model": anthropic_model}
 
