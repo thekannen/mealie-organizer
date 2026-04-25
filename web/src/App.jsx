@@ -525,6 +525,9 @@ export default function App() {
 
         const nextSession = await refreshSession();
         if (nextSession) {
+          if (nextSession.force_reset) {
+            return;
+          }
           if (!loadCachedData(nextSession)) {
             await loadData(nextSession);
           }
@@ -575,10 +578,10 @@ export default function App() {
       const loginResult = await api("/auth/login", { method: "POST", body: { username, password } });
       setPassword("");
       const nextSession = await refreshSession();
-      await loadData(nextSession);
       if (loginResult?.force_reset) {
         setForcedResetPending(true);
       } else {
+        await loadData(nextSession);
         showNotice("Signed in successfully.");
       }
     } catch (exc) {
@@ -821,9 +824,11 @@ export default function App() {
         method: "POST",
         body: { password: newPass, force_reset: false },
       });
+      const nextSession = await refreshSession();
       setForcedResetPending(false);
       setForcedResetPassword("");
       setForcedResetShowPass(false);
+      await loadData(nextSession);
       showNotice("Password changed. Welcome!");
     } catch (exc) {
       handleError(exc);

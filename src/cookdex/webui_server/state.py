@@ -453,6 +453,18 @@ class StateStore:
             with self._connect() as conn:
                 conn.execute("DELETE FROM sessions WHERE token = ?;", (token,))
 
+    def delete_sessions_for_user(self, username: str, except_token: str | None = None) -> int:
+        with self._write_lock:
+            with self._connect() as conn:
+                if except_token:
+                    result = conn.execute(
+                        "DELETE FROM sessions WHERE username = ? AND token != ?;",
+                        (username, except_token),
+                    )
+                else:
+                    result = conn.execute("DELETE FROM sessions WHERE username = ?;", (username,))
+                return int(result.rowcount or 0)
+
     def purge_expired_sessions(self, now_iso: str) -> None:
         with self._write_lock:
             with self._connect() as conn:

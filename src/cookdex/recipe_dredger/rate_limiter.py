@@ -11,6 +11,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from ..url_security import request_with_url_validation
 
 _MIN_DELAY: float = 1.0  # hard floor — cannot be bypassed by config
 
@@ -58,7 +59,12 @@ class RateLimiter:
         delay = self.default_delay
         if self.respect_robots:
             try:
-                response = self._session.get(f"https://{domain}/robots.txt", timeout=5)
+                response = request_with_url_validation(
+                    self._session,
+                    "GET",
+                    f"https://{domain}/robots.txt",
+                    timeout=5,
+                )
                 if response.status_code == 200:
                     for line in response.text.splitlines():
                         if line.lower().startswith("crawl-delay:"):

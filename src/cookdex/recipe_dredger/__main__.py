@@ -50,6 +50,27 @@ def _site_label(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+def _add_imported(store: DredgerStore, url_key: str, *, dry_run: bool) -> None:
+    if not dry_run:
+        store.add_imported(url_key)
+
+
+def _add_reject(store: DredgerStore, url_key: str, reason: str, *, dry_run: bool) -> None:
+    if not dry_run:
+        store.add_reject(url_key, reason)
+
+
+def _add_retry(store: DredgerStore, url_key: str, reason: str, *, dry_run: bool, increment: bool = False) -> int:
+    if dry_run:
+        return 0
+    return store.add_retry(url_key, reason, increment=increment)
+
+
+def _remove_retry(store: DredgerStore, url_key: str, *, dry_run: bool) -> None:
+    if not dry_run:
+        store.remove_retry(url_key)
+
+
 # ---------------------------------------------------------------------------
 # Retry queue processing
 # ---------------------------------------------------------------------------
@@ -60,6 +81,7 @@ def _process_retry_queue(
     importer: ImportManager,
     rate_limiter: RateLimiter,
     max_retry_attempts: int,
+    dry_run: bool,
 ) -> int:
     pending = store.get_retry_queue()
     if not pending:
@@ -74,8 +96,8 @@ def _process_retry_queue(
         attempts = entry["attempts"]
 
         if attempts >= max_retry_attempts:
-            store.remove_retry(url_key)
-            store.add_reject(url_key, "Max retries exceeded")
+            _remove_retry(store, url_key, dry_run=dry_run)
+            _add_reject(store, url_key, "Max retries exceeded", dry_run=dry_run)
             continue
 
         rate_limiter.wait_if_needed(url)
@@ -83,29 +105,41 @@ def _process_retry_queue(
 
         if not is_recipe:
             if verify_transient:
-                new_attempts = store.add_retry(url_key, verify_error or "Transient verification failure", increment=True)
+                new_attempts = _add_retry(
+                    store,
+                    url_key,
+                    verify_error or "Transient verification failure",
+                    dry_run=dry_run,
+                    increment=True,
+                )
                 if new_attempts >= max_retry_attempts:
-                    store.remove_retry(url_key)
-                    store.add_reject(url_key, verify_error or "Max retries exceeded (verify)")
+                    _remove_retry(store, url_key, dry_run=dry_run)
+                    _add_reject(store, url_key, verify_error or "Max retries exceeded (verify)", dry_run=dry_run)
             else:
-                store.remove_retry(url_key)
-                store.add_reject(url_key, verify_error or "Verification failed")
+                _remove_retry(store, url_key, dry_run=dry_run)
+                _add_reject(store, url_key, verify_error or "Verification failed", dry_run=dry_run)
             continue
 
         imported, import_error, import_transient = importer.import_recipe(url)
         if imported:
-            store.add_imported(url_key)
+            _add_imported(store, url_key, dry_run=dry_run)
             retried += 1
             continue
 
         if import_transient:
-            new_attempts = store.add_retry(url_key, import_error or "Transient import failure", increment=True)
+            new_attempts = _add_retry(
+                store,
+                url_key,
+                import_error or "Transient import failure",
+                dry_run=dry_run,
+                increment=True,
+            )
             if new_attempts >= max_retry_attempts:
-                store.remove_retry(url_key)
-                store.add_reject(url_key, import_error or "Max retries exceeded (import)")
+                _remove_retry(store, url_key, dry_run=dry_run)
+                _add_reject(store, url_key, import_error or "Max retries exceeded (import)", dry_run=dry_run)
         else:
-            store.remove_retry(url_key)
-            store.add_reject(url_key, import_error or "Import failed")
+            _remove_retry(store, url_key, dry_run=dry_run)
+            _add_reject(store, url_key, import_error or "Import failed", dry_run=dry_run)
 
     return retried
 
@@ -174,7 +208,7 @@ def run(args: argparse.Namespace) -> int:
     _log("start", f"Recipe Dredger — {mode_label}, {len(sites_list)} sites, limit {target_count}/site, lang={lang_label}")
 
     # Process retry queue first
-    retried = _process_retry_queue(store, verifier, importer, rate_limiter, max_retry_attempts)
+    retried = _process_retry_queue(store, verifier, importer, rate_limiter, max_retry_attempts, dry_run)
     if retried:
         _log("ok", f"Retry queue: {retried} recovered")
 
@@ -233,7 +267,7 @@ def run(args: argparse.Namespace) -> int:
                         imported, import_error, import_transient = False, str(exc), False
 
                     if imported:
-                        store.add_imported(url_key)
+                        _add_imported(store, url_key, dry_run=dry_run)
                         site_stats["imported"] += 1
                         imported_count += 1
                         site_failure_streak = 0
@@ -241,9 +275,15 @@ def run(args: argparse.Namespace) -> int:
 
                     site_stats["errors"] += 1
                     if import_transient:
-                        store.add_retry(url_key, import_error or "Transient import failure", increment=True)
+                        _add_retry(
+                            store,
+                            url_key,
+                            import_error or "Transient import failure",
+                            dry_run=dry_run,
+                            increment=True,
+                        )
                     else:
-                        store.add_reject(url_key, import_error or "Import failed")
+                        _add_reject(store, url_key, import_error or "Import failed", dry_run=dry_run)
 
                     if import_error and import_error.startswith("HTTP 5"):
                         site_failure_streak += 1
@@ -276,16 +316,22 @@ def run(args: argparse.Namespace) -> int:
                     if import_executor is None:
                         imported, import_error, import_transient = importer.import_recipe(url)
                         if imported:
-                            store.add_imported(url_key)
+                            _add_imported(store, url_key, dry_run=dry_run)
                             site_stats["imported"] += 1
                             imported_count += 1
                             site_failure_streak = 0
                         else:
                             site_stats["errors"] += 1
                             if import_transient:
-                                store.add_retry(url_key, import_error or "Transient import failure", increment=True)
+                                _add_retry(
+                                    store,
+                                    url_key,
+                                    import_error or "Transient import failure",
+                                    dry_run=dry_run,
+                                    increment=True,
+                                )
                             else:
-                                store.add_reject(url_key, import_error or "Import failed")
+                                _add_reject(store, url_key, import_error or "Import failed", dry_run=dry_run)
                             if import_error and import_error.startswith("HTTP 5"):
                                 site_failure_streak += 1
                                 if site_failure_threshold > 0 and site_failure_streak >= site_failure_threshold:
@@ -306,9 +352,15 @@ def run(args: argparse.Namespace) -> int:
                     drain_imports(block=False)
                 else:
                     if is_transient:
-                        store.add_retry(url_key, error or "Transient verification failure", increment=True)
+                        _add_retry(
+                            store,
+                            url_key,
+                            error or "Transient verification failure",
+                            dry_run=dry_run,
+                            increment=True,
+                        )
                     else:
-                        store.add_reject(url_key, error or "Not a recipe")
+                        _add_reject(store, url_key, error or "Not a recipe", dry_run=dry_run)
                         site_stats["rejected"] += 1
 
             # Drain remaining concurrent imports
