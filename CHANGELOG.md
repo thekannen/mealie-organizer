@@ -2,6 +2,11 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.5.1] - 2026-05-02
+
+### Fixed
+- **Docker recipe source defaults** — Recipe Sources now loads packaged default sites from `COOKDEX_ROOT` before falling back to module-relative paths, restoring default site loading and `recipe-dredger` setup for Docker installs.
+
 ## [2026.4.2] - 2026-04-25
 
 ### Security
