@@ -2,6 +2,14 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.5.2] - 2026-05-02
+
+### Changed
+- **Library-backed parsing cleanup** — Replaced several hardcoded parsing and normalization paths with established library helpers across recipe URL handling, cookbook filters, recipe naming, re-imports, yield normalization, taxonomy workspace checks, and web utility formatting.
+
+### Fixed
+- **Parser edge-case coverage** — Added focused regression tests around categorizer JSON recovery, URL canonicalization, cookbook matching, settings detection, taxonomy workspace validation, recipe re-imports, and maintenance cleanup helpers.
+
 ## [2026.5.1] - 2026-05-02
 
 ### Fixed
