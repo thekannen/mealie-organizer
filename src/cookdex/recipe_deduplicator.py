@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,42 +30,13 @@ from typing import Any
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
 from .db_client import resolve_db_client
+from .recipe_dredger.url_utils import canonicalize_url
 
 DEFAULT_REPORT = "reports/recipe_dedup_report.json"
-
-_TRACKING_PARAMS = frozenset({
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "igshid", "mc_cid", "mc_eid",
-    "ref", "ref_src", "ref_url", "s", "spm",
-})
 
 _NUMERIC_SUFFIX_RE = re.compile(r"\s*\(\d+\)$")
 
 _SOURCE_FIELDS = ("orgURL", "originalURL", "source")
-
-
-def canonicalize_url(url: str) -> str:
-    """Return a normalized URL suitable for duplicate comparison."""
-    url = url.strip()
-    if not url:
-        return ""
-    try:
-        parsed = urllib.parse.urlparse(url)
-        scheme = (parsed.scheme or "https").lower()
-        host = (parsed.netloc or "").lower()
-        host = host.lstrip("www.")
-        path = re.sub(r"/+", "/", parsed.path or "/")
-        if path != "/" and path.endswith("/"):
-            path = path.rstrip("/")
-        params = {
-            k: v
-            for k, v in urllib.parse.parse_qsl(parsed.query)
-            if k.lower() not in _TRACKING_PARAMS
-        }
-        query = urllib.parse.urlencode(sorted(params.items()))
-        return urllib.parse.urlunparse((scheme, host, path, "", query, ""))
-    except Exception:
-        return url.lower()
 
 
 def _extract_source(recipe: dict[str, Any]) -> str:

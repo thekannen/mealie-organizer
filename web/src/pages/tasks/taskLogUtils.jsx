@@ -1,4 +1,5 @@
 import React from "react";
+import { format as formatDate, isValid, parseISO } from "date-fns";
 import Icon from "../../components/Icon";
 import { buildDefaultOptionValues } from "../../utils.jsx";
 
@@ -40,21 +41,29 @@ export function splitIntervalSeconds(rawSeconds) {
   return { intervalValue: Math.max(1, Math.floor(seconds)), intervalUnit: "seconds" };
 }
 
+function parseDateInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const parsed = parseISO(raw);
+  if (isValid(parsed)) return parsed;
+  const fallback = new Date(raw);
+  return isValid(fallback) ? fallback : null;
+}
+
 export function toDateTimeLocalValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw.slice(0, 16);
-  const localValue = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
-  return localValue.toISOString().slice(0, 16);
+  const parsed = parseDateInput(raw);
+  if (!parsed) return raw.slice(0, 16);
+  return formatDate(parsed, "yyyy-MM-dd'T'HH:mm");
 }
 
 export function localDatetimeToUTC(value) {
   const raw = String(value || "").trim();
   if (!raw) return undefined;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
+  const parsed = parseDateInput(raw);
+  if (!parsed) return raw;
   return parsed.toISOString();
 }
 

@@ -8,6 +8,13 @@ import re
 import requests
 
 from .config import REPO_ROOT, env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
+from .cookbook_filters import (
+    CookbookFilterClause,
+    CookbookFilterParseError,
+    normalize_query_filter_string,
+    parse_cookbook_filter,
+    serialize_cookbook_filter,
+)
 from .taxonomy_store import read_collection
 
 
@@ -34,11 +41,6 @@ def require_int(value: object, field: str) -> int:
     if isinstance(value, str):
         return int(value.strip())
     raise ValueError(f"Invalid value for '{field}': expected integer-like, got {type(value).__name__}")
-
-
-def normalize_query_filter_string(value: str) -> str:
-    normalized = re.sub(r"\bCONTAINS[_ ]ANY\b", "IN", value, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", normalized).strip()
 
 
 class MealieCookbookManager:
@@ -145,60 +147,6 @@ class MealieCookbookManager:
         }
         return category_ids_by_name, tag_ids_by_name, tool_ids_by_name
 
-    @staticmethod
-    def parse_filter_values(raw_values: str) -> list[str] | None:
-        try:
-            parsed = json.loads(f"[{raw_values}]")
-        except json.JSONDecodeError:
-            return None
-
-        if not isinstance(parsed, list):
-            return None
-
-        values: list[str] = []
-        for value in parsed:
-            text = str(value).strip()
-            if text:
-                values.append(text)
-        return values
-
-    def replace_name_filter_with_ids(
-        self,
-        query_filter: str,
-        pattern: str,
-        target_attribute: str,
-        id_lookup: dict[str, str],
-        entity_name: str,
-    ) -> str:
-        def _repl(match: re.Match[str]) -> str:
-            operator = " ".join(match.group("op").upper().split())
-            raw_values = match.group("vals")
-            names = self.parse_filter_values(raw_values)
-            if names is None:
-                print(f"[warn] Could not parse {entity_name} name list in query filter: {match.group(0)}")
-                return match.group(0)
-
-            ids: list[str] = []
-            missing: list[str] = []
-            for name in names:
-                found_id = id_lookup.get(name.strip().lower())
-                if found_id:
-                    ids.append(found_id)
-                else:
-                    missing.append(name)
-
-            if missing or not ids:
-                print(
-                    f"[warn] Could not resolve {entity_name} names in query filter: "
-                    f"{', '.join(missing or names)}; keeping original filter."
-                )
-                return match.group(0)
-
-            id_list = ",".join(f'"{value}"' for value in ids)
-            return f"{target_attribute} {operator} [{id_list}]"
-
-        return re.sub(pattern, _repl, query_filter, flags=re.IGNORECASE)
-
     def compile_query_filter_for_editor(
         self,
         query_filter: str,
@@ -206,32 +154,54 @@ class MealieCookbookManager:
         tag_ids_by_name: dict[str, str],
         tool_ids_by_name: dict[str, str] | None = None,
     ) -> str:
-        op_pattern = r"(?:NOT\s+IN|IN|CONTAINS\s+ALL)"
-        compiled = normalize_query_filter_string(query_filter)
-        compiled = self.replace_name_filter_with_ids(
-            compiled,
-            rf"\b(?:recipe_category|recipeCategory)\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
-            "recipe_category.id",
-            category_ids_by_name,
-            "category",
-        )
-        compiled = self.replace_name_filter_with_ids(
-            compiled,
-            rf"\btags\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
-            "tags.id",
-            tag_ids_by_name,
-            "tag",
-        )
-        if tool_ids_by_name:
-            compiled = self.replace_name_filter_with_ids(
-                compiled,
-                rf"\btools\.name\s+(?P<op>{op_pattern})\s*\[(?P<vals>[^\]]*)\]",
-                "tools.id",
-                tool_ids_by_name,
-                "tool",
+        normalized = normalize_query_filter_string(query_filter)
+        try:
+            clauses = parse_cookbook_filter(normalized)
+        except CookbookFilterParseError:
+            return normalized
+
+        lookups: dict[str, tuple[dict[str, str], str]] = {
+            "categories": (category_ids_by_name, "category"),
+            "tags": (tag_ids_by_name, "tag"),
+        }
+        if tool_ids_by_name is not None:
+            lookups["tools"] = (tool_ids_by_name, "tool")
+
+        compiled: list[CookbookFilterClause] = []
+        for clause in clauses:
+            lookup_entry = lookups.get(clause.resource)
+            if clause.identifier != "name" or lookup_entry is None:
+                compiled.append(clause)
+                continue
+
+            id_lookup, entity_name = lookup_entry
+            ids: list[str] = []
+            missing: list[str] = []
+            for value in clause.values:
+                found_id = id_lookup.get(value.strip().lower())
+                if found_id:
+                    ids.append(found_id)
+                else:
+                    missing.append(value)
+            if missing or not ids:
+                print(
+                    f"[warn] Could not resolve {entity_name} names in query filter: "
+                    f"{', '.join(missing or clause.values)}; keeping original filter."
+                )
+                return normalized
+
+            field = "recipe_category.id" if clause.resource == "categories" else f"{clause.resource}.id"
+            compiled.append(
+                CookbookFilterClause(
+                    resource=clause.resource,
+                    field=field,
+                    identifier="id",
+                    operator=clause.operator,
+                    values=tuple(ids),
+                )
             )
-        compiled = re.sub(r"\brecipeCategory\.id\b", "recipe_category.id", compiled, flags=re.IGNORECASE)
-        return normalize_query_filter_string(compiled)
+
+        return serialize_cookbook_filter(compiled, compact_lists=True)
 
     def prepare_cookbook_payload(
         self,

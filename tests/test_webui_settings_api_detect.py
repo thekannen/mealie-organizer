@@ -38,6 +38,27 @@ def test_parse_mealie_env_accepts_compose_mapping_syntax() -> None:
     assert parsed["MEALIE_PG_PORT"] == "5433"
 
 
+def test_parse_mealie_env_accepts_compose_environment_block_with_quoted_comment() -> None:
+    payload = """
+    services:
+      mealie:
+        environment:
+          DB_ENGINE: postgres
+          POSTGRES_USER: compose_user
+          POSTGRES_PASSWORD: "yaml secret # keep this"
+          POSTGRES_DB: compose_db
+          POSTGRES_SERVER: postgres
+          POSTGRES_PORT: 5432
+    """
+    parsed = settings_api._parse_mealie_env(payload)
+    assert parsed["MEALIE_DB_TYPE"] == "postgres"
+    assert parsed["MEALIE_PG_USER"] == "compose_user"
+    assert parsed["MEALIE_PG_PASS"] == "yaml secret # keep this"
+    assert parsed["MEALIE_PG_DB"] == "compose_db"
+    assert parsed["MEALIE_PG_HOST"] == "localhost"
+    assert parsed["MEALIE_PG_PORT"] == "5432"
+
+
 def test_parse_mealie_env_url_override_takes_precedence() -> None:
     payload = """
     DB_ENGINE=postgres
@@ -50,6 +71,28 @@ def test_parse_mealie_env_url_override_takes_precedence() -> None:
     assert parsed["MEALIE_PG_HOST"] == "localhost"
     assert parsed["MEALIE_PG_PORT"] == "5544"
     assert parsed["MEALIE_PG_DB"] == "real_db"
+    assert parsed["MEALIE_DB_TYPE"] == "postgres"
+
+
+def test_parse_mealie_env_does_not_interpolate_remote_placeholders(monkeypatch) -> None:
+    monkeypatch.setenv("POSTGRES_USER", "local_user_should_not_leak")
+    payload = """
+    services:
+      mealie:
+        environment:
+          - DB_ENGINE=postgres
+          - POSTGRES_USER=${POSTGRES_USER}
+          - POSTGRES_PASSWORD=remote-pass
+          - POSTGRES_DB=remote_db
+          - POSTGRES_SERVER=postgres
+          - POSTGRES_PORT=5432
+    """
+
+    parsed = settings_api._parse_mealie_env(payload)
+
+    assert "MEALIE_PG_USER" not in parsed
+    assert parsed["MEALIE_PG_PASS"] == "remote-pass"
+    assert parsed["MEALIE_PG_DB"] == "remote_db"
     assert parsed["MEALIE_DB_TYPE"] == "postgres"
 
 

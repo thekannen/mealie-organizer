@@ -104,3 +104,25 @@ def test_run_apply_respects_max_actions_and_checkpoint(tmp_path):
     assert client.merges == [("4", "3")]
     assert report["summary"]["actions_applied"] == 1
     assert report["summary"]["checkpoint_skipped"] == 1
+
+
+def test_build_fuzzy_candidates_handles_reordered_tokens_with_unit_similarity():
+    manager = FoodsCleanupManager(FakeFoodsClient(), dry_run=True, allow_fuzzy=True)
+    foods = [
+        {"id": "1", "name": "Whole Milk", "groupId": "dairy"},
+        {"id": "2", "name": "Milk Whole", "groupId": "dairy"},
+        {"id": "3", "name": "Garlic", "groupId": "dairy"},
+    ]
+
+    candidates = manager.build_fuzzy_candidates(foods)
+
+    assert candidates == [
+        {
+            "group_id": "dairy",
+            "food_a_id": "1",
+            "food_a_name": "Whole Milk",
+            "food_b_id": "2",
+            "food_b_name": "Milk Whole",
+            "similarity": 1.0,
+        }
+    ]

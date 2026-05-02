@@ -15,12 +15,20 @@ dependencies = [
   "cryptography>=42.0.0",
   "eval_type_backport>=0.2.0; python_version < '3.10'",
   "fastapi>=0.115.0",
+  "json-repair>=0.39.0",
   "langdetect>=1.0.9",
+  "lark>=1.1.9",
   "lxml>=4.9.0",
+  "python-dotenv>=1.0.1",
   "python-slugify>=8.0.0",
+  "PyYAML>=6.0.2",
+  "rapidfuzz>=3.9.0",
   "requests>=2.31.0",
+  "recipe-scrapers>=15.0.0",
   "sqlalchemy>=2.0.30",
+  "titlecase>=2.4.1",
   "uvicorn>=0.30.0",
+  "w3lib>=2.2.1",
 ]
 
 [project.optional-dependencies]

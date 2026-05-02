@@ -5,10 +5,13 @@ import re
 import shlex
 import subprocess
 import tempfile
+from io import StringIO
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 import requests
+import yaml
+from dotenv import dotenv_values
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...url_security import request_with_url_validation, validate_service_url
@@ -535,6 +538,101 @@ _MEALIE_FILE_ENV_MAP: dict[str, str] = {
 _MEALIE_RAW_DB_KEYS = set(_MEALIE_ENV_MAP) | set(_MEALIE_FILE_ENV_MAP) | {"POSTGRES_URL_OVERRIDE"}
 
 
+def _add_mealie_raw_env(raw: dict[str, str], key: object, value: object) -> None:
+    clean_key = str(key or "").strip().strip("'\"").upper()
+    if not re.fullmatch(r"[A-Z0-9_]+", clean_key):
+        return
+    if clean_key not in _MEALIE_RAW_DB_KEYS:
+        return
+    if value is None:
+        return
+    clean_value = str(value).strip()
+    if re.search(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}", clean_value):
+        return
+    if re.fullmatch(r"\$[A-Za-z_][A-Za-z0-9_]*", clean_value):
+        return
+    if clean_value:
+        raw[clean_key] = clean_value
+
+
+def _parse_dotenv_mealie_env(text: str) -> dict[str, str]:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("- "):
+            line = line[2:].strip()
+        if line.startswith("Environment="):
+            _prefix, _sep, env_values = line.partition("=")
+            try:
+                lines.extend(shlex.split(env_values))
+            except ValueError:
+                lines.append(env_values)
+            continue
+        lines.append(line)
+
+    raw: dict[str, str] = {}
+    try:
+        parsed = dotenv_values(stream=StringIO("\n".join(lines)), interpolate=False)
+    except Exception:
+        return raw
+
+    for key, value in parsed.items():
+        _add_mealie_raw_env(raw, key, value)
+    return raw
+
+
+def _collect_yaml_mealie_env(value: object, raw: dict[str, str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _add_mealie_raw_env(raw, key, item)
+            if str(key).strip().lower() == "environment" and isinstance(item, str):
+                for env_key, env_item in _parse_dotenv_mealie_env(item).items():
+                    raw[env_key] = env_item
+        for item in value.values():
+            _collect_yaml_mealie_env(item, raw)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, str):
+                for env_key, env_item in _parse_dotenv_mealie_env(item).items():
+                    raw[env_key] = env_item
+            else:
+                _collect_yaml_mealie_env(item, raw)
+        return
+
+
+def _parse_yaml_mealie_env(text: str) -> dict[str, str]:
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return {}
+    raw: dict[str, str] = {}
+    _collect_yaml_mealie_env(parsed, raw)
+    return raw
+
+
+def _apply_postgres_url_override(result: dict[str, str], override: str) -> None:
+    parsed = urlparse(override if "://" in override else f"postgresql://{override}")
+    if parsed.hostname:
+        result["MEALIE_PG_HOST"] = parsed.hostname
+    if parsed.port:
+        result["MEALIE_PG_PORT"] = str(parsed.port)
+    if parsed.path and parsed.path.strip("/"):
+        result["MEALIE_PG_DB"] = unquote(parsed.path.strip("/"))
+    if parsed.username:
+        result["MEALIE_PG_USER"] = unquote(parsed.username)
+    if parsed.password:
+        result["MEALIE_PG_PASS"] = unquote(parsed.password)
+    result["MEALIE_DB_TYPE"] = "postgres"
+
+
+def _normalize_tunneled_pg_host(result: dict[str, str]) -> None:
+    pg_host = result.get("MEALIE_PG_HOST", "")
+    if pg_host and not re.match(r"^(\d{1,3}\.){3}\d{1,3}$|^localhost$|^\[", pg_host):
+        result["MEALIE_PG_HOST"] = "localhost"
+
+
 def _validated_ssh_host(value: str) -> str:
     """Validate an SSH hostname/IP to prevent argument injection."""
     clean = str(value or "").strip()
@@ -749,35 +847,9 @@ def _ssh_exec(
 
 def _parse_mealie_env(text: str) -> dict[str, str]:
     """Parse Mealie DB env assignments and map to CookDex DB keys."""
-    import re
-
     raw: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("- "):
-            line = line[2:].strip()
-        if line.lower().startswith("export "):
-            line = line[7:].strip()
-
-        key = ""
-        value = ""
-        if "=" in line:
-            key, _, value = line.partition("=")
-        elif ":" in line:
-            key, _, value = line.partition(":")
-            if " #" in value:
-                value = value.split(" #", 1)[0].rstrip()
-        else:
-            continue
-
-        key = key.strip().strip("'\"").upper()
-        if not re.match(r"^[A-Z0-9_]+$", key):
-            continue
-        value = value.strip().strip("'\"")
-        if key in _MEALIE_RAW_DB_KEYS and value:
-            raw[key] = value
+    raw.update(_parse_dotenv_mealie_env(text))
+    raw.update(_parse_yaml_mealie_env(text))
 
     result: dict[str, str] = {}
     for key, cookdex_key in _MEALIE_ENV_MAP.items():
@@ -787,8 +859,6 @@ def _parse_mealie_env(text: str) -> dict[str, str]:
 
     # If *_FILE variants are set (Mealie docs: Docker secrets), they take precedence.
     for key, cookdex_key in _MEALIE_FILE_ENV_MAP.items():
-        if cookdex_key == "POSTGRES_URL_OVERRIDE":
-            continue
         value = raw.get(key)
         if not value:
             continue
@@ -796,20 +866,9 @@ def _parse_mealie_env(text: str) -> dict[str, str]:
         result[f"__FILE__:{cookdex_key}"] = value
 
     # POSTGRES_URL_OVERRIDE has priority over individual POSTGRES_* values.
-    override = raw.get("POSTGRES_URL_OVERRIDE") or raw.get("POSTGRES_URL_OVERRIDE_FILE")
+    override = raw.get("POSTGRES_URL_OVERRIDE")
     if override:
-        parsed = urlparse(override if "://" in override else f"postgresql://{override}")
-        if parsed.hostname:
-            result["MEALIE_PG_HOST"] = parsed.hostname
-        if parsed.port:
-            result["MEALIE_PG_PORT"] = str(parsed.port)
-        if parsed.path and parsed.path.strip("/"):
-            result["MEALIE_PG_DB"] = parsed.path.strip("/")
-        if parsed.username:
-            result["MEALIE_PG_USER"] = unquote(parsed.username)
-        if parsed.password:
-            result["MEALIE_PG_PASS"] = unquote(parsed.password)
-        result["MEALIE_DB_TYPE"] = "postgres"
+        _apply_postgres_url_override(result, override)
 
     # Infer DB type from presence of Postgres vars if DB_ENGINE not set
     if "MEALIE_DB_TYPE" not in result and (
@@ -820,9 +879,7 @@ def _parse_mealie_env(text: str) -> dict[str, str]:
         result["MEALIE_DB_TYPE"] = "postgres"
 
     # If POSTGRES_SERVER is a Docker service name, map to localhost (tunnel handles routing)
-    pg_host = result.get("MEALIE_PG_HOST", "")
-    if pg_host and not re.match(r"^(\d{1,3}\.){3}\d{1,3}$|^localhost$|^\[", pg_host):
-        result["MEALIE_PG_HOST"] = "localhost"
+    _normalize_tunneled_pg_host(result)
 
     return result
 
@@ -954,7 +1011,11 @@ done
             secret_path = str(detected.get(key) or "").strip()
             secret_value = _read_remote(secret_path, path).splitlines()[0].strip() if secret_path else ""
             if secret_value:
-                detected[target_key] = secret_value.strip("'\"")
+                if target_key == "POSTGRES_URL_OVERRIDE":
+                    _apply_postgres_url_override(detected, secret_value.strip("'\""))
+                    _normalize_tunneled_pg_host(detected)
+                else:
+                    detected[target_key] = secret_value.strip("'\"")
             detected.pop(key, None)
 
         # systemd unit may point at a separate env file

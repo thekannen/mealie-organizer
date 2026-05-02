@@ -17,9 +17,25 @@ def test_parse_json_response_handles_unquoted_keys_and_trailing_comma():
     assert parsed[0]["categories"] == ["Dinner"]
 
 
+def test_parse_json_response_repairs_missing_commas_between_fields():
+    raw = '[{"slug":"abc" "categories":["Dinner"], "tags":["Quick" "Weeknight"]}]'
+    parsed = parse_json_response(raw)
+    assert isinstance(parsed, list)
+    assert parsed[0] == {
+        "slug": "abc",
+        "categories": ["Dinner"],
+        "tags": ["Quick", "Weeknight"],
+    }
+
+
 def test_parse_json_response_returns_none_for_invalid_payload():
     parsed = parse_json_response("not-json-output")
     assert parsed is None
+
+
+def test_parse_json_response_rejects_repaired_bracketed_garbage():
+    for raw in ("[not-json-output]", '[{"slug":}]', "{bad}"):
+        assert parse_json_response(raw) is None
 
 
 def test_parse_json_response_returns_none_for_empty_and_none():

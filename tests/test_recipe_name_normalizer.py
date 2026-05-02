@@ -19,6 +19,10 @@ def test_normalize_recipe_name_handles_acronym_possessive() -> None:
     assert normalize_recipe_name("bbq's best ribs") == "BBQ's Best Ribs"
 
 
+def test_normalize_recipe_name_uses_titlecase_abbreviation_rules() -> None:
+    assert normalize_recipe_name("mac and cheese vs. pbj") == "Mac and Cheese vs. PBJ"
+
+
 def test_audit_scope_uses_lowercase_only_label(tmp_path: Path) -> None:
     report_path = tmp_path / "normalize_report.json"
     normalizer = RecipeNameNormalizer(

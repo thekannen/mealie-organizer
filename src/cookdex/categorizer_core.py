@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
+from json_repair import loads as repair_json_loads
 
 from .config import env_or_config
 
@@ -49,7 +50,7 @@ def parse_json_response(result_text):
     trimmed = result_text.strip()
 
     # Stage 0: try raw text directly (fast path for well-formed responses).
-    result = _parse_stage(trimmed)
+    result = _parse_stage(trimmed, repair=True)
     if result is not None:
         return result
 
@@ -57,7 +58,7 @@ def parse_json_response(result_text):
     defenced = re.sub(r"^```(?:json)?\s*\n?", "", trimmed, count=1, flags=re.IGNORECASE)
     defenced = re.sub(r"\n?\s*```\s*$", "", defenced).strip()
     if defenced != trimmed:
-        result = _parse_stage(defenced)
+        result = _parse_stage(defenced, repair=True)
         if result is not None:
             return result
 
@@ -65,7 +66,7 @@ def parse_json_response(result_text):
     text = defenced
     extracted = _extract_json_block(text)
     if extracted is not None and extracted != text:
-        result = _parse_stage(extracted)
+        result = _parse_stage(extracted, repair=True)
         if result is not None:
             return result
         text = extracted
@@ -73,14 +74,14 @@ def parse_json_response(result_text):
     # Stage 3: fix smart (curly) double quotes and trailing commas.
     cleaned = _fix_smart_quotes(text)
     cleaned = re.sub(r",(\s*[\]}])", r"\1", cleaned)
-    result = _parse_stage(cleaned)
+    result = _parse_stage(cleaned, repair=True)
     if result is not None:
         return result
 
     # Stage 4: quote bare keys and replace single-quoted strings.
     fixed = _replace_single_quoted_strings(_quote_bare_keys(cleaned))
     if fixed != cleaned:
-        result = _parse_stage(fixed)
+        result = _parse_stage(fixed, repair=True)
         if result is not None:
             return result
 
@@ -109,6 +110,79 @@ def _try_json_loads(text):
         return None
 
 
+def _try_json_repair_loads(text):
+    try:
+        parsed = repair_json_loads(text)
+    except Exception:
+        return None
+    if parsed == "":
+        return None
+    if not _json_repair_result_is_plausible(parsed):
+        return None
+    return parsed
+
+
+def _has_meaningful_json_value(value):
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
+
+
+def _json_repair_item_is_plausible(value):
+    if not isinstance(value, dict):
+        return False
+    return any(_has_meaningful_json_value(item) for item in value.values())
+
+
+def _json_repair_result_is_plausible(parsed):
+    if isinstance(parsed, dict):
+        return _json_repair_item_is_plausible(parsed)
+    if isinstance(parsed, list):
+        return bool(parsed) and all(_json_repair_item_is_plausible(item) for item in parsed)
+    return False
+
+
+def _balanced_json_delimiters(text):
+    stack = []
+    quote_char = None
+    escape_next = False
+    pairs = {"[": "]", "{": "}"}
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if quote_char:
+            if ch == "\\":
+                escape_next = True
+            elif ch == quote_char:
+                quote_char = None
+            continue
+        if ch in ("'", '"'):
+            quote_char = ch
+            continue
+        if ch in pairs:
+            stack.append(pairs[ch])
+            continue
+        if ch in ("]", "}"):
+            if not stack or stack[-1] != ch:
+                return False
+            stack.pop()
+
+    return not stack and quote_char is None
+
+
+def _should_attempt_json_repair(text):
+    stripped = text.strip()
+    if not stripped or stripped[0] not in ("[", "{"):
+        return False
+    return _balanced_json_delimiters(stripped)
+
+
 def _unwrap_if_needed(parsed):
     """If parsed is a single-key dict wrapping a list, unwrap it.
 
@@ -121,10 +195,14 @@ def _unwrap_if_needed(parsed):
     return parsed
 
 
-def _parse_stage(text):
+def _parse_stage(text, *, repair=False):
     result = _try_json_loads(text)
     if result is not None:
         return _unwrap_if_needed(result)
+    if repair and _should_attempt_json_repair(text):
+        result = _try_json_repair_loads(text)
+        if result is not None:
+            return _unwrap_if_needed(result)
     return None
 
 

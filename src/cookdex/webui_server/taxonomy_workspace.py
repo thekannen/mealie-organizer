@@ -10,6 +10,7 @@ from typing import Any, Callable
 import requests
 
 from ..api_client import MealieApiClient
+from ..cookbook_filters import CookbookFilterParseError, parse_cookbook_filter
 from ..url_security import request_with_url_validation, validate_service_url
 from .config_files import ConfigFilesManager
 
@@ -40,17 +41,6 @@ RULE_TARGET_FIELDS: dict[str, str] = {
 }
 WORKSPACE_DRAFT_RELATIVE_PATH = "configs/.drafts/taxonomy-workspace.json"
 WORKSPACE_RESOURCE_NAMES: tuple[str, ...] = TAXONOMY_FILE_NAMES
-WORKSPACE_CLAUSE_FIELD_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("categories", re.compile(r"^\s*(?:recipe_?[Cc]ategory|recipeCategory)\.(name|id)\s+", re.IGNORECASE), "recipeCategory.name"),
-    ("tags", re.compile(r"^\s*tags\.(name|id)\s+", re.IGNORECASE), "tags.name"),
-    ("tools", re.compile(r"^\s*tools\.(name|id)\s+", re.IGNORECASE), "tools.name"),
-    (
-        "foods",
-        re.compile(r"^\s*(?:recipe_?[Ii]ngredient|recipeIngredient)\.food\.(name|id)\s+", re.IGNORECASE),
-        "recipeIngredient.food.name",
-    ),
-)
-WORKSPACE_FILTER_OPERATORS: tuple[str, ...] = ("IN", "NOT IN", "CONTAINS ALL")
 
 
 def _normalize_name(value: Any) -> str:
@@ -333,38 +323,6 @@ def _normalize_workspace_meta(raw: Any, now_iso: str) -> dict[str, Any]:
         "last_validation": raw.get("last_validation") if isinstance(raw.get("last_validation"), dict) else None,
     }
     return meta
-
-
-def _parse_filter_value_list(raw: str) -> list[str]:
-    text = str(raw or "").strip()
-    if not text:
-        return []
-    try:
-        parsed = json.loads(f"[{text}]")
-        if isinstance(parsed, list):
-            out: list[str] = []
-            for item in parsed:
-                if not isinstance(item, str):
-                    continue
-                value = _normalize_name(item)
-                if value:
-                    out.append(value)
-            return out
-    except Exception:
-        pass
-    values: list[str] = []
-    for part in text.split(","):
-        value = _normalize_name(part.strip().strip("\"'"))
-        if value:
-            values.append(value)
-    return values
-
-
-def _normalize_filter_operator(raw: str) -> str:
-    upper = _normalize_name(raw).upper()
-    if upper in WORKSPACE_FILTER_OPERATORS:
-        return upper
-    return ""
 
 
 def _resource_key(item: dict[str, Any], index: int) -> str:
@@ -1008,7 +966,20 @@ class TaxonomyWorkspaceDraftService:
                 )
                 continue
 
-            clauses = [item.strip() for item in re.split(r"\s+AND\s+", query, flags=re.IGNORECASE) if item.strip()]
+            try:
+                clauses = parse_cookbook_filter(query)
+            except CookbookFilterParseError as exc:
+                errors.append(
+                    {
+                        "code": exc.code,
+                        "resource": "cookbooks",
+                        "severity": "error",
+                        "path": f"{path_root}.queryFilterString",
+                        "message": str(exc) or "Cookbook query filter is invalid.",
+                    }
+                )
+                continue
+
             if not clauses:
                 errors.append(
                     {
@@ -1023,57 +994,9 @@ class TaxonomyWorkspaceDraftService:
 
             for clause_index, clause in enumerate(clauses):
                 clause_path = f"{path_root}.queryFilterString[{clause_index}]"
-                field_key: str | None = None
-                field_identifier = "name"
-                field_match: re.Match[str] | None = None
-                for candidate_key, pattern, _attr in WORKSPACE_CLAUSE_FIELD_PATTERNS:
-                    match = pattern.match(clause)
-                    if match:
-                        field_key = candidate_key
-                        field_match = match
-                        field_identifier = _normalize_name(match.group(1)).lower() or "name"
-                        break
-
-                if field_key is None or field_match is None:
-                    errors.append(
-                        {
-                            "code": "cookbook_invalid_field",
-                            "resource": "cookbooks",
-                            "severity": "error",
-                            "path": clause_path,
-                            "message": f"Unsupported query field in clause: '{clause}'.",
-                        }
-                    )
-                    continue
-
-                remainder = clause[field_match.end() :].strip()
-                op_match = re.match(r"^(NOT\s+IN|CONTAINS\s+ALL|IN)\s*\[([^\]]*)\]\s*$", remainder, flags=re.IGNORECASE)
-                if not op_match:
-                    errors.append(
-                        {
-                            "code": "cookbook_invalid_operator",
-                            "resource": "cookbooks",
-                            "severity": "error",
-                            "path": clause_path,
-                            "message": f"Invalid operator or list syntax in clause: '{clause}'.",
-                        }
-                    )
-                    continue
-
-                operator = _normalize_filter_operator(op_match.group(1))
-                if not operator:
-                    errors.append(
-                        {
-                            "code": "cookbook_invalid_operator",
-                            "resource": "cookbooks",
-                            "severity": "error",
-                            "path": clause_path,
-                            "message": f"Unsupported operator '{op_match.group(1)}'.",
-                        }
-                    )
-                    continue
-
-                values = _parse_filter_value_list(op_match.group(2))
+                field_key = clause.resource
+                field_identifier = clause.identifier
+                values = list(clause.values)
                 if not values:
                     errors.append(
                         {

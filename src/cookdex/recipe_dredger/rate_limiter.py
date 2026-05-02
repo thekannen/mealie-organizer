@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import time
 from typing import Dict
+from urllib import robotparser
 from urllib.parse import urlparse
 
 import requests
@@ -24,6 +25,85 @@ except Exception:
     pass
 
 USER_AGENT = f"CookDex/{_VERSION} (+https://github.com/thekannen/CookDex)"
+
+
+def _robot_entry_applies(user_agent: str, entry_user_agents: list[str]) -> bool:
+    user_agent_token = user_agent.split("/")[0].lower()
+    for agent in entry_user_agents:
+        if agent == "*":
+            return True
+        if agent.lower() in user_agent_token:
+            return True
+    return False
+
+
+def _parse_float_crawl_delay(raw_value: str) -> float | None:
+    try:
+        delay = float(raw_value.strip())
+    except ValueError:
+        return None
+    if delay < 0:
+        return None
+    return delay
+
+
+def _float_crawl_delay_for_user_agent(lines: list[str], user_agent: str) -> float | None:
+    entries: list[tuple[list[str], float | None]] = []
+    default_entry: tuple[list[str], float | None] | None = None
+    agents: list[str] = []
+    delay: float | None = None
+    saw_directive = False
+
+    def flush() -> None:
+        nonlocal agents, delay, saw_directive, default_entry
+        if not agents or not saw_directive:
+            agents = []
+            delay = None
+            saw_directive = False
+            return
+        entry = (agents, delay)
+        if "*" in agents:
+            if default_entry is None:
+                default_entry = entry
+        else:
+            entries.append(entry)
+        agents = []
+        delay = None
+        saw_directive = False
+
+    for raw_line in lines:
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            flush()
+            continue
+        key, sep, raw_value = line.partition(":")
+        if not sep:
+            continue
+        key = key.strip().lower()
+        value = raw_value.strip()
+        if key == "user-agent":
+            if saw_directive:
+                flush()
+            agents.append(value)
+            continue
+        if not agents:
+            continue
+        if key == "crawl-delay":
+            parsed_delay = _parse_float_crawl_delay(value)
+            if parsed_delay is not None:
+                delay = parsed_delay
+            saw_directive = True
+        elif key in {"allow", "disallow", "request-rate"}:
+            saw_directive = True
+
+    flush()
+
+    for entry_agents, entry_delay in entries:
+        if _robot_entry_applies(user_agent, entry_agents):
+            return entry_delay
+    if default_entry is not None:
+        return default_entry[1]
+    return None
 
 
 def get_crawl_session() -> requests.Session:
@@ -66,13 +146,14 @@ class RateLimiter:
                     timeout=5,
                 )
                 if response.status_code == 200:
-                    for line in response.text.splitlines():
-                        if line.lower().startswith("crawl-delay:"):
-                            try:
-                                delay = float(line.split(":", 1)[1].strip())
-                                break
-                            except ValueError:
-                                pass
+                    robots_lines = response.text.splitlines()
+                    parser = robotparser.RobotFileParser(f"https://{domain}/robots.txt")
+                    parser.parse(robots_lines)
+                    robots_delay = _float_crawl_delay_for_user_agent(robots_lines, USER_AGENT)
+                    if robots_delay is None:
+                        robots_delay = parser.crawl_delay(USER_AGENT)
+                    if robots_delay is not None:
+                        delay = max(delay, float(robots_delay), _MIN_DELAY)
             except Exception:
                 pass
 

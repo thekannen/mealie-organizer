@@ -1,4 +1,5 @@
 import importlib
+import os
 
 import pytest
 
@@ -99,3 +100,36 @@ def test_repo_root_uses_env_override(monkeypatch, tmp_path):
     finally:
         monkeypatch.delenv("COOKDEX_ROOT", raising=False)
         importlib.reload(config_module)
+
+
+def test_load_env_file_uses_dotenv_syntax_and_preserves_existing(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                'export COOKDEX_TEST_QUOTED="quoted value"',
+                "COOKDEX_TEST_COMMENT=visible # dotenv comment",
+                "COOKDEX_TEST_EMPTY=",
+                "COOKDEX_TEST_NO_VALUE",
+                "COOKDEX_TEST_KEEP=file-value",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    for key in (
+        "COOKDEX_TEST_QUOTED",
+        "COOKDEX_TEST_COMMENT",
+        "COOKDEX_TEST_EMPTY",
+        "COOKDEX_TEST_NO_VALUE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("COOKDEX_TEST_KEEP", "environment-value")
+
+    config_module.load_env_file(env_file)
+
+    assert os.environ["COOKDEX_TEST_QUOTED"] == "quoted value"
+    assert os.environ["COOKDEX_TEST_COMMENT"] == "visible"
+    assert os.environ["COOKDEX_TEST_EMPTY"] == ""
+    assert "COOKDEX_TEST_NO_VALUE" not in os.environ
+    assert os.environ["COOKDEX_TEST_KEEP"] == "environment-value"

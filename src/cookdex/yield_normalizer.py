@@ -52,23 +52,39 @@ DEFAULT_WORKERS = 8
 _DOZEN = 12
 
 # ---------------------------------------------------------------------------
-# Vulgar-fraction mapping (matches Mealie's cleaner.py)
-# ---------------------------------------------------------------------------
-_VULGAR_MAP: dict[str, str] = {
-    "\u00bc": " 1/4", "\u00bd": " 1/2", "\u00be": " 3/4",
-    "\u2150": " 1/7", "\u2151": " 1/9", "\u2152": " 1/10",
-    "\u2153": " 1/3", "\u2154": " 2/3", "\u2155": " 1/5",
-    "\u2156": " 2/5", "\u2157": " 3/5", "\u2158": " 4/5",
-    "\u2159": " 1/6", "\u215a": " 5/6", "\u215b": " 1/8",
-    "\u215c": " 3/8", "\u215d": " 5/8", "\u215e": " 7/8",
-}
-
-# ---------------------------------------------------------------------------
 # Numeric extraction (mirrors Mealie's extract_quantity_from_string)
 # ---------------------------------------------------------------------------
 _RE_MIXED = re.compile(r"(\d+)\s+(\d+)/(\d+)")       # "1 1/2"
 _RE_FRAC = re.compile(r"(\d+)/(\d+)")                  # "1/2"
 _RE_DECIMAL = re.compile(r"\d+(?:\.\d+)?")              # "2.5" or "6"
+_RE_FRACTION_NUMERATOR_ONE = re.compile("\u215f\\s*(\\d+)")
+
+
+def _fraction_to_text(value: float) -> str:
+    frac = Fraction(value).limit_denominator(100)
+    if frac.denominator == 1:
+        return f" {frac.numerator}"
+    return f" {frac.numerator}/{frac.denominator}"
+
+
+def _normalize_unicode_fractions(text: str) -> str:
+    """Convert Unicode fraction characters into ASCII fraction text."""
+    text = _RE_FRACTION_NUMERATOR_ONE.sub(lambda m: f" 1/{m.group(1)}", text)
+    normalized: list[str] = []
+    for ch in text:
+        try:
+            name = unicodedata.name(ch)
+        except ValueError:
+            normalized.append(ch)
+            continue
+        if "FRACTION" not in name or ch == "\u215f":
+            normalized.append(ch)
+            continue
+        try:
+            normalized.append(_fraction_to_text(unicodedata.numeric(ch)))
+        except (TypeError, ValueError):
+            normalized.append(ch)
+    return "".join(normalized)
 
 
 def _extract_number(text: str) -> float:
@@ -77,9 +93,8 @@ def _extract_number(text: str) -> float:
     Mirrors Mealie's ``extract_quantity_from_string`` to stay consistent.
     Returns 0.0 when nothing parseable is found.
     """
-    # Normalise vulgar fractions first (space-prefixed like Mealie).
-    for vf, rep in _VULGAR_MAP.items():
-        text = text.replace(vf, rep)
+    # Normalise Unicode fractions first (space-prefixed like Mealie).
+    text = _normalize_unicode_fractions(text)
 
     m = _RE_MIXED.search(text)
     if m:
@@ -127,10 +142,8 @@ def _parse_yield_text(text: str) -> float | None:
     if not text:
         return None
 
-    # Normalise vulgar fractions for pattern matching.
-    normalized = text
-    for vf, rep in _VULGAR_MAP.items():
-        normalized = normalized.replace(vf, rep)
+    # Normalise Unicode fractions for pattern matching.
+    normalized = _normalize_unicode_fractions(text)
 
     # "1 dozen", "2 dozen cookies" -> multiply
     m = re.search(r"(\d+)\s+dozen", normalized, re.IGNORECASE)

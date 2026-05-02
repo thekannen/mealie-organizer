@@ -235,6 +235,7 @@ class TestPatterns:
 # ---------------------------------------------------------------------------
 
 from cookdex.recipe_dredger.crawler import SitemapCrawler
+from cookdex.recipe_dredger.rate_limiter import RateLimiter
 from cookdex.recipe_dredger.verifier import RecipeVerifier
 
 
@@ -270,6 +271,35 @@ class TestVerifierParanoidSkip:
         assert v.is_paranoid_skip("https://example.com/chicken-tikka-masala") is None
 
 
+class TestVerifierRecipeScrapers:
+    def test_accepts_recipe_scrapers_payload_without_hand_rolled_signals(self, monkeypatch):
+        monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+        calls = []
+
+        class _Scraper:
+            def to_json(self):
+                return {
+                    "ingredients": ["1 cup flour"],
+                    "instructions": "Mix well.",
+                }
+
+        def _scrape_html(html, *, org_url, supported_only):
+            calls.append((html, org_url, supported_only))
+            return _Scraper()
+
+        monkeypatch.setattr("cookdex.recipe_dredger.verifier.scrape_html", _scrape_html, raising=False)
+        html = "<html><head><title>Plain Recipe</title></head><body><h1>Plain Recipe</h1></body></html>"
+        verifier = RecipeVerifier(
+            _FakeSession(_FakeResponse(200, html, url="https://example.com/plain-recipe")),
+            language_filter_enabled=False,
+        )
+
+        ok, error, transient = verifier.verify_recipe("https://example.com/plain-recipe")
+
+        assert (ok, error, transient) == (True, None, False)
+        assert calls == [(html, "https://example.com/plain-recipe", False)]
+
+
 def _fake_getaddrinfo(host, *_args, **_kwargs):
     ip = "127.0.0.1" if host in {"127.0.0.1", "localhost"} else "8.8.8.8"
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]
@@ -297,6 +327,44 @@ class _FakeSession:
         return self.response
 
 
+class _RoutingSession:
+    def __init__(self, routes: dict[tuple[str, str], _FakeResponse], default: _FakeResponse | None = None):
+        self.routes = routes
+        self.default = default or _FakeResponse(404)
+        self.calls: list[tuple[str, str]] = []
+
+    def request(self, method: str, url: str, **_kwargs):
+        self.calls.append((method, url))
+        return self.routes.get((method, url), self.default)
+
+
+def test_rate_limiter_uses_robotparser_crawl_delay_for_matching_user_agent(monkeypatch):
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    robots = "User-agent: *\nCrawl-delay: 9\n\nUser-agent: CookDex\nCrawl-delay: 3\n"
+    limiter = RateLimiter(default_delay=1.0)
+    limiter._session = _FakeSession(_FakeResponse(200, robots, url="https://example.com/robots.txt"))
+
+    assert limiter._get_crawl_delay("example.com") == 3
+
+
+def test_rate_limiter_does_not_lower_default_delay_from_robots(monkeypatch):
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    robots = "User-agent: *\nCrawl-delay: 0.25\n"
+    limiter = RateLimiter(default_delay=2.0)
+    limiter._session = _FakeSession(_FakeResponse(200, robots, url="https://example.com/robots.txt"))
+
+    assert limiter._get_crawl_delay("example.com") == 2.0
+
+
+def test_rate_limiter_accepts_decimal_robotparser_crawl_delay(monkeypatch):
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    robots = "User-agent: CookDex\nCrawl-delay: 2.5\n"
+    limiter = RateLimiter(default_delay=1.0)
+    limiter._session = _FakeSession(_FakeResponse(200, robots, url="https://example.com/robots.txt"))
+
+    assert limiter._get_crawl_delay("example.com") == 2.5
+
+
 def test_crawler_filters_private_urls_from_sitemaps(store, monkeypatch):
     monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
     xml = """
@@ -310,6 +378,17 @@ def test_crawler_filters_private_urls_from_sitemaps(store, monkeypatch):
     urls = crawler.fetch_sitemap_urls("https://example.com/sitemap.xml")
 
     assert urls == ["https://example.com/recipe"]
+
+
+def test_crawler_uses_next_valid_robotparser_sitemap(store, monkeypatch):
+    monkeypatch.setattr("cookdex.url_security.socket.getaddrinfo", _fake_getaddrinfo)
+    robots = "Sitemap: http://127.0.0.1/admin.xml\nSitemap: https://example.com/recipes.xml\n"
+    session = _RoutingSession({
+        ("GET", "https://example.com/robots.txt"): _FakeResponse(200, robots, url="https://example.com/robots.txt"),
+    })
+    crawler = SitemapCrawler(session, store)
+
+    assert crawler.find_sitemap("https://example.com") == "https://example.com/recipes.xml"
 
 
 def test_verifier_rejects_private_urls_before_request():

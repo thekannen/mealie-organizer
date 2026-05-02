@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from cookdex.webui_server.config_files import ConfigFilesManager
 from cookdex.webui_server.state import StateStore
-from cookdex.webui_server.taxonomy_workspace import TaxonomyWorkspaceService
+from cookdex.webui_server.taxonomy_workspace import TaxonomyWorkspaceDraftService, TaxonomyWorkspaceService
 
 
 def _write_json(path: Path, payload) -> None:
@@ -416,6 +416,65 @@ def test_workspace_validate_accepts_mealie_id_style_cookbook_filters(tmp_path: P
         payload = validate.json()
         assert payload["can_publish"] is True
         assert all(err.get("code") != "cookbook_invalid_field" for err in payload.get("errors", []))
+
+
+def test_workspace_validate_accepts_and_inside_quoted_cookbook_value(tmp_path: Path) -> None:
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+    state = _make_state(tmp_path)
+    manager = ConfigFilesManager(config_root, state=state)
+    workspace = TaxonomyWorkspaceDraftService(repo_root=config_root, config_files=manager)
+
+    draft = {
+        "categories": [],
+        "tags": [{"name": "Salt AND Pepper"}],
+        "tools": [],
+        "cookbooks": [
+            {
+                "name": "Seasonings",
+                "description": "",
+                "queryFilterString": 'tags.name IN ["Salt AND Pepper"]',
+                "public": False,
+                "position": 1,
+            }
+        ],
+        "labels": [],
+        "units_aliases": [],
+    }
+
+    errors, warnings = workspace._validate_draft(draft)
+
+    assert errors == []
+    assert all(warning.get("code") != "cookbook_unknown_reference" for warning in warnings)
+
+
+def test_workspace_validate_rejects_empty_cookbook_filter_values(tmp_path: Path) -> None:
+    config_root = tmp_path / "repo"
+    _seed_config_root(config_root)
+    state = _make_state(tmp_path)
+    manager = ConfigFilesManager(config_root, state=state)
+    workspace = TaxonomyWorkspaceDraftService(repo_root=config_root, config_files=manager)
+
+    draft = {
+        "categories": [],
+        "tags": [],
+        "tools": [],
+        "cookbooks": [
+            {
+                "name": "Empty Values",
+                "description": "",
+                "queryFilterString": "tags.id IN []",
+                "public": False,
+                "position": 1,
+            }
+        ],
+        "labels": [],
+        "units_aliases": [],
+    }
+
+    errors, _warnings = workspace._validate_draft(draft)
+
+    assert any(error.get("code") == "cookbook_empty_values" for error in errors)
 
 
 def test_workspace_lookup_endpoint_returns_id_name_maps(tmp_path: Path, monkeypatch) -> None:

@@ -4,9 +4,10 @@ import argparse
 import json
 import unicodedata
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
+
+from rapidfuzz import fuzz
 
 from .api_client import MealieApiClient
 from .config import (
@@ -183,8 +184,8 @@ class FoodsCleanupManager:
                     id_b, name_b, norm_b = normalized_pairs[j]
                     if not norm_b or norm_a == norm_b:
                         continue
-                    ratio = SequenceMatcher(a=norm_a, b=norm_b).ratio()
-                    if ratio >= 0.92:
+                    score = fuzz.token_sort_ratio(norm_a, norm_b, score_cutoff=92.0)
+                    if score:
                         results.append(
                             {
                                 "group_id": group_id,
@@ -192,7 +193,7 @@ class FoodsCleanupManager:
                                 "food_a_name": name_a,
                                 "food_b_id": id_b,
                                 "food_b_name": name_b,
-                                "similarity": round(ratio, 4),
+                                "similarity": round(score / 100.0, 4),
                             }
                         )
         return sorted(results, key=lambda item: (-item["similarity"], item["food_a_name"], item["food_b_name"]))

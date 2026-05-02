@@ -74,13 +74,98 @@ def _extract_url(recipe: dict[str, Any]) -> str:
     return ""
 
 
-def _jsonld_to_ingredients(raw: list[Any]) -> list[dict[str, Any]]:
-    """Convert JSON-LD ingredient strings into Mealie ingredient dicts."""
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict)):
+        return bool(value)
+    return True
+
+
+def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and _has_value(mapping[key]):
+            return mapping[key]
+    return None
+
+
+def _safe_scraper_method(scraped: Any, method_name: str) -> Any:
+    method = getattr(scraped, method_name, None)
+    if not callable(method):
+        return None
+    try:
+        return method()
+    except Exception:
+        return None
+
+
+def _normalize_scraped_recipe(scraped: Any) -> dict[str, Any]:
+    """Return recipe-scrapers style data, with JSON-LD keys preserved as fallback."""
+    data: dict[str, Any] = {}
+    if isinstance(scraped, dict):
+        data.update(scraped)
+
+    to_json = getattr(scraped, "to_json", None)
+    if callable(to_json):
+        try:
+            payload = to_json()
+            if isinstance(payload, dict):
+                data.update({k: v for k, v in payload.items() if _has_value(v)})
+        except Exception:
+            pass
+
+    method_fields = {
+        "ingredients": "ingredients",
+        "instructions_list": "instructions_list",
+        "instructions": "instructions",
+        "yields": "yields",
+        "total_time": "total_time",
+        "prep_time": "prep_time",
+        "cook_time": "cook_time",
+        "nutrients": "nutrients",
+    }
+    for method_name, field in method_fields.items():
+        if field not in data or not _has_value(data[field]):
+            value = _safe_scraper_method(scraped, method_name)
+            if _has_value(value):
+                data[field] = value
+
+    return data
+
+
+def _iter_text_values(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        return [text] if text else []
+    if isinstance(raw, dict):
+        for key in ("text", "display", "originalText", "note", "name"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                return [value.strip()]
+        nested = raw.get("itemListElement")
+        if nested:
+            return _iter_text_values(nested)
+        ingredients = raw.get("ingredients")
+        if ingredients:
+            return _iter_text_values(ingredients)
+        return []
+    if isinstance(raw, (list, tuple)):
+        values: list[str] = []
+        for item in raw:
+            values.extend(_iter_text_values(item))
+        return values
+    text = str(raw).strip()
+    return [text] if text else []
+
+
+def _jsonld_to_ingredients(raw: Any) -> list[dict[str, Any]]:
+    """Convert ingredient strings into Mealie ingredient dicts."""
     ingredients: list[dict[str, Any]] = []
-    for item in raw:
-        text = str(item).strip() if item else ""
-        if not text:
-            continue
+    for text in _iter_text_values(raw):
         ingredients.append({
             "quantity": 0,
             "unit": None,
@@ -94,17 +179,36 @@ def _jsonld_to_ingredients(raw: list[Any]) -> list[dict[str, Any]]:
     return ingredients
 
 
-def _jsonld_to_instructions(raw: list[Any]) -> list[dict[str, Any]]:
-    """Convert JSON-LD instruction objects into Mealie instruction dicts."""
+def _instruction_texts(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        if lines:
+            return lines
+        text = raw.strip()
+        return [text] if text else []
+    if isinstance(raw, dict):
+        text = raw.get("text")
+        if isinstance(text, str) and text.strip():
+            return [text.strip()]
+        nested = raw.get("itemListElement")
+        if nested:
+            return _instruction_texts(nested)
+        return []
+    if isinstance(raw, (list, tuple)):
+        values: list[str] = []
+        for item in raw:
+            values.extend(_instruction_texts(item))
+        return values
+    text = str(raw).strip()
+    return [text] if text else []
+
+
+def _jsonld_to_instructions(raw: Any) -> list[dict[str, Any]]:
+    """Convert instruction text into Mealie instruction dicts."""
     instructions: list[dict[str, Any]] = []
-    for item in raw:
-        text = ""
-        if isinstance(item, str):
-            text = item
-        elif isinstance(item, dict):
-            text = item.get("text", "")
-        if not text:
-            continue
+    for text in _instruction_texts(raw):
         instructions.append({
             "id": str(uuid.uuid4()),
             "title": "",
@@ -118,7 +222,17 @@ def _jsonld_to_instructions(raw: list[Any]) -> list[dict[str, Any]]:
 def _extract_time(raw: Any) -> str | None:
     """Return a duration string or None."""
     if isinstance(raw, str) and raw.strip():
-        return raw.strip()
+        text = raw.strip()
+        if text.isdigit():
+            return f"PT{int(text)}M"
+        return text
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)) and raw > 0:
+        minutes = int(raw)
+        if raw != minutes:
+            minutes = round(raw)
+        return f"PT{minutes}M"
     return None
 
 
@@ -128,14 +242,16 @@ def _extract_yield(raw: Any) -> str | None:
         return str(raw[0]).strip() if raw else None
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
+    if raw is not None:
+        return str(raw).strip()
     return None
 
 
-def _extract_nutrition(raw: Any) -> dict[str, str] | None:
-    """Extract nutrition dict, stripping JSON-LD @type."""
+def _extract_nutrition(raw: Any) -> dict[str, Any] | None:
+    """Extract nutrition dict, stripping schema metadata."""
     if not isinstance(raw, dict):
         return None
-    return {k: v for k, v in raw.items() if k != "@type"}
+    return {k: v for k, v in raw.items() if k != "@type" and _has_value(v)}
 
 
 class RecipeReimporter:
@@ -309,6 +425,7 @@ class RecipeReimporter:
         try:
             # Phase 1: Scrape.
             scraped = self._scrape_with_retry(slug, url)
+            scraped_data = _normalize_scraped_recipe(scraped)
 
             # Phase 2: Get original + patch.
             original = self.client.get_recipe(slug)
@@ -316,27 +433,33 @@ class RecipeReimporter:
             # Build patch — do NOT include name or slug (causes 403 on mismatch).
             patch: dict[str, Any] = {}
 
-            if scraped.get("description"):
-                patch["description"] = str(scraped["description"]).strip()
+            if scraped_data.get("description"):
+                patch["description"] = str(scraped_data["description"]).strip()
 
-            raw_ings = scraped.get("recipeIngredient", [])
+            raw_ings = _first_present(scraped_data, "ingredients", "recipeIngredient", "ingredient_groups")
             if raw_ings:
                 patch["recipeIngredient"] = _jsonld_to_ingredients(raw_ings)
 
-            raw_steps = scraped.get("recipeInstructions", [])
+            raw_steps = _first_present(scraped_data, "instructions_list", "instructions", "recipeInstructions")
             if raw_steps:
                 patch["recipeInstructions"] = _jsonld_to_instructions(raw_steps)
 
-            nutrition = _extract_nutrition(scraped.get("nutrition"))
+            nutrition = _extract_nutrition(_first_present(scraped_data, "nutrients", "nutrition"))
             if nutrition:
                 patch["nutrition"] = nutrition
 
-            for time_field in ("prepTime", "totalTime", "cookTime", "performTime"):
-                val = _extract_time(scraped.get(time_field))
+            time_fields = {
+                "prepTime": ("prep_time", "prepTime"),
+                "totalTime": ("total_time", "totalTime"),
+                "cookTime": ("cook_time", "cookTime"),
+                "performTime": ("perform_time", "performTime"),
+            }
+            for time_field, source_fields in time_fields.items():
+                val = _extract_time(_first_present(scraped_data, *source_fields))
                 if val:
                     patch[time_field] = val
 
-            yield_val = _extract_yield(scraped.get("recipeYield"))
+            yield_val = _extract_yield(_first_present(scraped_data, "yields", "recipeYield"))
             if yield_val:
                 patch["recipeYield"] = yield_val
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from w3lib.url import canonicalize_url as _w3lib_canonicalize_url
+
 TRACKING_QUERY_KEYS = {
     "fbclid",
     "gclid",
@@ -48,5 +50,5 @@ def canonicalize_url(url: str | None) -> str:
         filtered_query.append((key, value))
     filtered_query.sort()
     query = urlencode(filtered_query, doseq=True)
-
-    return urlunsplit((scheme, netloc, path, query, ""))
+    normalized = urlunsplit((scheme, netloc, path, query, ""))
+    return _w3lib_canonicalize_url(normalized, keep_blank_values=True, keep_fragments=False)

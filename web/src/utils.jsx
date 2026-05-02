@@ -1,4 +1,14 @@
 import React from "react";
+import {
+  differenceInHours,
+  differenceInMilliseconds,
+  differenceInMinutes,
+  isSameDay,
+  isValid,
+  parseISO,
+} from "date-fns";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { API } from "./constants";
 
@@ -175,254 +185,95 @@ export function parseLineEditorContent(content, configName = "") {
   return { mode: "json", listKind: "", items: [] };
 }
 
-export function renderInlineMarkdown(text, keyPrefix) {
-  const source = String(text || "");
-  if (!source) {
-    return "";
-  }
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 
-  const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
-  const nodes = [];
-  let lastIndex = 0;
-  let matchIndex = 0;
-  let match = tokenPattern.exec(source);
-
-  while (match) {
-    const token = String(match[0] || "");
-    if (match.index > lastIndex) {
-      nodes.push(source.slice(lastIndex, match.index));
-    }
-
-    if (token.startsWith("`") && token.endsWith("`")) {
-      nodes.push(
-        <code key={`${keyPrefix}-code-${matchIndex}`} className="md-inline-code">
-          {token.slice(1, -1)}
-        </code>
-      );
-    } else if (token.startsWith("**") && token.endsWith("**")) {
-      nodes.push(<strong key={`${keyPrefix}-strong-${matchIndex}`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith("*") && token.endsWith("*")) {
-      nodes.push(<em key={`${keyPrefix}-em-${matchIndex}`}>{token.slice(1, -1)}</em>);
-    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
-      const splitIndex = token.indexOf("](");
-      const label = token.slice(1, splitIndex);
-      const href = token.slice(splitIndex + 2, -1);
-      nodes.push(
-        <a
-          key={`${keyPrefix}-link-${matchIndex}`}
-          href={href}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="md-link"
-        >
-          {label}
-        </a>
-      );
-    } else {
-      nodes.push(token);
-    }
-
-    lastIndex = match.index + token.length;
-    matchIndex += 1;
-    match = tokenPattern.exec(source);
-  }
-
-  if (lastIndex < source.length) {
-    nodes.push(source.slice(lastIndex));
-  }
-
-  return nodes;
+function mergeClassNames(...classNames) {
+  return classNames.filter(Boolean).join(" ") || undefined;
 }
 
-function parseMarkdownBlocks(markdown) {
-  const lines = String(markdown || "")
-    .replace(/\uFEFF/g, "")
-    .replace(/\r/g, "")
-    .split("\n");
-  const blocks = [];
-  let index = 0;
-
-  const isListItem = (line) => /^\s*[-*]\s+/.test(line);
-  const isOrderedItem = (line) => /^\s*\d+\.\s+/.test(line);
-  const isHeading = (line) => /^\s*#{1,6}\s+/.test(line);
-  const isFence = (line) => /^\s*```/.test(line);
-  const isTableRow = (line) => /^\s*\|.*\|\s*$/.test(line);
-  const isTableDivider = (line) => {
-    const trimmed = String(line || "").trim();
-    if (!trimmed.includes("|")) return false;
-    const cells = trimmed
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
-    if (cells.length < 2) return false;
-    return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+function MarkdownLink({ node, className, href, children, ...props }) {
+  const linkProps = {
+    ...props,
+    href,
+    target: "_blank",
+    rel: "noreferrer noopener",
+    className: mergeClassNames(className, "md-link"),
   };
-  const parseTableCells = (line) =>
-    String(line || "")
-      .trim()
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (isFence(line)) {
-      const language = line.replace(/^\s*```/, "").trim();
-      index += 1;
-      const codeLines = [];
-      while (index < lines.length && !isFence(lines[index])) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      if (index < lines.length && isFence(lines[index])) {
-        index += 1;
-      }
-      blocks.push({ type: "code", language, text: codeLines.join("\n") });
-      continue;
-    }
-
-    if (isHeading(line)) {
-      const match = line.match(/^(\s*#{1,6})\s+(.+)$/);
-      const rawLevel = match ? match[1].replace(/\s/g, "").length : 2;
-      const level = Math.min(4, Math.max(2, rawLevel));
-      blocks.push({ type: "heading", level, text: String(match ? match[2] : line).trim() });
-      index += 1;
-      continue;
-    }
-
-    if (isTableRow(line) && index + 1 < lines.length && isTableDivider(lines[index + 1])) {
-      const headers = parseTableCells(line);
-      index += 2;
-      const rows = [];
-      while (index < lines.length && isTableRow(lines[index])) {
-        const row = parseTableCells(lines[index]);
-        if (row.some((cell) => cell.length > 0)) {
-          rows.push(row);
-        }
-        index += 1;
-      }
-      blocks.push({ type: "table", headers, rows });
-      continue;
-    }
-
-    if (isListItem(line)) {
-      const items = [];
-      while (index < lines.length && isListItem(lines[index])) {
-        items.push(lines[index].replace(/^\s*[-*]\s+/, "").trim());
-        index += 1;
-      }
-      blocks.push({ type: "ul", items });
-      continue;
-    }
-
-    if (isOrderedItem(line)) {
-      const items = [];
-      while (index < lines.length && isOrderedItem(lines[index])) {
-        items.push(lines[index].replace(/^\s*\d+\.\s+/, "").trim());
-        index += 1;
-      }
-      blocks.push({ type: "ol", items });
-      continue;
-    }
-
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const paragraph = [line.trim()];
-    index += 1;
-    while (
-      index < lines.length &&
-      lines[index].trim() &&
-      !isFence(lines[index]) &&
-      !isHeading(lines[index]) &&
-      !isListItem(lines[index]) &&
-      !isOrderedItem(lines[index]) &&
-      !(isTableRow(lines[index]) && index + 1 < lines.length && isTableDivider(lines[index + 1]))
-    ) {
-      paragraph.push(lines[index].trim());
-      index += 1;
-    }
-    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
-  }
-
-  return blocks;
+  return <a {...linkProps}>{children}</a>;
 }
+
+function MarkdownCode({ node, className, children, ...props }) {
+  const codeText = String(children ?? "");
+  const isCodeBlock = Boolean(className) || codeText.endsWith("\n");
+  return (
+    <code {...props} className={mergeClassNames(className, isCodeBlock ? "" : "md-inline-code")}>
+      {children}
+    </code>
+  );
+}
+
+function MarkdownPre({ node, className, children, ...props }) {
+  return (
+    <pre {...props} className={mergeClassNames(className, "doc-code")}>
+      {children}
+    </pre>
+  );
+}
+
+function MarkdownTable({ node, className, children, ...props }) {
+  return (
+    <div className="md-table-wrap">
+      <table {...props} className={mergeClassNames(className, "md-table")}>
+        {children}
+      </table>
+    </div>
+  );
+}
+
+function MarkdownImage({ node, src, alt }) {
+  if (!src) return null;
+  return (
+    <a href={src} target="_blank" rel="noreferrer noopener" className="md-link">
+      {alt || src}
+    </a>
+  );
+}
+
+function MarkdownH4({ node, children, ...props }) {
+  return <h4 {...props}>{children}</h4>;
+}
+
+function MarkdownH5({ node, children, ...props }) {
+  return <h5 {...props}>{children}</h5>;
+}
+
+const MARKDOWN_COMPONENTS = {
+  a: MarkdownLink,
+  code: MarkdownCode,
+  pre: MarkdownPre,
+  table: MarkdownTable,
+  img: MarkdownImage,
+  h1: MarkdownH4,
+  h2: MarkdownH4,
+  h3: MarkdownH5,
+  h4: MarkdownH5,
+  h5: MarkdownH5,
+  h6: MarkdownH5,
+};
 
 export function renderMarkdownDocument(markdown) {
-  const blocks = parseMarkdownBlocks(markdown);
-  if (blocks.length === 0) {
+  const source = String(markdown || "")
+    .replace(/\uFEFF/g, "")
+    .replace(/\r/g, "")
+    .trim();
+  if (!source) {
     return <p className="muted tiny">No content available.</p>;
   }
-  return blocks.map((block, index) => {
-    if (block.type === "heading") {
-      if (block.level <= 2) {
-        return <h4 key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</h4>;
-      }
-      return <h5 key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</h5>;
-    }
-    if (block.type === "code") {
-      return (
-        <pre key={`md-${index}`} className="doc-code">
-          <code>{block.text}</code>
-        </pre>
-      );
-    }
-    if (block.type === "ul") {
-      return (
-        <ul key={`md-${index}`}>
-          {block.items.map((item, itemIndex) => (
-            <li key={`md-${index}-${itemIndex}`}>{renderInlineMarkdown(item, `md-${index}-${itemIndex}`)}</li>
-          ))}
-        </ul>
-      );
-    }
-    if (block.type === "ol") {
-      return (
-        <ol key={`md-${index}`}>
-          {block.items.map((item, itemIndex) => (
-            <li key={`md-${index}-${itemIndex}`}>{renderInlineMarkdown(item, `md-${index}-${itemIndex}`)}</li>
-          ))}
-        </ol>
-      );
-    }
-    if (block.type === "table") {
-      const columnCount = Math.max(
-        block.headers.length,
-        ...block.rows.map((row) => (Array.isArray(row) ? row.length : 0))
-      );
-      const headerCells = Array.from({ length: columnCount }, (_, colIndex) => block.headers[colIndex] || "");
-      return (
-        <div key={`md-${index}`} className="md-table-wrap">
-          <table className="md-table">
-            <thead>
-              <tr>
-                {headerCells.map((header, colIndex) => (
-                  <th key={`md-${index}-h-${colIndex}`}>{renderInlineMarkdown(header, `md-${index}-h-${colIndex}`)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {block.rows.map((row, rowIndex) => (
-                <tr key={`md-${index}-r-${rowIndex}`}>
-                  {headerCells.map((_, colIndex) => (
-                    <td key={`md-${index}-r-${rowIndex}-c-${colIndex}`}>
-                      {renderInlineMarkdown(row[colIndex] || "", `md-${index}-r-${rowIndex}-c-${colIndex}`)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-    return <p key={`md-${index}`}>{renderInlineMarkdown(block.text, `md-${index}`)}</p>;
-  });
+  return (
+    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+      {source}
+    </ReactMarkdown>
+  );
 }
 
 export function moveArrayItem(items, fromIndex, toIndex) {
@@ -439,14 +290,14 @@ export function moveArrayItem(items, fromIndex, toIndex) {
 }
 
 export function parseIso(value) {
-  if (!value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
     return null;
   }
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
+  const parsed = parseISO(raw);
+  if (isValid(parsed)) return parsed;
+  const fallback = new Date(raw);
+  return isValid(fallback) ? fallback : null;
 }
 
 export function formatDateTime(value) {
@@ -461,12 +312,8 @@ export function formatDateTimeShort(value) {
   const date = parseIso(value);
   if (!date) return "-";
   const now = new Date();
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
   const timePart = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (isToday) return timePart;
+  if (isSameDay(date, now)) return timePart;
   return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + timePart;
 }
 
@@ -490,27 +337,30 @@ export function formatRunTime(run) {
   const finished = parseIso(run.finished_at);
   if (!finished) {
     if (String(run.status || "").toLowerCase() === "running") {
-      return formatDurationMs(Date.now() - started.getTime());
+      return formatDurationMs(differenceInMilliseconds(Date.now(), started));
     }
     return "--:--:--";
   }
-  return formatDurationMs(finished.getTime() - started.getTime());
+  return formatDurationMs(differenceInMilliseconds(finished, started));
 }
 
 export function formatRelativeTime(isoString) {
-  if (!isoString) return "";
-  const diff = Date.now() - new Date(isoString).getTime();
+  const date = parseIso(isoString);
+  if (!date) return "";
+  const now = Date.now();
+  const diff = differenceInMilliseconds(now, date);
   if (diff < 0) return "just now";
   if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 3600000) return `${differenceInMinutes(now, date)}m ago`;
+  if (diff < 86400000) return `${differenceInHours(now, date)}h ago`;
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
   return `${Math.floor(diff / 604800000)}w ago`;
 }
 
 export function formatCountdown(isoString) {
-  if (!isoString) return null;
-  const diff = new Date(isoString).getTime() - Date.now();
+  const date = parseIso(isoString);
+  if (!date) return null;
+  const diff = differenceInMilliseconds(date, Date.now());
   if (diff < 0) return "overdue";
   if (diff < 60000) return "< 1m";
   if (diff < 3600000) return `in ${Math.round(diff / 60000)}m`;

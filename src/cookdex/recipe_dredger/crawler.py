@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional
+from urllib import robotparser
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -22,22 +24,34 @@ class SitemapCrawler:
         self.store = store
         self.cache_expiry_days = cache_expiry_days
 
-    def find_sitemap(self, base_url: str) -> Optional[str]:
+    def _sitemaps_from_robots(self, base_url: str) -> List[str]:
+        robots_url = f"{base_url.rstrip('/')}/robots.txt"
         try:
-            response = request_with_url_validation(self.session, "GET", f"{base_url}/robots.txt", timeout=5)
-            if response.status_code == 200:
-                for line in response.text.splitlines():
-                    if line.lower().startswith("sitemap:"):
-                        return validate_service_url(line.split(":", 1)[1].strip())
+            response = request_with_url_validation(self.session, "GET", robots_url, timeout=5)
+            if response.status_code != 200:
+                return []
+
+            parser = robotparser.RobotFileParser(robots_url)
+            parser.parse(response.text.splitlines())
+            return parser.site_maps() or []
         except Exception:
-            pass
+            return []
+
+    def find_sitemap(self, base_url: str) -> Optional[str]:
+        normalized_base = base_url.rstrip("/")
+        for sitemap in self._sitemaps_from_robots(normalized_base):
+            try:
+                sitemap_url = urljoin(f"{normalized_base}/", sitemap.strip())
+                return validate_service_url(sitemap_url)
+            except Exception:
+                continue
 
         candidates = [
-            f"{base_url}/sitemap_index.xml",
-            f"{base_url}/sitemap.xml",
-            f"{base_url}/wp-sitemap.xml",
-            f"{base_url}/post-sitemap.xml",
-            f"{base_url}/recipe-sitemap.xml",
+            f"{normalized_base}/sitemap_index.xml",
+            f"{normalized_base}/sitemap.xml",
+            f"{normalized_base}/wp-sitemap.xml",
+            f"{normalized_base}/post-sitemap.xml",
+            f"{normalized_base}/recipe-sitemap.xml",
         ]
 
         for url in candidates:

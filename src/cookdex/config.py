@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from dotenv import dotenv_values
+
 
 def _looks_like_repo_root(path: Path) -> bool:
     return (path / "configs" / "taxonomy").exists()
@@ -29,24 +31,11 @@ def load_env_file(path):
     if not path.exists():
         return
 
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for key, value in dotenv_values(path).items():
+        key = str(key or "").strip()
+        if not key or value is None:
             continue
-
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not key:
-            continue
-
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-
-        os.environ.setdefault(key, value)
+        os.environ.setdefault(key, str(value))
 
 
 load_env_file(ENV_FILE)
