@@ -342,6 +342,7 @@ def test_safe_request_blocks_redirect_to_private(monkeypatch):
 # ---------------------------------------------------------------------------
 
 from cookdex.recipe_dredger.sites import DEFAULT_SITES
+from cookdex.recipe_dredger import sites as dredger_sites_module
 
 
 class TestDefaultSites:
@@ -355,6 +356,20 @@ class TestDefaultSites:
     def test_all_have_group(self):
         for entry in DEFAULT_SITES:
             assert entry.get("group"), f"Missing group for {entry['url']}"
+
+    def test_load_default_sites_uses_cookdex_root_when_module_path_is_installed(self, monkeypatch, tmp_path):
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+        (config_dir / "default_sites.json").write_text(
+            '[{"url":"https://example.com","group":"General"}]',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("COOKDEX_ROOT", str(tmp_path))
+        monkeypatch.setattr(dredger_sites_module, "_SITES_JSON", tmp_path / "site-packages" / "missing.json")
+
+        assert dredger_sites_module.load_default_sites() == [
+            {"url": "https://example.com", "group": "General"}
+        ]
 
 
 # ---------------------------------------------------------------------------
