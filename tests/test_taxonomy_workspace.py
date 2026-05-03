@@ -303,6 +303,10 @@ def test_taxonomy_workspace_draft_validate_publish_endpoints(tmp_path: Path, mon
         bad_payload = validate_bad.json()
         assert bad_payload["can_publish"] is False
         assert bad_payload["summary"]["blocking_errors"] >= 1
+        error_messages = [item.get("message", "") for item in bad_payload["errors"]]
+        assert any(item.get("code") == "cookbook_invalid_field" for item in bad_payload["errors"])
+        assert "Cookbook query filter uses an unsupported field." in error_messages
+        assert all("unknown.field" not in message for message in error_messages)
 
         blocked_publish = client.post(
             "/cookdex/api/v1/config/workspace/publish",
