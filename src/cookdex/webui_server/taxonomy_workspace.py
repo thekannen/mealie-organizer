@@ -41,6 +41,10 @@ RULE_TARGET_FIELDS: dict[str, str] = {
 }
 WORKSPACE_DRAFT_RELATIVE_PATH = "configs/.drafts/taxonomy-workspace.json"
 WORKSPACE_RESOURCE_NAMES: tuple[str, ...] = TAXONOMY_FILE_NAMES
+COOKBOOK_FILTER_PUBLIC_MESSAGES: dict[str, str] = {
+    "cookbook_invalid_field": "Cookbook query filter uses an unsupported field.",
+    "cookbook_invalid_filter": "Cookbook query filter is invalid.",
+}
 
 
 def _normalize_name(value: Any) -> str:
@@ -50,6 +54,10 @@ def _normalize_name(value: Any) -> str:
 
 def _name_key(value: Any) -> str:
     return _normalize_name(value).casefold()
+
+
+def _cookbook_filter_public_message(code: str) -> str:
+    return COOKBOOK_FILTER_PUBLIC_MESSAGES.get(code, COOKBOOK_FILTER_PUBLIC_MESSAGES["cookbook_invalid_filter"])
 
 
 def _bool_value(value: Any, default: bool = False) -> bool:
@@ -975,7 +983,7 @@ class TaxonomyWorkspaceDraftService:
                         "resource": "cookbooks",
                         "severity": "error",
                         "path": f"{path_root}.queryFilterString",
-                        "message": str(exc) or "Cookbook query filter is invalid.",
+                        "message": _cookbook_filter_public_message(exc.code),
                     }
                 )
                 continue
