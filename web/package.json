@@ -1,18 +1,22 @@
 {
   "name": "cookdex-web",
   "private": true,
-  "version": "2026.5.1",
+  "version": "2026.5.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "python ../scripts/bump_version.py && vite build",
     "build:docker": "vite build",
     "preview": "vite preview",
+    "verify:utils": "node scripts/verify_markdown_dates.mjs",
     "qa:smoke": "node scripts/webui_smoke_playwright.mjs"
   },
   "dependencies": {
+    "date-fns": "^4.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "playwright": "^1.53.0",

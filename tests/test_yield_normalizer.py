@@ -42,6 +42,12 @@ class TestExtractNumber:
         # "1½" -> "1 1/2" after vulgar replacement
         assert _extract_number("1\u00bd cups") == 1.5
 
+    def test_fraction_numerator_one_sequence(self) -> None:
+        assert _extract_number("\u215f2 batch") == 0.5
+
+    def test_vulgar_zero_thirds_from_unicodedata(self) -> None:
+        assert _extract_number("\u2189 batch") == 0.0
+
     def test_empty(self) -> None:
         assert _extract_number("") == 0.0
 

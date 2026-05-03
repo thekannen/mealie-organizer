@@ -10,6 +10,11 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    from recipe_scrapers import scrape_html
+except Exception:
+    scrape_html = None  # type: ignore[assignment]
+
 from ..url_security import request_with_url_validation, validate_service_url
 from .language import detect_language_from_html
 from .patterns import (
@@ -166,6 +171,54 @@ class RecipeVerifier:
 
         return has_recipe_type, strong_payload
 
+    def _has_scraper_payload(self, value: Any) -> bool:
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, dict):
+            return any(self._has_scraper_payload(item) for item in value.values())
+        if isinstance(value, list):
+            return any(self._has_scraper_payload(item) for item in value)
+        return value is not None
+
+    def _safe_scraper_method(self, scraper: Any, method_name: str) -> Any:
+        method = getattr(scraper, method_name, None)
+        if not callable(method):
+            return None
+        try:
+            return method()
+        except Exception:
+            return None
+
+    def _recipe_scraper_signal(self, html: str, url: str) -> bool:
+        """Return True when recipe-scrapers finds usable recipe content."""
+        if scrape_html is None:
+            return False
+
+        try:
+            scraper = scrape_html(html, org_url=url, supported_only=False)
+        except Exception:
+            return False
+
+        data: dict[str, Any] = {}
+        to_json = getattr(scraper, "to_json", None)
+        if callable(to_json):
+            try:
+                payload = to_json()
+                if isinstance(payload, dict):
+                    data = payload
+            except Exception:
+                data = {}
+
+        for key in ("ingredients", "instructions", "instructions_list", "ingredient_groups"):
+            if self._has_scraper_payload(data.get(key)):
+                return True
+
+        for method_name in ("ingredients", "instructions_list", "instructions"):
+            if self._has_scraper_payload(self._safe_scraper_method(scraper, method_name)):
+                return True
+
+        return False
+
     def verify_recipe(self, url: str) -> Tuple[bool, Optional[str], bool]:
         """Verify whether a URL contains a real recipe.
 
@@ -183,10 +236,15 @@ class RecipeVerifier:
                 return False, f"HTTP {response.status_code}", is_transient
 
             soup = BeautifulSoup(response.content, "lxml")
-            has_recipe_type, strong_recipe_payload = self._recipe_schema_signal(soup)
+            scraper_recipe_payload = self._recipe_scraper_signal(response.text, response.url or url)
             has_recipe_card = bool(soup.find(class_=RECIPE_CLASS_PATTERN))
 
-            if not strong_recipe_payload and not has_recipe_card:
+            if not scraper_recipe_payload and not has_recipe_card:
+                has_recipe_type, strong_recipe_payload = self._recipe_schema_signal(soup)
+                if strong_recipe_payload:
+                    scraper_recipe_payload = True
+
+            if not scraper_recipe_payload and not has_recipe_card:
                 if has_recipe_type:
                     return False, "Weak recipe schema", False
                 return False, "No recipe detected", False

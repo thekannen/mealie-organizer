@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from slugify import slugify
+from titlecase import titlecase
 
 from .api_client import MealieApiClient
 from .config import env_or_config, resolve_mealie_api_key, resolve_mealie_url, resolve_repo_path, to_bool
@@ -54,16 +55,6 @@ _PREFIX_PATTERNS: list[re.Pattern] = [
 ]
 _SUFFIX_PATTERN = re.compile(r"\s+recipe$", re.IGNORECASE)
 _HAS_UPPERCASE_RE = re.compile(r"[A-Z]")
-_WORD_EDGE_PUNCTUATION = ",:;!?\"'()-"
-
-# Words that stay lowercase in title case (except when first or last).
-_SMALL_WORDS: frozenset[str] = frozenset({
-    "a", "an", "the",
-    "and", "but", "or", "nor", "for", "yet", "so",
-    "at", "by", "in", "of", "on", "to", "up", "as",
-    "from", "into", "with", "over", "via", "per",
-    "vs",
-})
 
 # Common food/cooking abbreviations that should stay uppercase.
 _ACRONYMS: dict[str, str] = {
@@ -71,60 +62,25 @@ _ACRONYMS: dict[str, str] = {
     "pb": "PB", "pbj": "PBJ", "xo": "XO", "hk": "HK",
     "thc": "THC", "vgf": "VGF", "ac": "AC",
 }
+_ACRONYM_WORD_RE = re.compile(r"^([^A-Za-z0-9]*)([A-Za-z0-9]+)((?:'[A-Za-z]+)?[^A-Za-z0-9]*)$")
 
 
-def _title_case_word(word: str) -> str:
-    """Capitalize a single word, handling apostrophes correctly."""
-    if "'" in word:
-        # "valentine's" -> "Valentine's", "don't" -> "Don't", "o'brien" -> "O'Brien"
-        head, tail = word.split("'", 1)
-        cased_head = head.capitalize()
-        if len(head) == 1 and tail and tail[0].isalpha():
-            tail = tail[0].upper() + tail[1:]
-        return cased_head + "'" + tail
-    return word.capitalize()
-
-
-def _split_word_punctuation(word: str) -> tuple[str, str, str]:
-    """Return (leading_punct, core, trailing_punct) for *word*."""
-    start = 0
-    end = len(word)
-    while start < end and word[start] in _WORD_EDGE_PUNCTUATION:
-        start += 1
-    while end > start and word[end - 1] in _WORD_EDGE_PUNCTUATION:
-        end -= 1
-    return word[:start], word[start:end], word[end:]
+def _titlecase_acronym_callback(word: str, **_kwargs: Any) -> str | None:
+    match = _ACRONYM_WORD_RE.match(word)
+    if not match:
+        return None
+    leading, core, trailing = match.groups()
+    replacement = _ACRONYMS.get(core.lower())
+    if replacement is None:
+        return None
+    return f"{leading}{replacement}{trailing.lower()}"
 
 
 def _smart_title_case(text: str) -> str:
-    """Title-case *text* following standard English conventions.
-
-    - Small words (a, an, the, and, of, ...) stay lowercase unless first/last.
-    - Apostrophe contractions and possessives keep correct casing.
-    - Known acronyms (BBQ, BLT, ...) are uppercased.
-    """
-    words = text.lower().split()
-    if not words:
+    """Title-case *text* with project acronym preservation."""
+    if not text.strip():
         return text
-    result: list[str] = []
-    last_idx = len(words) - 1
-    for i, word in enumerate(words):
-        leading_punct, core, trailing_punct = _split_word_punctuation(word)
-        if not core:
-            result.append(word)
-            continue
-
-        acronym_key = core.split("'", 1)[0]
-        if acronym_key in _ACRONYMS:
-            # Keep possessives/contractions after the acronym (e.g., "bbq's" -> "BBQ's").
-            core_value = _ACRONYMS[acronym_key] + core[len(acronym_key):]
-        elif i == 0 or i == last_idx or core not in _SMALL_WORDS:
-            core_value = _title_case_word(core)
-        else:
-            core_value = core  # already lowercase
-
-        result.append(f"{leading_punct}{core_value}{trailing_punct}")
-    return " ".join(result)
+    return titlecase(text.lower(), callback=_titlecase_acronym_callback)
 
 
 def normalize_recipe_name(raw: str) -> str:

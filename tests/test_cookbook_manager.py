@@ -110,6 +110,19 @@ def test_compile_query_filter_for_editor_converts_name_filters_to_ids():
     assert compiled == 'recipe_category.id IN ["cat-1"] AND tags.id IN ["tag-1","tag-2"]'
 
 
+def test_compile_query_filter_for_editor_handles_bracket_inside_quoted_value():
+    manager = MealieCookbookManager("http://example/api", "token", dry_run=True)
+    query_filter = 'tags.name IN ["Tag ] Name"]'
+
+    compiled = manager.compile_query_filter_for_editor(
+        query_filter,
+        {},
+        {"tag ] name": "tag-1"},
+    )
+
+    assert compiled == 'tags.id IN ["tag-1"]'
+
+
 def test_compile_query_filter_for_editor_normalizes_recipe_category_id_field():
     manager = MealieCookbookManager("http://example/api", "token", dry_run=True)
     query_filter = 'recipeCategory.id IN ["cat-1"]'
