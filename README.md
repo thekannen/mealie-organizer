@@ -1,7 +1,7 @@
 # CookDex
 
 <p>
-  <img alt="Mealie" src="https://img.shields.io/badge/Mealie-v3-4caf50?labelColor=2e7d32&logoColor=white">
+  <img alt="Mealie" src="https://img.shields.io/badge/Mealie-v3.17-4caf50?labelColor=2e7d32&logoColor=white">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-3776ab?logo=python&logoColor=white">
   <img alt="License" src="https://img.shields.io/github/license/thekannen/cookdex?color=f47a2a">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ed?logo=docker&logoColor=white">
