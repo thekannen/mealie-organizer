@@ -2,6 +2,12 @@
 
 All notable changes to CookDex are documented here.
 
+## [2026.5.3] - 2026-05-17
+
+### Changed
+- **Mealie v3.17 recertification** — Reviewed Mealie releases v3.15.0 through v3.17.0 and updated the README compatibility badge to Mealie v3.17.
+- **Current Mealie API payloads** — Food creation now uses the current `POST /foods` schema before falling back to the legacy `groupId` payload, and food/unit merges use the documented v3 payloads directly.
+
 ## [2026.5.2] - 2026-05-02
 
 ### Changed

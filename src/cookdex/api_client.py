@@ -254,15 +254,23 @@ class MealieApiClient:
 
     def create_food(self, name: str, group_id: str | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"name": name}
-        if group_id:
-            payload["groupId"] = group_id
-        data = self.request_json("POST", "/foods", json=payload, timeout=60)
+        try:
+            data = self.request_json("POST", "/foods", json=payload, timeout=60)
+        except requests.HTTPError as exc:
+            if not group_id or not self._is_http_422(exc):
+                raise
+            data = self.request_json("POST", "/foods", json={**payload, "groupId": group_id}, timeout=60)
         if isinstance(data, dict):
             return data
         return {}
 
     def merge_food(self, source_id: str, target_id: str) -> dict[str, Any]:
-        return self._merge_entity("/foods/merge", source_id, target_id)
+        return self._merge_entity(
+            "/foods/merge",
+            source_id,
+            target_id,
+            payload_candidates=[{"fromFood": source_id, "toFood": target_id}],
+        )
 
     def list_units(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         return self.get_paginated("/units", per_page=per_page, timeout=60)
@@ -303,7 +311,12 @@ class MealieApiClient:
         return {}
 
     def merge_unit(self, source_id: str, target_id: str) -> dict[str, Any]:
-        return self._merge_entity("/units/merge", source_id, target_id)
+        return self._merge_entity(
+            "/units/merge",
+            source_id,
+            target_id,
+            payload_candidates=[{"fromUnit": source_id, "toUnit": target_id}],
+        )
 
     def list_labels(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         return self.get_paginated("/groups/labels", per_page=per_page, timeout=60)
@@ -324,6 +337,13 @@ class MealieApiClient:
             return False
         response = getattr(exc, "response", None)
         return bool(response is not None and response.status_code == 404)
+
+    @staticmethod
+    def _is_http_422(exc: Exception) -> bool:
+        if not isinstance(exc, requests.HTTPError):
+            return False
+        response = getattr(exc, "response", None)
+        return bool(response is not None and response.status_code == 422)
 
     def list_cookbooks(self, *, per_page: int = 1000) -> list[dict[str, Any]]:
         return self.get_paginated("/households/cookbooks", per_page=per_page, timeout=60)
@@ -374,8 +394,15 @@ class MealieApiClient:
                 "Tools can be seeded, but duplicate merges are not supported."
             ) from exc
 
-    def _merge_entity(self, route: str, source_id: str, target_id: str) -> dict[str, Any]:
-        payload_candidates = [
+    def _merge_entity(
+        self,
+        route: str,
+        source_id: str,
+        target_id: str,
+        *,
+        payload_candidates: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        payload_candidates = payload_candidates or [
             {"fromId": source_id, "toId": target_id},
             {"from": source_id, "to": target_id},
             {"sourceId": source_id, "targetId": target_id},
